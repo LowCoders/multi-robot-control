@@ -1,0 +1,28 @@
+# Python Device Drivers - Dependencies
+# Multi-Robot Control System
+
+# Soros port kommunikáció (GRBL)
+pyserial>=3.5
+
+# Async támogatás
+asyncio-mqtt>=0.16.0
+
+# HTTP/WebSocket bridge
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+websockets>=12.0
+
+# Konfiguráció
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Típus annotációk
+typing-extensions>=4.9.0
+
+# Tesztelés
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+
+# Opcionális: LinuxCNC Python bindings
+# Ez a LinuxCNC telepítéssel jön, nem pip-ből
+# linuxcnc (system package)

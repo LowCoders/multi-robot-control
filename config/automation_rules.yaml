@@ -1,0 +1,163 @@
+# Automation Rules Configuration
+# Multi-Robot Control System
+#
+# Szabályok az eszközök közötti koordinációhoz.
+# A rendszer ezeket a szabályokat használja az automatikus vezérléshez.
+
+rules:
+  # =====================================================
+  # 1. Szekvenciális végrehajtás - CNC után Lézer
+  # =====================================================
+  - id: sequential_cnc_laser
+    name: "CNC után Lézer"
+    description: "A CNC job befejezése után automatikusan indítja a lézert"
+    enabled: true
+    
+    trigger:
+      type: job_complete
+      device: cnc_main
+      
+    conditions:
+      - device: cnc_main
+        state: idle
+      - device: laser_1
+        state: idle
+        
+    actions:
+      - type: load_file
+        device: laser_1
+        file: "{{context.next_laser_file}}"
+      - type: run
+        device: laser_1
+      - type: notify
+        channel: ui
+        message: "CNC befejezve, lézer job indítva"
+        
+  # =====================================================
+  # 2. Párhuzamos indítás
+  # =====================================================
+  - id: parallel_start
+    name: "Párhuzamos Indítás"
+    description: "Mindkét eszköz egyidejű indítása"
+    enabled: true
+    
+    trigger:
+      type: manual
+      event: start_parallel_job
+      
+    conditions:
+      - device: cnc_main
+        state: idle
+      - device: laser_1
+        state: idle
+        
+    actions:
+      - type: run
+        device: cnc_main
+      - type: run
+        device: laser_1
+        
+  # =====================================================
+  # 3. Szinkronizációs pont
+  # =====================================================
+  - id: sync_point_wait
+    name: "Sync Point - Várakozás"
+    description: "G-code-ban jelölt szinkronizációs pontoknál vár a másik eszközre"
+    enabled: true
+    
+    trigger:
+      type: gcode_comment
+      pattern: ";SYNC_POINT_(\\d+)"
+      
+    actions:
+      - type: pause
+        device: "{{trigger.device}}"
+      - type: set_flag
+        flag: "sync_{{trigger.match[1]}}_{{trigger.device}}"
+        value: true
+      - type: check_sync
+        sync_id: "{{trigger.match[1]}}"
+        devices:
+          - cnc_main
+          - laser_1
+        on_all_ready:
+          - type: resume
+            device: all
+            
+  # =====================================================
+  # 4. Hiba kezelés - Mindent leállít
+  # =====================================================
+  - id: error_stop_all
+    name: "Hiba - Mindent Leállít"
+    description: "Bármely eszköz ALARM állapotánál minden eszközt leállít"
+    enabled: true
+    
+    trigger:
+      type: state_change
+      to_state: alarm
+      
+    actions:
+      - type: stop
+        device: all
+      - type: notify
+        channel: ui
+        severity: critical
+        message: "ALARM: {{trigger.device}} - {{trigger.error}}"
+        
+  # =====================================================
+  # 5. Pozíció-alapú trigger (példa)
+  # =====================================================
+  - id: position_trigger
+    name: "Pozíció Elérése"
+    description: "CNC Z pozíció alapján lézer bekapcsolás"
+    enabled: false  # Letiltva alapból
+    
+    trigger:
+      type: position
+      device: cnc_main
+      axis: Z
+      condition: "<="
+      value: -50
+      
+    actions:
+      - type: send_gcode
+        device: laser_1
+        gcode: "M3 S100"  # Lézer bekapcsolás 100% teljesítménnyel
+        
+  # =====================================================
+  # 6. Időzített állapot lekérdezés (példa)
+  # =====================================================
+  - id: periodic_status_check
+    name: "Időzített Állapot Ellenőrzés"
+    description: "Minden 5 percben ellenőrzi az eszközöket"
+    enabled: false
+    
+    trigger:
+      type: timer
+      interval: 300  # másodperc
+      
+    actions:
+      - type: check_connection
+        device: all
+        on_disconnected:
+          - type: notify
+            channel: ui
+            severity: warning
+            message: "Eszköz kapcsolat megszakadt: {{device}}"
+
+# =====================================================
+# Globális beállítások
+# =====================================================
+settings:
+  # Várakozás szinkronizációs pontoknál (másodperc)
+  sync_timeout: 300
+  
+  # Hiba esetén automatikus retry
+  error_retry_count: 3
+  error_retry_delay: 5
+  
+  # Értesítések
+  notifications:
+    ui: true
+    email: false
+    webhook: false

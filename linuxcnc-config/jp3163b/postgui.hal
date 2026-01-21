@@ -1,0 +1,8 @@
+# Post-GUI HAL - JP-3163B
+# GUI betöltése után végrehajtandó HAL parancsok
+
+# Ide kerülnek a GUI-hoz kapcsolódó HAL beállítások
+# Például: pyvcp panelek, gladevcp kapcsolatok
+
+# Ha AXIS GUI-t használsz pyvcp panellel:
+# net spindle-rpm spindle.0.speed-out-rps-abs => pyvcp.spindle-rpm

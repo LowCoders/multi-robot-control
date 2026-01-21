@@ -1,0 +1,31 @@
+# Custom HAL - JP-3163B
+# Egyéni beállítások
+
+# Ide kerülhetnek további HAL beállítások,
+# amelyek a fő HAL fájl után töltődnek be.
+
+# Példák:
+# - Limit switchek
+# - Home switchek  
+# - Probe
+# - Coolant
+# - Egyéb I/O
+
+# =====================================================
+# LIMIT SWITCHEK (Opcionális)
+# =====================================================
+
+# Ha vannak limit switchek:
+# net x-home-sw => joint.0.home-sw-in
+# net y-home-sw => joint.1.home-sw-in
+# net z-home-sw => joint.2.home-sw-in
+
+# =====================================================
+# COOLANT (Opcionális)
+# =====================================================
+
+# Flood coolant (Pin 16):
+# net coolant-flood iocontrol.0.coolant-flood => parport.0.pin-16-out
+
+# Mist coolant (Pin 17, ha nincs spindle PWM):
+# net coolant-mist iocontrol.0.coolant-mist => parport.0.pin-17-out

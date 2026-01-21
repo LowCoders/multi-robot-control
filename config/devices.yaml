@@ -1,0 +1,56 @@
+# Device Configuration
+# Multi-Robot Control System
+#
+# Ez a fájl tartalmazza az összes eszköz konfigurációját.
+# A bridge szerver indításkor beolvassa és inicializálja az eszközöket.
+
+devices:
+  # =====================================================
+  # CNC Maró - JP-3163B + TB6560 + LinuxCNC
+  # =====================================================
+  - id: cnc_main
+    name: "CNC Maró"
+    driver: linuxcnc
+    type: cnc_mill
+    enabled: true
+    config:
+      # LinuxCNC INI fájl útvonala
+      ini_file: /home/user/linuxcnc/configs/jp3163b/jp3163b.ini
+      
+  # =====================================================
+  # Lézervágó - EleksMana W5.2 + GRBL
+  # =====================================================
+  - id: laser_1
+    name: "Lézervágó"
+    driver: grbl
+    type: laser_cutter
+    enabled: true
+    config:
+      # Soros port
+      port: /dev/ttyUSB0
+      # Baud rate (GRBL default: 115200)
+      baudrate: 115200
+      
+  # =====================================================
+  # Példa: 3D Nyomtató (jövőbeli bővítés)
+  # =====================================================
+  # - id: printer_1
+  #   name: "3D Nyomtató"
+  #   driver: marlin
+  #   type: printer_3d
+  #   enabled: false
+  #   config:
+  #     port: /dev/ttyACM0
+  #     baudrate: 250000
+      
+  # =====================================================
+  # Példa: Második lézervágó
+  # =====================================================
+  # - id: laser_2
+  #   name: "Lézer Gravírozó"
+  #   driver: grbl
+  #   type: laser_engraver
+  #   enabled: false
+  #   config:
+  #     port: /dev/ttyUSB1
+  #     baudrate: 115200

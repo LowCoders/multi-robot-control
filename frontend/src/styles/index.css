@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+@layer base {
+  body {
+    @apply font-display antialiased;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display font-semibold;
+  }
+  
+  code, pre, .mono {
+    @apply font-mono;
+  }
+}
+
+/* Component styles */
+@layer components {
+  .card {
+    @apply bg-steel-900 border border-steel-700 rounded-lg shadow-lg;
+  }
+  
+  .card-header {
+    @apply px-4 py-3 border-b border-steel-700 flex items-center justify-between;
+  }
+  
+  .card-body {
+    @apply p-4;
+  }
+  
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition-all duration-200;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-primary {
+    @apply bg-machine-600 hover:bg-machine-500 text-white;
+  }
+  
+  .btn-secondary {
+    @apply bg-steel-700 hover:bg-steel-600 text-steel-100;
+  }
+  
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-500 text-white;
+  }
+  
+  .btn-warning {
+    @apply bg-amber-600 hover:bg-amber-500 text-white;
+  }
+  
+  .btn-icon {
+    @apply p-2 rounded-md hover:bg-steel-700 transition-colors;
+  }
+  
+  .input {
+    @apply bg-steel-800 border border-steel-600 rounded-md px-3 py-2;
+    @apply focus:outline-none focus:ring-2 focus:ring-machine-500 focus:border-transparent;
+    @apply placeholder-steel-500;
+  }
+  
+  .badge {
+    @apply px-2 py-1 rounded-full text-xs font-medium uppercase tracking-wide;
+  }
+  
+  .badge-idle {
+    @apply bg-green-500/20 text-green-400;
+  }
+  
+  .badge-running {
+    @apply bg-blue-500/20 text-blue-400;
+  }
+  
+  .badge-paused {
+    @apply bg-amber-500/20 text-amber-400;
+  }
+  
+  .badge-alarm {
+    @apply bg-red-500/20 text-red-400;
+  }
+  
+  .badge-disconnected {
+    @apply bg-steel-500/20 text-steel-400;
+  }
+}
+
+/* Utility styles */
+@layer utilities {
+  .glow-green {
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+  }
+  
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  
+  .glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+  
+  .glow-amber {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  }
+  
+  .position-display {
+    @apply font-mono text-lg tabular-nums;
+  }
+  
+  .grid-pattern {
+    background-image: 
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-steel-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-steel-700 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-steel-600;
+}
