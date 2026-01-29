@@ -23,9 +23,7 @@ from grbl_driver import GrblDevice
 from linuxcnc_driver import LinuxCNCDevice
 from simulated_device import SimulatedDevice, SimulationMode
 
-# Szimulációs mód engedélyezése környezeti változóval
-SIMULATION_MODE = os.environ.get('SIMULATION_MODE', 'true').lower() == 'true'
-print(f"🎮 Szimulációs mód: {'BEKAPCSOLVA' if SIMULATION_MODE else 'KIKAPCSOLVA'}")
+# Szimulációs mód már csak eszközönként (devices.yaml simulated mezője)
 
 
 # =========================================
@@ -39,6 +37,7 @@ class DeviceConfig(BaseModel):
     driver: str  # "grbl" | "linuxcnc"
     type: str
     enabled: bool = True
+    simulated: bool = True  # Szimulált eszköz (true) vagy valós (false)
     config: Dict[str, Any] = {}
 
 
@@ -68,11 +67,20 @@ class OverrideRequest(BaseModel):
 # DEVICE MANAGER
 # =========================================
 
+class DeviceMetadata:
+    """Eszköz metaadatok tárolása"""
+    def __init__(self, simulated: bool, connection_info: str = ""):
+        self.simulated = simulated
+        self.connection_info = connection_info
+        self.last_error: Optional[str] = None
+
+
 class DeviceManager:
     """Eszközök kezelése"""
     
     def __init__(self):
         self.devices: Dict[str, DeviceDriver] = {}
+        self.device_metadata: Dict[str, DeviceMetadata] = {}
         self._ws_clients: List[WebSocket] = []
     
     async def load_config(self, config_path: str) -> None:
@@ -97,9 +105,12 @@ class DeviceManager:
         try:
             driver = config.driver.lower()
             device = None
+            connection_info = ""
             
-            # Szimulációs módban minden eszköz szimulált
-            if SIMULATION_MODE or driver == "simulated":
+            # Szimuláció döntés: devices.yaml simulated mezője alapján
+            use_simulation = driver == "simulated" or config.simulated
+            
+            if use_simulation:
                 device_type = DeviceType.CNC_MILL
                 if config.type == "laser_cutter":
                     device_type = DeviceType.LASER_CUTTER
@@ -119,26 +130,39 @@ class DeviceManager:
                     max_y=config.config.get('max_y', 200.0),
                     max_z=config.config.get('max_z', 100.0),
                 )
+                connection_info = "Szimulált"
                 print(f"🎮 Szimulált eszköz: {config.name}")
             elif driver == "grbl":
+                port = config.config.get('port', '/dev/ttyUSB0')
                 device = GrblDevice(
                     device_id=config.id,
                     device_name=config.name,
-                    port=config.config.get('port', '/dev/ttyUSB0'),
+                    port=port,
                     baudrate=config.config.get('baudrate', 115200),
                 )
+                connection_info = port
+                print(f"🔌 Valós GRBL eszköz: {config.name} ({port})")
             elif driver == "linuxcnc":
+                ini_file = config.config.get('ini_file')
                 device = LinuxCNCDevice(
                     device_id=config.id,
                     device_name=config.name,
-                    ini_file=config.config.get('ini_file'),
+                    ini_file=ini_file,
                 )
+                connection_info = ini_file or "LinuxCNC"
+                print(f"🔌 Valós LinuxCNC eszköz: {config.name}")
             else:
                 print(f"Ismeretlen driver: {driver}")
                 return False
             
             if device is None:
                 return False
+            
+            # Metaadatok tárolása
+            self.device_metadata[config.id] = DeviceMetadata(
+                simulated=use_simulation,
+                connection_info=connection_info
+            )
             
             # Callback-ek beállítása
             device_id = config.id
@@ -235,6 +259,10 @@ class DeviceManager:
         })
     
     async def _broadcast_error(self, device_id: str, message: str) -> None:
+        # Hiba tárolása a metaadatokban
+        if device_id in self.device_metadata:
+            self.device_metadata[device_id].last_error = message
+        
         await self._broadcast({
             "type": "error",
             "device_id": device_id,
@@ -324,12 +352,16 @@ async def list_devices():
     """Összes eszköz listázása"""
     devices = []
     for device_id, device in device_manager.devices.items():
+        metadata = device_manager.device_metadata.get(device_id)
         devices.append({
             "id": device_id,
             "name": device.device_name,
             "type": device.device_type.value,
             "connected": device.is_connected,
             "state": device.state.value,
+            "simulated": metadata.simulated if metadata else True,
+            "connectionInfo": metadata.connection_info if metadata else "",
+            "lastError": metadata.last_error if metadata else None,
         })
     return {"devices": devices}
 

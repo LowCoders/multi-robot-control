@@ -7,6 +7,8 @@ import {
   RotateCcw,
   Drill,
   Zap,
+  Gamepad2,
+  Plug,
 } from 'lucide-react'
 import type { Device } from '../../types/device'
 import { useDeviceStore } from '../../stores/deviceStore'
@@ -59,10 +61,26 @@ export default function DeviceCard({ device }: Props) {
             >
               {device.name}
             </Link>
-            <p className="text-xs text-steel-400">{device.driver.toUpperCase()}</p>
+            <div className="flex items-center gap-2 text-xs text-steel-400">
+              <span>{device.driver.toUpperCase()}</span>
+              {device.connectionInfo && !device.simulated && (
+                <span className="flex items-center gap-1 text-steel-500">
+                  <Plug className="w-3 h-3" />
+                  {device.connectionInfo}
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <StatusBadge state={device.state} />
+        <div className="flex items-center gap-2">
+          {device.simulated && (
+            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded">
+              <Gamepad2 className="w-3 h-3" />
+              SZIM
+            </span>
+          )}
+          <StatusBadge state={device.state} />
+        </div>
       </div>
       
       {/* Body */}
@@ -111,11 +129,13 @@ export default function DeviceCard({ device }: Props) {
         )}
         
         {/* Error message */}
-        {isAlarm && device.status?.error_message && (
+        {(isAlarm && device.status?.error_message) || device.lastError ? (
           <div className="bg-red-500/10 border border-red-500/30 rounded-md p-2">
-            <p className="text-sm text-red-400">{device.status.error_message}</p>
+            <p className="text-sm text-red-400">
+              {device.status?.error_message || device.lastError}
+            </p>
           </div>
-        )}
+        ) : null}
         
         {/* Controls */}
         <div className="flex items-center gap-2 pt-2 border-t border-steel-700">

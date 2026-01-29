@@ -6,6 +6,11 @@ export default defineConfig({
   server: {
     port: 4000,
     host: '0.0.0.0',
+    // HMR saját porton, hogy ne ütközzön a Socket.IO proxy-val
+    hmr: {
+      port: 4000,
+      clientPort: 4000,
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:4001',
@@ -15,6 +20,12 @@ export default defineConfig({
         target: 'http://localhost:4001',
         changeOrigin: true,
         ws: true,
+        // Proxy hibák kezelése
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            console.log('Socket.IO proxy error (ignorálható):', err.message)
+          })
+        },
       },
     },
   },

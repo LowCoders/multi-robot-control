@@ -105,11 +105,13 @@ class GrblDevice(DeviceDriver):
     """
     
     # GRBL válasz minták
+    # GRBL 0.9: <Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>
+    # GRBL 1.1: <Idle|MPos:0.000,0.000,0.000|WPos:0.000,0.000,0.000>
     STATUS_PATTERN = re.compile(
-        r"<(\w+)\|"
+        r"<(\w+)[,|]"
         r"MPos:(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
-        r"(?:\|WPos:(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*))?"
-        r"(?:\|.*?)?"
+        r"(?:[,|]WPos:(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*))?"
+        r"(?:[,|].*?)?"
         r">"
     )
     OK_PATTERN = re.compile(r"^ok$", re.IGNORECASE)
@@ -162,9 +164,7 @@ class GrblDevice(DeviceDriver):
         self._serial: Optional[serial.Serial] = None
         self._settings: Optional[GrblSettings] = None
         self._grbl_state: GrblState = GrblState.IDLE
-        self._read_lock = asyncio.Lock()
-        self._write_lock = asyncio.Lock()
-        self._status_lock = asyncio.Lock()  # Separate lock for status queries
+        self._serial_lock = asyncio.Lock()  # Single lock for all serial operations
         self._status_polling = False
         self._poll_task: Optional[asyncio.Task] = None
         self._run_task: Optional[asyncio.Task] = None  # Track running program task
@@ -259,52 +259,56 @@ class GrblDevice(DeviceDriver):
         if not self._serial or not self._serial.is_open:
             raise ConnectionError("Nincs kapcsolat")
         
-        async with self._write_lock:
+        async with self._serial_lock:
             # Parancs küldése (non-blocking)
             cmd = command.strip() + "\n"
             await asyncio.to_thread(self._serial.write, cmd.encode())
             
             # Válasz olvasása
-            return await self._read_response()
+            return await self._read_response_unlocked()
     
     async def _read_response(self, timeout: float = None) -> str:
-        """Válasz olvasása a soros portról"""
+        """Válasz olvasása a soros portról (lock-ot vesz a biztonság kedvéért)"""
+        async with self._serial_lock:
+            return await self._read_response_unlocked(timeout)
+    
+    async def _read_response_unlocked(self, timeout: float = None) -> str:
+        """Válasz olvasása a soros portról (lock nélkül, a hívónak kell lock-olnia)"""
         if not self._serial:
             return ""
         
-        async with self._read_lock:
-            response_lines = []
-            start_time = asyncio.get_event_loop().time()
-            timeout = timeout or self.timeout
+        response_lines = []
+        start_time = asyncio.get_event_loop().time()
+        timeout = timeout or self.timeout
+        
+        while True:
+            # Check in_waiting in thread to avoid blocking
+            in_waiting = await asyncio.to_thread(lambda: self._serial.in_waiting if self._serial else 0)
+            if in_waiting > 0:
+                try:
+                    # Read line in thread
+                    line_bytes = await asyncio.to_thread(self._serial.readline)
+                    line = line_bytes.decode().strip()
+                    if line:
+                        response_lines.append(line)
+                        
+                        # Ha ok vagy error, befejezzük
+                        if self.OK_PATTERN.match(line):
+                            break
+                        if self.ERROR_PATTERN.match(line):
+                            break
+                        if self.ALARM_PATTERN.match(line):
+                            break
+                except Exception:
+                    pass
+            else:
+                await asyncio.sleep(0.01)
             
-            while True:
-                # Check in_waiting in thread to avoid blocking
-                in_waiting = await asyncio.to_thread(lambda: self._serial.in_waiting if self._serial else 0)
-                if in_waiting > 0:
-                    try:
-                        # Read line in thread
-                        line_bytes = await asyncio.to_thread(self._serial.readline)
-                        line = line_bytes.decode().strip()
-                        if line:
-                            response_lines.append(line)
-                            
-                            # Ha ok vagy error, befejezzük
-                            if self.OK_PATTERN.match(line):
-                                break
-                            if self.ERROR_PATTERN.match(line):
-                                break
-                            if self.ALARM_PATTERN.match(line):
-                                break
-                    except Exception:
-                        pass
-                else:
-                    await asyncio.sleep(0.01)
-                
-                # Timeout ellenőrzés
-                if asyncio.get_event_loop().time() - start_time > timeout:
-                    break
-            
-            return "\n".join(response_lines)
+            # Timeout ellenőrzés
+            if asyncio.get_event_loop().time() - start_time > timeout:
+                break
+        
+        return "\n".join(response_lines)
     
     async def _load_settings(self) -> None:
         """GRBL beállítások betöltése"""
@@ -315,8 +319,15 @@ class GrblDevice(DeviceDriver):
             match = self.SETTING_PATTERN.match(line)
             if match:
                 key = int(match.group(1))
-                value = float(match.group(2))
-                settings[key] = value
+                value_str = match.group(2)
+                # Egyes GRBL firmware-ek leírást is tartalmaznak: "10 (step pulse, usec)"
+                # Csak a számot vesszük ki
+                value_str = value_str.split()[0].split('(')[0].strip()
+                try:
+                    value = float(value_str)
+                    settings[key] = value
+                except ValueError:
+                    print(f"GRBL beállítás parse hiba: ${key}={match.group(2)}")
         
         self._settings = GrblSettings(settings=settings)
         
@@ -347,8 +358,8 @@ class GrblDevice(DeviceDriver):
         if not self._serial or not self._serial.is_open:
             return self._status
         
-        # Use lock to prevent race conditions with other commands
-        async with self._status_lock:
+        # Use same lock as commands to prevent race conditions
+        async with self._serial_lock:
             try:
                 # Státusz lekérdezés (?) - non-blocking write
                 await asyncio.to_thread(self._serial.write, b"?")
@@ -476,9 +487,13 @@ class GrblDevice(DeviceDriver):
             if axis not in ["X", "Y", "Z"]:
                 return False
             
-            # GRBL $J jog parancs
-            cmd = f"$J=G91 {axis}{distance:.3f} F{feed_rate:.0f}"
+            # GRBL 0.9 kompatibilis jog: G91 G0 (relatív pozícionálás)
+            # GRBL 1.1+ esetén $J parancsot lehetne használni, de ez mindkettővel működik
+            cmd = f"G91 G0 {axis}{distance:.3f} F{feed_rate:.0f}"
             response = await self._send_command(cmd)
+            
+            # Vissza abszolút módba
+            await self._send_command("G90")
             
             return "ok" in response.lower()
             

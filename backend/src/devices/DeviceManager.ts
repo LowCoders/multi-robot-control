@@ -58,6 +58,9 @@ export interface Device {
   driver: string;
   connected: boolean;
   state: string;
+  simulated?: boolean;
+  connectionInfo?: string;
+  lastError?: string | null;
   status?: DeviceStatus;
   capabilities?: DeviceCapabilities;
 }
@@ -373,6 +376,9 @@ export class DeviceManager {
         type: string;
         connected: boolean;
         state: string;
+        simulated?: boolean;
+        connectionInfo?: string;
+        lastError?: string | null;
       }>;
       
       for (const bd of bridgeDevices) {
@@ -380,6 +386,9 @@ export class DeviceManager {
         if (device) {
           device.connected = bd.connected;
           device.state = bd.state;
+          device.simulated = bd.simulated;
+          device.connectionInfo = bd.connectionInfo;
+          device.lastError = bd.lastError;
         }
       }
     } catch (error) {

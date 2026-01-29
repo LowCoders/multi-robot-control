@@ -13,6 +13,7 @@ devices:
     driver: linuxcnc
     type: cnc_mill
     enabled: true
+    simulated: true  # Szimulált eszköz (LinuxCNC nincs csatlakoztatva)
     config:
       # LinuxCNC INI fájl útvonala
       ini_file: /home/user/linuxcnc/configs/jp3163b/jp3163b.ini
@@ -25,6 +26,7 @@ devices:
     driver: grbl
     type: laser_cutter
     enabled: true
+    simulated: false  # Valós eszköz /dev/ttyUSB0 porton
     config:
       # Soros port
       port: /dev/ttyUSB0

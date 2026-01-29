@@ -2,36 +2,52 @@
   "id": "cnc_main",
   "name": "JP-3163B CNC Maró",
   "type": "cnc_mill",
-  "workEnvelope": { "x": 300, "y": 400, "z": 80 },
+  "workEnvelope": {
+    "x": 300,
+    "y": 400,
+    "z": 80
+  },
   "axes": [
-    { 
-      "name": "X", 
-      "type": "linear", 
-      "min": 0, 
-      "max": 300, 
+    {
+      "name": "X",
+      "type": "linear",
+      "min": 0,
+      "max": 300,
       "homePosition": 0,
       "color": "#ef4444",
-      "dimensions": { "width": 60, "height": 40, "depth": 80 }
+      "dimensions": {
+        "width": 60,
+        "height": 40,
+        "depth": 80
+      }
     },
-    { 
-      "name": "Y", 
-      "type": "linear", 
-      "min": 0, 
-      "max": 400, 
+    {
+      "name": "Y",
+      "type": "linear",
+      "min": 0,
+      "max": 400,
       "homePosition": 0,
-      "color": "#22c55e", 
+      "color": "#22c55e",
       "parent": "X",
-      "dimensions": { "width": 80, "height": 40, "depth": 60 }
+      "dimensions": {
+        "width": 80,
+        "height": 40,
+        "depth": 60
+      }
     },
-    { 
-      "name": "Z", 
-      "type": "linear", 
-      "min": -80, 
-      "max": 0, 
+    {
+      "name": "Z",
+      "type": "linear",
+      "min": -80,
+      "max": 0,
       "homePosition": 0,
-      "color": "#3b82f6", 
+      "color": "#3b82f6",
       "parent": "Y",
-      "dimensions": { "width": 60, "height": 120, "depth": 60 }
+      "dimensions": {
+        "width": 60,
+        "height": 120,
+        "depth": 60
+      }
     }
   ],
   "spindle": {
@@ -53,6 +69,16 @@
   "visuals": {
     "showGrid": true,
     "showAxesHelper": true,
-    "backgroundColor": "#1a1a2e"
+    "backgroundColor": "#1a1a2e",
+    "cameraPosition": {
+      "x": 143,
+      "y": -597,
+      "z": 178
+    },
+    "cameraTarget": {
+      "x": 150,
+      "y": 200,
+      "z": 0
+    }
   }
 }

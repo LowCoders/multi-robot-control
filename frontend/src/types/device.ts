@@ -67,6 +67,9 @@ export interface Device {
   driver: string
   connected: boolean
   state: DeviceState
+  simulated?: boolean
+  connectionInfo?: string
+  lastError?: string | null
   status?: DeviceStatus
   capabilities?: DeviceCapabilities
 }
