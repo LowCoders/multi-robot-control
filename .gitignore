@@ -33,3 +33,4 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 .pids/
+firmware/grbl-4axis/grbl-source/
