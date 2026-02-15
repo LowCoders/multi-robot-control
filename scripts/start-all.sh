@@ -81,15 +81,21 @@ ensure_port_free 4000 "Frontend"
 # 1. Python Bridge indítása
 echo ""
 echo -e "${GREEN}[1/3]${NC} Python Bridge indítása..."
-cd "$PROJECT_DIR/drivers"
 
-# Venv létrehozása ha nem létezik (pip install csak egyszer kell)
-if [ ! -d "venv" ]; then
+DRIVERS_DIR="$PROJECT_DIR/drivers"
+VENV_DIR="$DRIVERS_DIR/venv"
+
+# Venv létrehozása ha nem létezik
+if [ ! -d "$VENV_DIR" ]; then
     echo "Python virtuális környezet létrehozása..."
-    python3 -m venv venv
-    . venv/bin/activate
-    pip install -r requirements.txt
-    deactivate
+    python3 -m venv "$VENV_DIR"
+fi
+
+# Csomagok telepítése ha uvicorn hiányzik
+if ! "$VENV_DIR/bin/python3" -c "import uvicorn" 2>/dev/null; then
+    echo "Python csomagok telepítése..."
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    "$VENV_DIR/bin/pip" install -r "$DRIVERS_DIR/requirements.txt"
 fi
 
 export DEVICES_CONFIG="$PROJECT_DIR/config/devices.yaml"
@@ -97,14 +103,13 @@ export BRIDGE_HOST="0.0.0.0"
 export BRIDGE_PORT="4002"
 
 # sg dialout biztosítja a soros port hozzáférést
-# A venv aktiválás CSAK a subshell-ben történik
-# Port ellenőrzés a subshell-en belül is, hogy elkerüljük a dupla indítást
+# Teljes elérési utakat használunk a subshell-ben
 sg dialout -c "
     if lsof -ti :$BRIDGE_PORT >/dev/null 2>&1; then
         echo 'Bridge már fut, kihagyás...'
         exit 0
     fi
-    cd $PROJECT_DIR/drivers && . venv/bin/activate && python3 -m uvicorn bridge_server:app --host $BRIDGE_HOST --port $BRIDGE_PORT
+    cd '$DRIVERS_DIR' && '$VENV_DIR/bin/python3' -m uvicorn bridge_server:app --host $BRIDGE_HOST --port $BRIDGE_PORT
 " &
 BRIDGE_PID=$!
 echo $BRIDGE_PID > "$PIDS_DIR/bridge.pid"

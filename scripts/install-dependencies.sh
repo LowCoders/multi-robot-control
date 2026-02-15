@@ -45,17 +45,47 @@ fi
 echo "Node.js verzió: $(node -v)"
 echo "npm verzió: $(npm -v)"
 
-# Python csomagok
+# Python csomagok (virtuális környezetben)
 echo ""
 echo "[4/6] Python csomagok telepítése..."
-pip3 install --upgrade pip
-pip3 install \
-    pyserial \
-    fastapi \
-    uvicorn \
-    websockets \
-    pyyaml \
-    python-dotenv
+REAL_USER=${SUDO_USER:-$USER}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+DRIVERS_DIR="$PROJECT_DIR/drivers"
+VENV_DIR="$DRIVERS_DIR/venv"
+
+# Régi/hibás venv törlése ha szükséges
+if [ -d "$VENV_DIR" ] && [ ! -f "$VENV_DIR/bin/pip" ]; then
+    echo "Hibás venv törlése..."
+    rm -rf "$VENV_DIR"
+fi
+
+# Virtuális környezet létrehozása
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Python virtuális környezet létrehozása: $VENV_DIR"
+    sudo -u "$REAL_USER" python3 -m venv "$VENV_DIR"
+fi
+
+# Csomagok telepítése a venv-be (requirements.txt-ből)
+echo "Python csomagok telepítése..."
+sudo -u "$REAL_USER" "$VENV_DIR/bin/pip" install --upgrade pip
+if [ -f "$DRIVERS_DIR/requirements.txt" ]; then
+    sudo -u "$REAL_USER" "$VENV_DIR/bin/pip" install -r "$DRIVERS_DIR/requirements.txt"
+else
+    echo "FIGYELEM: $DRIVERS_DIR/requirements.txt nem található!"
+    sudo -u "$REAL_USER" "$VENV_DIR/bin/pip" install \
+        pyserial \
+        fastapi \
+        "uvicorn[standard]" \
+        websockets \
+        pyyaml \
+        python-dotenv
+fi
+
+# Venv tulajdonosának beállítása
+chown -R "$REAL_USER:$REAL_USER" "$VENV_DIR"
+
+echo "Python csomagok telepítve: $VENV_DIR"
 
 # Soros port eszközök
 echo ""
@@ -67,8 +97,7 @@ apt install -y \
 # Felhasználó hozzáadása a dialout csoporthoz
 echo ""
 echo "[6/6] Felhasználói jogosultságok..."
-REAL_USER=${SUDO_USER:-$USER}
-usermod -aG dialout $REAL_USER
+usermod -aG dialout "$REAL_USER"
 echo "Felhasználó '$REAL_USER' hozzáadva a 'dialout' csoporthoz"
 
 echo ""
@@ -76,7 +105,12 @@ echo "=========================================="
 echo "Telepítés befejezve!"
 echo "=========================================="
 echo ""
+echo "Python venv: $VENV_DIR"
+echo "  Aktiválás:    source $VENV_DIR/bin/activate"
+echo "  Deaktiválás:  deactivate"
+echo ""
 echo "Következő lépések:"
 echo "1. Jelentkezz ki és be újra a dialout jogosultsághoz"
 echo "2. Futtasd: ./scripts/setup-rt-kernel.sh"
+echo "3. Rendszer indítása: ./scripts/start-all.sh"
 echo ""

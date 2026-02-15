@@ -29,16 +29,25 @@ echo ""
 # Python driver tesztek
 echo "🔌 Python driver tesztek..."
 echo "----------------------------------------------"
-cd "$PROJECT_ROOT/drivers"
-if [ -d "venv" ]; then
-    source venv/bin/activate
-else
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -q pytest pytest-asyncio pyserial pyyaml fastapi
+
+DRIVERS_DIR="$PROJECT_ROOT/drivers"
+VENV_DIR="$DRIVERS_DIR/venv"
+
+# Venv létrehozása ha nem létezik
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Python virtuális környezet létrehozása..."
+    python3 -m venv "$VENV_DIR"
 fi
-python -m pytest tests/ -v
-deactivate
+
+# Csomagok telepítése ha pytest hiányzik
+if ! "$VENV_DIR/bin/python3" -c "import pytest" 2>/dev/null; then
+    echo "Python csomagok telepítése..."
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    "$VENV_DIR/bin/pip" install -r "$DRIVERS_DIR/requirements.txt"
+fi
+
+# Tesztek futtatása
+"$VENV_DIR/bin/python3" -m pytest "$DRIVERS_DIR/tests/" -v
 echo ""
 
 echo "=============================================="
