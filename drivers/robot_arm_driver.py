@@ -1,24 +1,34 @@
 """
-Robot Arm Device Driver - 3 tengelyes ipari robotkar (Red Sun Global / AXIS4UI)
+Robot Arm Device Driver - 3 tengelyes robotkar GRBL firmware-rel
 Multi-Robot Control System
 
-Protokoll (reverse-engineered):
-  - Serial: CH340 USB, 115200 baud, 8N1
-  - Welcome: "INFO: Connected, please calibrate the mechanical coordinates！"
-  - Mozgás: "G0 X{angle} Y{angle} Z{angle} F{speed}" vagy "G1 ..."
-  - Válasz mozgásra: "INFO: LINEAR MOVE: X{val} Y{val} Z{val} ."
-  - Gripper szervó: "M3 S{angle}" (0=nyitva, 90=zárva)
-  - Endstop: "M119" -> "INFO: ENDSTOP: [X:0 Y:0 Z:0]"
-  - Abszolút/relatív mód: G90/G91 (nincs válasz)
-  - Hiba: "ERROR: COMMAND NOT RECOGNIZED"
-  - NINCS GRBL-szerű "?" status query
-  - Pozíciót a mozgás válaszokból olvassuk ki
+Támogatott firmware-ek:
+  - GRBL 0.9j (grbl4axis fork)
+  - Eredeti AXIS4UI firmware (legacy mód)
+
+GRBL protokoll:
+  - Serial: 115200 baud, 8N1
+  - Welcome: "Grbl 0.9j ['$' for help]"
+  - Mozgás: "G1 X{j2} Y{j3} Z{j1} F{speed}" (joint szögek fokban)
+  - Válasz: "ok" vagy "error:N"
+  - Státusz: "?" -> "<Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>"
+  - Beállítások: "$$" -> "$100=80.000 (x, step/mm)" stb.
+
+Joint-GRBL tengely mapping:
+  - J1 (bázis) -> Z tengely
+  - J2 (váll)  -> X tengely
+  - J3 (könyök) -> Y tengely
+
+Vezérlési módok:
+  - Joint mód: közvetlen joint szög vezérlés
+  - Cartesian mód: X,Y,Z koordináták -> IK -> joint szögek
 """
 
 import asyncio
 import re
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+from enum import Enum
 
 try:
     import serial
@@ -36,42 +46,79 @@ from base import (
     Position,
 )
 
+# Kinematika modul importálása
+try:
+    from kinematics import (
+        inverse_kinematics,
+        forward_kinematics,
+        RobotConfig,
+        JointAngles,
+        CartesianPosition,
+        grbl_to_joints,
+        joints_to_grbl,
+    )
+    KINEMATICS_AVAILABLE = True
+except ImportError:
+    KINEMATICS_AVAILABLE = False
+    print("⚠️ kinematics modul nem elérhető - csak Joint mód használható")
+
+
+class ControlMode(Enum):
+    """Vezérlési módok"""
+    JOINT = "joint"           # Közvetlen joint szög vezérlés
+    CARTESIAN = "cartesian"   # X,Y,Z koordináták IK-val
+
 
 class RobotArmDevice(DeviceDriver):
     """
-    3 tengelyes ipari robotkar driver (Red Sun Global / AXIS4UI kompatibilis).
+    3 tengelyes robotkar driver GRBL firmware-rel.
     
     A robotkar 3 forgó csuklóval rendelkezik (fokban mérve):
-    - J1 (X): Bázis forgás (függőleges tengely körül)
-    - J2 (Y): Váll (vízszintes tengely körül)
-    - J3 (Z): Könyök (vízszintes tengely körül)
+    - J1: Bázis forgás (függőleges tengely körül) -> GRBL Z
+    - J2: Váll (vízszintes tengely körül) -> GRBL X
+    - J3: Könyök (vízszintes tengely körül) -> GRBL Y
     
     Végeffektorok: gripper (szervóvezérelt megfogó), szívó (sucker)
+    
+    Vezérlési módok:
+    - Joint mód: közvetlen joint szög vezérlés (j1, j2, j3 fokban)
+    - Cartesian mód: X,Y,Z koordináták mm-ben -> IK -> joint szögek
     
     Használat:
         device = RobotArmDevice(
             device_id="robot_arm_1",
-            device_name="Ipari Robotkar",
+            device_name="Robot Kar",
             port="/dev/ttyUSB0",
-            baudrate=115200,
         )
         await device.connect()
+        
+        # Joint mód (alapértelmezett)
+        await device.jog('X', 10, 50)  # J2 (váll) +10 fok
+        
+        # Cartesian mód
+        await device.set_control_mode(ControlMode.CARTESIAN)
+        await device.move_to_xyz(200, 0, 150, speed=50)
     """
     
-    # Válasz minták
-    # Mozgás válasz: "INFO: LINEAR MOVE: X0.00 Y90.00 Z0.00 ."
+    # GRBL válasz minták
+    GRBL_OK_PATTERN = re.compile(r"^ok$", re.IGNORECASE)
+    GRBL_ERROR_PATTERN = re.compile(r"^error:(\d+)$", re.IGNORECASE)
+    # WPos-t olvassuk (Work Position), nem MPos-t, mert a G92 a WPos-t nullázza
+    GRBL_STATUS_PATTERN = re.compile(
+        r"<(\w+),MPos:[^,]*,[^,]*,[^,]*,[^,]*,WPos:(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
+    )
+    GRBL_WELCOME_PATTERN = re.compile(r"Grbl\s+(\d+\.\d+\w*)")
+    
+    # Legacy (AXIS4UI) válasz minták
     MOVE_RESPONSE_PATTERN = re.compile(
         r"INFO:\s*LINEAR\s*MOVE:\s*X(-?\d+\.?\d*)\s*Y(-?\d+\.?\d*)\s*Z(-?\d+\.?\d*)"
     )
-    # Endstop válasz: "INFO: ENDSTOP: [X:0 Y:0 Z:0]"
     ENDSTOP_PATTERN = re.compile(
         r"INFO:\s*ENDSTOP:\s*\[X:(\d+)\s*Y:(\d+)\s*Z:(\d+)\]"
     )
-    # Mód jelzések
     INFO_PATTERN = re.compile(r"^INFO:\s*(.+)$", re.IGNORECASE)
     ERROR_PATTERN = re.compile(r"^ERROR:\s*(.+)$", re.IGNORECASE)
     
-    # Ismert INFO üzenetek
     WELCOME_MSG = "Connected, please calibrate the mechanical coordinates"
     
     def __init__(
@@ -81,10 +128,8 @@ class RobotArmDevice(DeviceDriver):
         port: str = "/dev/ttyUSB0",
         baudrate: int = 115200,
         timeout: float = 2.0,
-        axis_mapping: dict = None,
-        axis_invert: dict = None,
-        axis_limits: dict = None,
-        axis_scale: dict = None,
+        robot_config: RobotConfig = None,
+        use_grbl: bool = True,
     ):
         super().__init__(device_id, device_name, DeviceType.ROBOT_ARM)
         
@@ -95,41 +140,41 @@ class RobotArmDevice(DeviceDriver):
         self.baudrate = baudrate
         self.timeout = timeout
         
-        # Tengely mapping: logikai (UI) -> fizikai (firmware)
-        # Pl. {'X': 'Y', 'Y': 'X', 'Z': 'Z'} ha a firmware X motorja
-        # fizikailag a Y ízülethez van kötve.
-        # None vagy {} = identitás (nincs csere)
-        self._axis_map = axis_mapping or {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
-        # Reverse map: firmware -> logikai (válasz feldolgozáshoz)
-        self._axis_map_reverse = {v: k for k, v in self._axis_map.items()}
+        # GRBL mód flag
+        self._use_grbl = use_grbl
+        self._grbl_version = None
         
-        # Tengely invertálás: melyik logikai tengely iránya fordított
-        # Pl. {'Y': True} ha a Y tengely pozitív iránya a firmware-ben
-        # ellentétes a kívánt UI irányhoz képest
-        self._axis_invert = axis_invert or {}
+        # Robot konfiguráció (méretek az IK-hoz)
+        self._robot_config = robot_config or RobotConfig()
         
-        # Tengely skálázás: firmware egység -> fizikai fok konverziós faktor
-        # Pl. {'X': 0.15} azt jelenti: 1 firmware egység = 0.15 fizikai fok
-        # Ha nincs megadva: 1.0 (firmware egység = fok, nincs konverzió)
-        self._axis_scale = axis_scale or {}
+        # Vezérlési mód
+        self._control_mode = ControlMode.JOINT
         
-        # Szoftveres tengelylimitek (logikai tengelyekre, fokban)
-        # Pl. {'X': [-180, 180], 'Y': [-90, 90], 'Z': [-120, 120]}
+        # Joint pozíció (j1, j2, j3 fokban) - a GRBL X,Y,Z-ből számolva
+        self._joint_position = JointAngles(j1=0, j2=0, j3=0) if KINEMATICS_AVAILABLE else None
+        
+        # Cartesian pozíció (FK-ból számolva)
+        self._cartesian_position = CartesianPosition(x=0, y=0, z=0) if KINEMATICS_AVAILABLE else None
+        
+        # Tengely mapping: GRBL -> Joint
+        # GRBL X = J2 (váll), GRBL Y = J3 (könyök), GRBL Z = J1 (bázis)
+        # Nem konfigurálható - fix a firmware bekötés alapján
+        self._grbl_to_joint = {'X': 'J2', 'Y': 'J3', 'Z': 'J1'}
+        self._joint_to_grbl = {'J1': 'Z', 'J2': 'X', 'J3': 'Y'}
+        
+        # Szoftveres tengelylimitek (joint szögek, fokban)
+        self._joint_limits = {
+            'J1': (-180, 180),  # Bázis forgás
+            'J2': (-90, 90),    # Váll
+            'J3': (-135, 135),  # Könyök
+        }
+        
+        # Legacy tengely mapping (AXIS4UI kompatibilitás)
+        self._axis_map = {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
+        self._axis_map_reverse = {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
+        self._axis_invert = {}
+        self._axis_scale = {}
         self._axis_limits: Dict[str, tuple] = {}
-        if axis_limits:
-            for axis, lim in axis_limits.items():
-                if isinstance(lim, (list, tuple)) and len(lim) == 2:
-                    self._axis_limits[axis.upper()] = (float(lim[0]), float(lim[1]))
-            print(f"🤖 Tengelylimitek: {self._axis_limits}")
-        
-        if axis_mapping and axis_mapping != {'X': 'X', 'Y': 'Y', 'Z': 'Z'}:
-            print(f"🤖 Tengely mapping: {self._axis_map}")
-        if axis_invert:
-            inverted = [k for k, v in axis_invert.items() if v]
-            if inverted:
-                print(f"🤖 Invertált tengelyek: {', '.join(inverted)}")
-        if self._axis_scale:
-            print(f"🤖 Tengely skálák (fw->fok): {self._axis_scale}")
         
         self._serial: Optional[serial.Serial] = None
         self._serial_lock = asyncio.Lock()
@@ -210,23 +255,41 @@ class RobotArmDevice(DeviceDriver):
                 )
                 welcome = welcome_bytes.decode(errors='replace').strip()
             
-            if self.WELCOME_MSG in welcome:
-                print(f"🤖 Robotkar felismertve: {welcome}")
-                self._calibrated = False
+            # GRBL vagy legacy firmware detektálás
+            grbl_match = self.GRBL_WELCOME_PATTERN.search(welcome)
+            if grbl_match:
+                self._use_grbl = True
+                self._grbl_version = grbl_match.group(1)
+                print(f"🤖 GRBL firmware detektálva: v{self._grbl_version}")
+            elif self.WELCOME_MSG in welcome:
+                self._use_grbl = False
+                print(f"🤖 Legacy firmware (AXIS4UI): {welcome}")
             else:
-                print(f"🤖 Robotkar válasz: {repr(welcome)}")
+                # Próbáljuk GRBL-ként kezelni
+                print(f"🤖 Firmware válasz: {repr(welcome)}")
             
             self._connected = True
             self._set_state(DeviceState.IDLE)
             
-            # Pozíció szinkronizálás: G92-vel nullázzuk a firmware pozícióját
-            # hogy megegyezzen a driver követett pozíciójával (0, 0, 0).
-            # A firmware maga is kéri: "please calibrate the mechanical coordinates"
-            await self._send_command_no_response("G92 X0 Y0 Z0")
-            await asyncio.sleep(0.3)
-            self._status.position = Position(x=0.0, y=0.0, z=0.0)
-            self._status.work_position = Position(x=0.0, y=0.0, z=0.0)
-            self._calibrated = True
+            if self._use_grbl:
+                # GRBL: státusz lekérdezés és pozíció szinkronizálás
+                status = await self.get_grbl_status()
+                if status:
+                    print(f"🤖 GRBL státusz: {status.get('state', 'unknown')}")
+                    if KINEMATICS_AVAILABLE:
+                        print(f"🤖 Joint pozíció: J1={status['joints']['j1']:.1f}° "
+                              f"J2={status['joints']['j2']:.1f}° J3={status['joints']['j3']:.1f}°")
+                        if status.get('cartesian'):
+                            print(f"🤖 Cartesian: X={status['cartesian']['x']:.1f}mm "
+                                  f"Y={status['cartesian']['y']:.1f}mm Z={status['cartesian']['z']:.1f}mm")
+                self._calibrated = True
+            else:
+                # Legacy: G92-vel nullázzuk a firmware pozícióját
+                await self._send_command_no_response("G92 X0 Y0 Z0")
+                await asyncio.sleep(0.3)
+                self._status.position = Position(x=0.0, y=0.0, z=0.0)
+                self._status.work_position = Position(x=0.0, y=0.0, z=0.0)
+                self._calibrated = True
             
             # Állapot frissítése
             self._status.gripper_state = self._gripper_state
@@ -816,6 +879,333 @@ class RobotArmDevice(DeviceDriver):
         except Exception as e:
             self._set_error(f"Move hiba: {str(e)}")
             return False
+    
+    # =========================================
+    # GRBL-SPECIFIKUS METÓDUSOK
+    # =========================================
+    
+    async def set_control_mode(self, mode: ControlMode) -> bool:
+        """Vezérlési mód váltása (Joint vagy Cartesian)"""
+        if mode == ControlMode.CARTESIAN and not KINEMATICS_AVAILABLE:
+            print("🤖 Cartesian mód nem elérhető - kinematics modul hiányzik")
+            return False
+        
+        self._control_mode = mode
+        print(f"🤖 Vezérlési mód: {mode.value}")
+        return True
+    
+    def get_control_mode(self) -> ControlMode:
+        """Aktuális vezérlési mód lekérdezése"""
+        return self._control_mode
+    
+    async def move_to_joints(self, j1: float, j2: float, j3: float, speed: float = 500) -> bool:
+        """
+        Joint pozícióra mozgás (közvetlenül, IK nélkül).
+        
+        Args:
+            j1: Bázis forgás fokban
+            j2: Váll szög fokban
+            j3: Könyök szög fokban
+            speed: Sebesség (GRBL F érték, fok/perc)
+        """
+        try:
+            # Joint limitek ellenőrzése
+            j1 = max(self._joint_limits['J1'][0], min(self._joint_limits['J1'][1], j1))
+            j2 = max(self._joint_limits['J2'][0], min(self._joint_limits['J2'][1], j2))
+            j3 = max(self._joint_limits['J3'][0], min(self._joint_limits['J3'][1], j3))
+            
+            # Joint -> GRBL tengely konverzió
+            # J1 -> Z, J2 -> X, J3 -> Y
+            # Megjegyzés: $3=1 GRBL beállítás invertálja az X tengelyt
+            grbl_x = j2   # Váll
+            grbl_y = j3   # Könyök
+            grbl_z = j1   # Bázis
+            
+            cmd = f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{speed:.0f}"
+            response = await self._send_command(cmd)
+            
+            if self._use_grbl:
+                if self.GRBL_ERROR_PATTERN.search(response):
+                    return False
+            else:
+                if self.ERROR_PATTERN.search(response):
+                    return False
+            
+            # Pozíció frissítése
+            if KINEMATICS_AVAILABLE:
+                self._joint_position = JointAngles(j1=j1, j2=j2, j3=j3)
+                self._cartesian_position = forward_kinematics(j1, j2, j3, self._robot_config)
+            
+            return True
+            
+        except Exception as e:
+            self._set_error(f"Move joints hiba: {str(e)}")
+            return False
+    
+    async def move_to_xyz(self, x: float, y: float, z: float, speed: float = 500) -> bool:
+        """
+        Cartesian pozícióra mozgás (IK-val).
+        
+        Args:
+            x, y, z: Cél pozíció mm-ben (robot koordináta-rendszerben)
+            speed: Sebesség (GRBL F érték, fok/perc)
+        
+        Returns:
+            True ha sikeres, False ha IK hiba vagy elérhetetlen pozíció
+        """
+        if not KINEMATICS_AVAILABLE:
+            print("🤖 Cartesian mód nem elérhető - kinematics modul hiányzik")
+            return False
+        
+        try:
+            # Inverz kinematika
+            angles = inverse_kinematics(x, y, z, self._robot_config)
+            
+            if not angles.valid:
+                print(f"🤖 IK hiba: {angles.error}")
+                return False
+            
+            # Joint pozícióra mozgás
+            return await self.move_to_joints(angles.j1, angles.j2, angles.j3, speed)
+            
+        except Exception as e:
+            self._set_error(f"Move XYZ hiba: {str(e)}")
+            return False
+    
+    async def move_to_xyz_linear(self, x: float, y: float, z: float, 
+                                  speed: float = 500, step_size: float = 5.0) -> bool:
+        """
+        Cartesian lineáris mozgás - egyenes vonal a TCP-nek.
+        
+        A mozgást kis lépésekre bontja és minden ponthoz IK-t számol,
+        így a TCP egyenes vonalat követ Cartesian térben (nem íves pályát).
+        
+        Args:
+            x, y, z: Cél pozíció mm-ben
+            speed: Sebesség (GRBL F érték)
+            step_size: Lépésköz mm-ben (kisebb = pontosabb, de lassabb)
+        
+        Returns:
+            True ha sikeres, False ha IK hiba
+        """
+        import math
+        
+        if not KINEMATICS_AVAILABLE:
+            print("🤖 Cartesian mód nem elérhető - kinematics modul hiányzik")
+            return False
+        
+        try:
+            # Aktuális pozíció lekérése
+            status = await self.get_grbl_status()
+            if not status:
+                print("🤖 Státusz lekérdezés sikertelen")
+                return False
+            
+            j1 = status['joints']['j1']
+            j2 = status['joints']['j2']
+            j3 = status['joints']['j3']
+            
+            # FK: jelenlegi joint szögekből Cartesian pozíció
+            start = forward_kinematics(j1, j2, j3, self._robot_config)
+            
+            # Távolság számítása
+            dx = x - start.x
+            dy = y - start.y
+            dz = z - start.z
+            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+            
+            if dist < 0.1:  # Már ott vagyunk
+                return True
+            
+            # Lépések száma
+            n_steps = max(1, int(dist / step_size))
+            
+            print(f"🤖 Lineáris mozgás: {dist:.1f}mm, {n_steps} lépés")
+            
+            # Interpoláció és mozgás
+            for i in range(1, n_steps + 1):
+                t = i / n_steps
+                
+                # Köztes pont
+                ix = start.x + t * dx
+                iy = start.y + t * dy
+                iz = start.z + t * dz
+                
+                # IK a köztes ponthoz
+                angles = inverse_kinematics(ix, iy, iz, self._robot_config)
+                if not angles.valid:
+                    print(f"🤖 IK hiba lépés {i}/{n_steps}: {angles.error}")
+                    return False
+                
+                # Mozgás (várakozás nélkül a köztes pontokra, kivéve az utolsót)
+                await self.move_to_joints(angles.j1, angles.j2, angles.j3, speed)
+                
+                # Rövid várakozás a GRBL buffer kezeléshez
+                # (A GRBL buffereli a G1 parancsokat, nem kell minden lépésnél várni)
+                if i < n_steps:
+                    await asyncio.sleep(0.05)  # 50ms - csak buffer sync
+            
+            return True
+            
+        except Exception as e:
+            self._set_error(f"Move XYZ linear hiba: {str(e)}")
+            return False
+    
+    async def jog_joint(self, joint: str, distance: float, speed: float = 500) -> bool:
+        """
+        Egyetlen joint relatív mozgatása.
+        
+        Args:
+            joint: 'J1', 'J2', vagy 'J3'
+            distance: Szög fokban (pozitív/negatív)
+            speed: Sebesség (fok/perc)
+        """
+        joint = joint.upper()
+        if joint not in ['J1', 'J2', 'J3']:
+            return False
+        
+        # Aktuális pozíció
+        if KINEMATICS_AVAILABLE and self._joint_position:
+            j1 = self._joint_position.j1
+            j2 = self._joint_position.j2
+            j3 = self._joint_position.j3
+        else:
+            # GRBL státuszból olvasás
+            j1 = self._status.position.z  # J1 = GRBL Z
+            j2 = self._status.position.x  # J2 = GRBL X
+            j3 = self._status.position.y  # J3 = GRBL Y
+        
+        # Cél pozíció
+        if joint == 'J1':
+            j1 += distance
+        elif joint == 'J2':
+            j2 += distance
+        elif joint == 'J3':
+            j3 += distance
+        
+        return await self.move_to_joints(j1, j2, j3, speed)
+    
+    async def jog_cartesian(self, axis: str, distance: float, speed: float = 500) -> bool:
+        """
+        Cartesian tengely relatív mozgatása (IK-val).
+        
+        Args:
+            axis: 'X', 'Y', vagy 'Z' (Cartesian koordináták)
+            distance: Távolság mm-ben
+            speed: Sebesség
+        """
+        if not KINEMATICS_AVAILABLE:
+            return False
+        
+        axis = axis.upper()
+        if axis not in ['X', 'Y', 'Z']:
+            return False
+        
+        # Aktuális Cartesian pozíció
+        if self._cartesian_position:
+            x = self._cartesian_position.x
+            y = self._cartesian_position.y
+            z = self._cartesian_position.z
+        else:
+            # FK-ból számolás
+            j1 = self._status.position.z
+            j2 = self._status.position.x
+            j3 = self._status.position.y
+            pos = forward_kinematics(j1, j2, j3, self._robot_config)
+            x, y, z = pos.x, pos.y, pos.z
+        
+        # Cél pozíció
+        if axis == 'X':
+            x += distance
+        elif axis == 'Y':
+            y += distance
+        elif axis == 'Z':
+            z += distance
+        
+        return await self.move_to_xyz(x, y, z, speed)
+    
+    async def get_grbl_status(self) -> dict:
+        """GRBL státusz lekérdezése '?' paranccsal"""
+        if not self._use_grbl:
+            return {}
+        
+        try:
+            response = await self._send_command("?")
+            match = self.GRBL_STATUS_PATTERN.search(response)
+            if match:
+                state = match.group(1)
+                grbl_x = float(match.group(2))
+                grbl_y = float(match.group(3))
+                grbl_z = float(match.group(4))
+                
+                # GRBL -> Joint konverzió
+                # Megjegyzés: $3=1 GRBL beállítás invertálja az X tengelyt
+                j1 = grbl_z  # Bázis
+                j2 = grbl_x  # Váll
+                j3 = grbl_y  # Könyök
+                
+                # Pozíció frissítése
+                self._status.position = Position(x=grbl_x, y=grbl_y, z=grbl_z)
+                
+                if KINEMATICS_AVAILABLE:
+                    self._joint_position = JointAngles(j1=j1, j2=j2, j3=j3)
+                    self._cartesian_position = forward_kinematics(j1, j2, j3, self._robot_config)
+                
+                return {
+                    'state': state,
+                    'grbl': {'x': grbl_x, 'y': grbl_y, 'z': grbl_z},
+                    'joints': {'j1': j1, 'j2': j2, 'j3': j3},
+                    'cartesian': {
+                        'x': self._cartesian_position.x if self._cartesian_position else 0,
+                        'y': self._cartesian_position.y if self._cartesian_position else 0,
+                        'z': self._cartesian_position.z if self._cartesian_position else 0,
+                    } if KINEMATICS_AVAILABLE else None,
+                }
+            return {}
+        except Exception as e:
+            print(f"🤖 GRBL státusz hiba: {e}")
+            return {}
+    
+    async def get_grbl_settings(self) -> dict:
+        """GRBL beállítások lekérdezése '$$' paranccsal"""
+        if not self._use_grbl:
+            return {}
+        
+        try:
+            response = await self._send_command("$$")
+            settings = {}
+            for line in response.split('\n'):
+                match = re.match(r'\$(\d+)=(-?\d+\.?\d*)', line)
+                if match:
+                    settings[int(match.group(1))] = float(match.group(2))
+            return settings
+        except Exception as e:
+            print(f"🤖 GRBL beállítások hiba: {e}")
+            return {}
+    
+    async def set_grbl_setting(self, setting: int, value: float) -> bool:
+        """GRBL beállítás módosítása"""
+        if not self._use_grbl:
+            return False
+        
+        try:
+            response = await self._send_command(f"${setting}={value}")
+            return "ok" in response.lower()
+        except Exception as e:
+            print(f"🤖 GRBL beállítás hiba: {e}")
+            return False
+    
+    def get_joint_position(self) -> Optional[JointAngles]:
+        """Aktuális joint pozíció lekérdezése"""
+        return self._joint_position
+    
+    def get_cartesian_position(self) -> Optional[CartesianPosition]:
+        """Aktuális Cartesian pozíció lekérdezése (FK-ból)"""
+        return self._cartesian_position
+    
+    def get_robot_config(self) -> RobotConfig:
+        """Robot konfiguráció (méretek) lekérdezése"""
+        return self._robot_config
     
     # =========================================
     # VÉGEFFEKTOR VEZÉRLÉS

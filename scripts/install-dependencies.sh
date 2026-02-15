@@ -87,16 +87,36 @@ chown -R "$REAL_USER:$REAL_USER" "$VENV_DIR"
 
 echo "Python csomagok telepítve: $VENV_DIR"
 
-# Soros port eszközök
+# Soros port eszközök és firmware feltöltés
 echo ""
-echo "[5/6] Soros port eszközök..."
+echo "[5/7] Soros port eszközök és firmware tools..."
 apt install -y \
     setserial \
-    minicom
+    minicom \
+    avrdude
+
+# PlatformIO (firmware fordítás és feltöltés)
+echo ""
+echo "[6/7] PlatformIO telepítése..."
+if ! sudo -u "$REAL_USER" "$VENV_DIR/bin/pip" show platformio &> /dev/null; then
+    echo "PlatformIO telepítése a Python venv-be..."
+    sudo -u "$REAL_USER" "$VENV_DIR/bin/pip" install platformio
+    echo "PlatformIO telepítve"
+else
+    echo "PlatformIO már telepítve van"
+fi
+
+# PlatformIO udev rules (USB hozzáférés)
+if [ ! -f /etc/udev/rules.d/99-platformio-udev.rules ]; then
+    echo "PlatformIO udev szabályok telepítése..."
+    curl -fsSL https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/system/99-platformio-udev.rules | tee /etc/udev/rules.d/99-platformio-udev.rules > /dev/null
+    udevadm control --reload-rules
+    udevadm trigger
+fi
 
 # Felhasználó hozzáadása a dialout csoporthoz
 echo ""
-echo "[6/6] Felhasználói jogosultságok..."
+echo "[7/7] Felhasználói jogosultságok..."
 usermod -aG dialout "$REAL_USER"
 echo "Felhasználó '$REAL_USER' hozzáadva a 'dialout' csoporthoz"
 
@@ -109,8 +129,12 @@ echo "Python venv: $VENV_DIR"
 echo "  Aktiválás:    source $VENV_DIR/bin/activate"
 echo "  Deaktiválás:  deactivate"
 echo ""
+echo "PlatformIO (firmware feltöltés):"
+echo "  Használat:    source $VENV_DIR/bin/activate && pio --version"
+echo ""
 echo "Következő lépések:"
 echo "1. Jelentkezz ki és be újra a dialout jogosultsághoz"
-echo "2. Futtasd: ./scripts/setup-rt-kernel.sh"
-echo "3. Rendszer indítása: ./scripts/start-all.sh"
+echo "2. Robot kar firmware: ./firmware/upload-grbl.sh"
+echo "3. Futtasd: ./scripts/setup-rt-kernel.sh"
+echo "4. Rendszer indítása: ./scripts/start-all.sh"
 echo ""
