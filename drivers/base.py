@@ -77,6 +77,8 @@ class DeviceCapabilities:
     has_coolant: bool = False
     has_probe: bool = False
     has_tool_changer: bool = False
+    has_gripper: bool = False
+    has_sucker: bool = False
     max_feed_rate: float = 1000.0  # mm/min
     max_spindle_speed: float = 0.0  # RPM
     max_laser_power: float = 0.0  # %
@@ -85,20 +87,30 @@ class DeviceCapabilities:
         "y": 400.0,
         "z": 80.0,
     })
+    # Per-axis limits: {'X': (min, max), 'Y': (min, max), ...}
+    axis_limits: Dict[str, tuple] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "axes": self.axes,
             "has_spindle": self.has_spindle,
             "has_laser": self.has_laser,
             "has_coolant": self.has_coolant,
             "has_probe": self.has_probe,
             "has_tool_changer": self.has_tool_changer,
+            "has_gripper": self.has_gripper,
+            "has_sucker": self.has_sucker,
             "max_feed_rate": self.max_feed_rate,
             "max_spindle_speed": self.max_spindle_speed,
             "max_laser_power": self.max_laser_power,
             "work_envelope": self.work_envelope,
         }
+        if self.axis_limits:
+            result["axis_limits"] = {
+                axis: {"min": lim[0], "max": lim[1]}
+                for axis, lim in self.axis_limits.items()
+            }
+        return result
 
 
 @dataclass
@@ -117,9 +129,17 @@ class DeviceStatus:
     error_message: Optional[str] = None
     feed_override: float = 100.0  # %
     spindle_override: float = 100.0  # %
+    # Robot arm specific
+    gripper_state: Optional[str] = None   # 'open' | 'closed' | 'unknown'
+    sucker_state: Optional[bool] = None   # True = on, False = off
+    # Endstop states per axis: {'X': True/False, ...}
+    endstop_states: Optional[Dict[str, bool]] = None
+    # Endstop blocked directions: {'Y': 'positive', 'X': 'negative', ...}
+    # Indicates which axis+direction is blocked by a triggered endstop
+    endstop_blocked: Optional[Dict[str, str]] = None
     
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "state": self.state.value,
             "position": self.position.to_dict(),
             "work_position": self.work_position.to_dict(),
@@ -134,6 +154,16 @@ class DeviceStatus:
             "feed_override": self.feed_override,
             "spindle_override": self.spindle_override,
         }
+        # Robot arm fields - only include if set
+        if self.gripper_state is not None:
+            result["gripper_state"] = self.gripper_state
+        if self.sucker_state is not None:
+            result["sucker_state"] = self.sucker_state
+        if self.endstop_states is not None:
+            result["endstop_states"] = self.endstop_states
+        if self.endstop_blocked is not None:
+            result["endstop_blocked"] = self.endstop_blocked
+        return result
 
 
 class DeviceDriver(ABC):
@@ -415,6 +445,38 @@ class DeviceDriver(ABC):
             offset_id: Offset azonosító (G54, G55, stb.)
             position: Új pozíció (None = aktuális pozíció)
         """
+        return False
+    
+    # =========================================
+    # ROBOT ARM SPECIFIC - OPCIONÁLIS
+    # =========================================
+    
+    async def gripper_on(self) -> bool:
+        """Megfogó bezárása"""
+        return False
+    
+    async def gripper_off(self) -> bool:
+        """Megfogó nyitása"""
+        return False
+    
+    async def sucker_on(self) -> bool:
+        """Szívó bekapcsolása"""
+        return False
+    
+    async def sucker_off(self) -> bool:
+        """Szívó kikapcsolása"""
+        return False
+    
+    async def calibrate(self) -> bool:
+        """Robot kalibráció"""
+        return False
+    
+    async def enable(self) -> bool:
+        """Robot engedélyezése"""
+        return False
+    
+    async def disable(self) -> bool:
+        """Robot letiltása"""
         return False
     
     def get_info(self) -> Dict[str, Any]:

@@ -9,6 +9,7 @@ HTTP REST API-t és WebSocket-et biztosít a kommunikációhoz.
 import asyncio
 import json
 import os
+import threading
 from typing import Dict, Optional, Any, List
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from pydantic import BaseModel
 from base import DeviceDriver, DeviceState, DeviceStatus, Position, DeviceType
 from grbl_driver import GrblDevice
 from linuxcnc_driver import LinuxCNCDevice
+from robot_arm_driver import RobotArmDevice
 from simulated_device import SimulatedDevice, SimulationMode
 
 # Szimulációs mód már csak eszközönként (devices.yaml simulated mezője)
@@ -151,6 +153,20 @@ class DeviceManager:
                 )
                 connection_info = ini_file or "LinuxCNC"
                 print(f"🔌 Valós LinuxCNC eszköz: {config.name}")
+            elif driver == "robot_arm":
+                port = config.config.get('port', '/dev/ttyUSB0')
+                device = RobotArmDevice(
+                    device_id=config.id,
+                    device_name=config.name,
+                    port=port,
+                    baudrate=config.config.get('baudrate', 115200),
+                    axis_mapping=config.config.get('axis_mapping'),
+                    axis_invert=config.config.get('axis_invert'),
+                    axis_limits=config.config.get('axis_limits'),
+                    axis_scale=config.config.get('axis_scale'),
+                )
+                connection_info = port
+                print(f"🤖 Valós robotkar eszköz: {config.name} ({port})")
             else:
                 print(f"Ismeretlen driver: {driver}")
                 return False
@@ -298,6 +314,12 @@ class DeviceManager:
 
 device_manager = DeviceManager()
 
+# Aktív tesztek leállítási jelzői (device_id -> threading.Event)
+_active_test_events: Dict[str, threading.Event] = {}
+
+# Aktív tesztek napló bejegyzései (device_id -> list[dict]) - a teszt objektum _log_entries listája
+_active_test_progress: Dict[str, list] = {}
+
 
 # =========================================
 # FASTAPI APP
@@ -441,13 +463,34 @@ async def disconnect_device(device_id: str):
     return {"success": True}
 
 
+@app.post("/devices/{device_id}/reconnect")
+async def reconnect_device(device_id: str):
+    """Újracsatlakozás az eszközhöz (USB disconnect/reconnect után)"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if isinstance(device, RobotArmDevice):
+        result = await device.reconnect()
+    else:
+        # Más eszközök: disconnect + connect
+        await device.disconnect()
+        result = await device.connect()
+    
+    return {"success": result}
+
+
+class HomeRequest(BaseModel):
+    axes: Optional[List[str]] = None
+
 @app.post("/devices/{device_id}/home")
-async def home_device(device_id: str, axes: Optional[List[str]] = None):
+async def home_device(device_id: str, request: Optional[HomeRequest] = None):
     """Homing végrehajtása"""
     device = device_manager.get_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
+    axes = request.axes if request else None
     result = await device.home(axes)
     return {"success": result}
 
@@ -571,6 +614,471 @@ async def set_spindle_override(device_id: str, request: OverrideRequest):
     
     result = await device.set_spindle_override(request.percent)
     return {"success": result}
+
+
+# =========================================
+# ROBOT ARM SPECIFIKUS VÉGPONTOK
+# =========================================
+
+@app.post("/devices/{device_id}/gripper/on")
+async def gripper_on(device_id: str):
+    """Megfogó bezárása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    result = await device.gripper_on()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/gripper/off")
+async def gripper_off(device_id: str):
+    """Megfogó nyitása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    result = await device.gripper_off()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/sucker/on")
+async def sucker_on(device_id: str):
+    """Szívó bekapcsolása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    result = await device.sucker_on()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/sucker/off")
+async def sucker_off(device_id: str):
+    """Szívó kikapcsolása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    result = await device.sucker_off()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/enable")
+async def robot_enable(device_id: str):
+    """Robot engedélyezése"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    result = await device.enable()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/disable")
+async def robot_disable(device_id: str):
+    """Robot letiltása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    result = await device.disable()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/calibrate")
+async def robot_calibrate(device_id: str):
+    """Robot kalibráció"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    result = await device.calibrate()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/teach/record")
+async def teach_record(device_id: str):
+    """Pozíció rögzítése teaching módhoz"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Nem robotkar eszköz")
+    pos = await device.teach_record_position()
+    return {"success": True, "position": pos}
+
+
+@app.post("/devices/{device_id}/teach/play")
+async def teach_play(device_id: str):
+    """Tanított pozíciók lejátszása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Nem robotkar eszköz")
+    result = await device.teach_play()
+    return {"success": result}
+
+
+@app.post("/devices/{device_id}/teach/clear")
+async def teach_clear(device_id: str):
+    """Tanított pozíciók törlése"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Nem robotkar eszköz")
+    device.teach_clear()
+    return {"success": True}
+
+
+@app.get("/devices/{device_id}/teach/positions")
+async def teach_positions(device_id: str):
+    """Tanított pozíciók lekérdezése"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Nem robotkar eszköz")
+    positions = device.teach_get_positions()
+    return {"positions": positions}
+
+
+# =========================================
+# BOARD DIAGNOSZTIKA
+# =========================================
+
+@app.post("/devices/{device_id}/diagnostics")
+async def run_diagnostics(device_id: str, move_test: bool = False):
+    """Board diagnosztika futtatása a meglévő serial kapcsolaton"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    metadata = device_manager.device_metadata.get(device_id)
+    
+    # Szimulált eszköz esetén szimulált diagnosztikai riportot adunk
+    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+        from board_diagnostics import DiagnosticsReport, TestResult
+        from datetime import datetime
+        report = DiagnosticsReport(
+            timestamp=datetime.now().isoformat(),
+            port="simulated",
+            device_signature="SimulatedDevice",
+            firmware_info="Szimulált firmware v1.0",
+        )
+        report.tests = [
+            TestResult(name="Soros kapcsolat", passed=True, message="Szimulált kapcsolat – OK"),
+            TestResult(name="Firmware verzió (M115)", passed=True, message="Szimulált firmware v1.0"),
+            TestResult(name="Endstop állapot (M119)", passed=True, message="Endstopok: X=0 Y=0 Z=0 (szimulált)"),
+            TestResult(name="Kalibrációs parancs (G92)", passed=True, message="Pozíció nullázva (szimulált)"),
+            TestResult(name="Gripper szervó", passed=True, message="Szimulált gripper – OK"),
+            TestResult(name="Szívópumpa (relé)", passed=True, message="Szimulált szívó – OK"),
+            TestResult(name="Motor enable/disable", passed=True, message="Szimulált enable/disable – OK"),
+            TestResult(name="Kommunikációs latencia", passed=True, message="Átlag: 1.0 ms (szimulált)", details={"avg_ms": 1.0, "min_ms": 1.0, "max_ms": 1.0, "samples": 5}),
+            TestResult(name="Hibakezelés (ismeretlen parancs)", passed=True, message="Szimulált hibakezelés – OK"),
+        ]
+        report.total_tests = len(report.tests)
+        report.passed_tests = report.total_tests
+        report.failed_tests = 0
+        report.skipped_tests = 0
+        report.overall_passed = True
+        return report.to_dict()
+    
+    # Valós eszköz – soros kapcsolat szükséges
+    # Ha a serial halott (USB disconnect/reconnect után), megpróbáljuk újracsatlakoztatni
+    if not device._serial or not device._serial.is_open:
+        print(f"🔄 Serial kapcsolat nem él, újracsatlakozás próba ({device_id})...")
+        reconnected = await device.reconnect()
+        if not reconnected or not device._serial or not device._serial.is_open:
+            raise HTTPException(
+                status_code=400,
+                detail="Nincs soros kapcsolat. Ellenőrizd, hogy a vezérlő csatlakoztatva van-e."
+            )
+        print(f"✅ Újracsatlakozás sikeres ({device_id})")
+    
+    from board_diagnostics import BoardDiagnostics
+    
+    # Jelezzük, hogy diagnosztika fut – get_status() ne próbáljon serial-on kommunikálni
+    device._diagnostics_running = True
+    
+    # Állapot polling szüneteltetése a diagnosztika idejére
+    device._stop_status_polling()
+    # Várjunk, hogy az utolsó polling kérés befejeződjön
+    await asyncio.sleep(1.5)
+    
+    diag = BoardDiagnostics(port=device.port, interactive=False)
+    
+    try:
+        # Futtatás a meglévő serial kapcsolaton (szinkron, thread-ben)
+        # A serial lock-ot is lefoglaljuk
+        async with device._serial_lock:
+            def _run():
+                return diag.run_with_serial(device._serial, move_test=move_test)
+            report = await asyncio.to_thread(_run)
+    finally:
+        # Diagnosztika flag törlése és polling újraindítása
+        device._diagnostics_running = False
+        device._start_status_polling()
+    
+    return report.to_dict()
+
+
+# =========================================
+# FIRMWARE PROBE
+# =========================================
+
+@app.post("/devices/{device_id}/firmware-probe")
+async def run_firmware_probe(device_id: str):
+    """Firmware paraméterek felderítése - különböző parancsok kipróbálása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    metadata = device_manager.device_metadata.get(device_id)
+    
+    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+        return {
+            "timestamp": "",
+            "port": "simulated",
+            "firmware_type": "simulated",
+            "recognized_commands": [],
+            "unrecognized_commands": [],
+            "all_results": [],
+            "summary": {
+                "total_commands": 0,
+                "recognized": 0,
+                "unrecognized": 0,
+                "firmware_type": "simulated",
+                "configurable_params": {},
+            },
+        }
+    
+    if not device._serial or not device._serial.is_open:
+        reconnected = await device.reconnect()
+        if not reconnected or not device._serial or not device._serial.is_open:
+            raise HTTPException(
+                status_code=400,
+                detail="Nincs soros kapcsolat."
+            )
+    
+    from firmware_probe import FirmwareProbe
+    
+    device._diagnostics_running = True
+    device._stop_status_polling()
+    await asyncio.sleep(1.5)
+    
+    stop_event = threading.Event()
+    _active_test_events[device_id] = stop_event
+    
+    probe = FirmwareProbe(port=device.port)
+    _active_test_progress[device_id] = probe._log_entries
+    
+    try:
+        async with device._serial_lock:
+            def _run():
+                return probe.run_with_serial(device._serial, stop_event=stop_event)
+            report = await asyncio.to_thread(_run)
+    finally:
+        _active_test_events.pop(device_id, None)
+        _active_test_progress.pop(device_id, None)
+        device._diagnostics_running = False
+        device._start_status_polling()
+    
+    return report.to_dict()
+
+
+# =========================================
+# ENDSTOP TESZT
+# =========================================
+
+@app.post("/devices/{device_id}/endstop-test")
+async def run_endstop_test(
+    device_id: str,
+    step_size: float = 5.0,
+    speed: int = 15,
+    max_angle: float = 200.0,
+):
+    """Végállás teszt - minden tengely végállásig mozgatása"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    metadata = device_manager.device_metadata.get(device_id)
+    
+    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+        return {
+            "timestamp": "",
+            "port": "simulated",
+            "step_size": step_size,
+            "speed": speed,
+            "max_search_angle": max_angle,
+            "axes": [],
+            "completed": True,
+            "error": None,
+            "duration_seconds": 0.0,
+        }
+    
+    if not device._serial or not device._serial.is_open:
+        reconnected = await device.reconnect()
+        if not reconnected or not device._serial or not device._serial.is_open:
+            raise HTTPException(
+                status_code=400,
+                detail="Nincs soros kapcsolat."
+            )
+    
+    from endstop_test import EndstopTest
+    
+    device._diagnostics_running = True
+    device._stop_status_polling()
+    await asyncio.sleep(1.5)
+    
+    stop_event = threading.Event()
+    _active_test_events[device_id] = stop_event
+    
+    # Axis mapping átadása a tesztnek (ha RobotArmDevice)
+    axis_mapping = None
+    if hasattr(device, '_axis_map'):
+        axis_mapping = device._axis_map
+    
+    test = EndstopTest(
+        port=device.port,
+        step_size=step_size,
+        speed=speed,
+        max_search_angle=max_angle,
+        axis_mapping=axis_mapping,
+    )
+    _active_test_progress[device_id] = test._log_entries
+    
+    try:
+        async with device._serial_lock:
+            def _run():
+                return test.run_with_serial(device._serial, stop_event=stop_event)
+            report = await asyncio.to_thread(_run)
+    finally:
+        _active_test_events.pop(device_id, None)
+        _active_test_progress.pop(device_id, None)
+        device._diagnostics_running = False
+        device._start_status_polling()
+    
+    return report.to_dict()
+
+
+# =========================================
+# ENDSTOP ÁLLAPOT LEKÉRDEZÉS
+# =========================================
+
+@app.get("/devices/{device_id}/endstops")
+async def get_endstop_states(device_id: str):
+    """Végállás érzékelők aktuális állapotának lekérdezése (M119)"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    metadata = device_manager.device_metadata.get(device_id)
+    
+    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+        return {"endstops": {"X": False, "Y": False, "Z": False}}
+    
+    if not device._connected:
+        raise HTTPException(status_code=400, detail="Eszköz nincs csatlakozva")
+    
+    if device._diagnostics_running:
+        raise HTTPException(status_code=409, detail="Diagnosztika fut")
+    
+    endstops = await device.check_endstops()
+    return {"endstops": endstops}
+
+
+# =========================================
+# MOZGÁSTESZT
+# =========================================
+
+@app.post("/devices/{device_id}/motion-test")
+async def run_motion_test(
+    device_id: str,
+    test_angle: float = 30.0,
+):
+    """Mozgásminőség teszt - különböző sebességekkel"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    metadata = device_manager.device_metadata.get(device_id)
+    
+    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+        return {
+            "timestamp": "",
+            "port": "simulated",
+            "test_angle": test_angle,
+            "speeds_tested": [],
+            "results": [],
+            "recommended_speed": 50,
+            "speed_summary": {},
+            "completed": True,
+            "error": None,
+            "duration_seconds": 0.0,
+        }
+    
+    if not device._serial or not device._serial.is_open:
+        reconnected = await device.reconnect()
+        if not reconnected or not device._serial or not device._serial.is_open:
+            raise HTTPException(
+                status_code=400,
+                detail="Nincs soros kapcsolat."
+            )
+    
+    from motion_test import MotionTest
+    
+    device._diagnostics_running = True
+    device._stop_status_polling()
+    await asyncio.sleep(1.5)
+    
+    stop_event = threading.Event()
+    _active_test_events[device_id] = stop_event
+    
+    test = MotionTest(
+        port=device.port,
+        test_angle=test_angle,
+    )
+    _active_test_progress[device_id] = test._log_entries
+    
+    try:
+        async with device._serial_lock:
+            def _run():
+                return test.run_with_serial(device._serial, stop_event=stop_event)
+            report = await asyncio.to_thread(_run)
+    finally:
+        _active_test_events.pop(device_id, None)
+        _active_test_progress.pop(device_id, None)
+        device._diagnostics_running = False
+        device._start_status_polling()
+    
+    return report.to_dict()
+
+
+# =========================================
+# TESZT LEÁLLÍTÁS
+# =========================================
+
+@app.post("/devices/{device_id}/cancel-test")
+async def cancel_test(device_id: str):
+    """Futó teszt (firmware-probe, endstop-test, motion-test) leállítása"""
+    stop_event = _active_test_events.get(device_id)
+    if stop_event is None:
+        return {"success": False, "message": "Nincs futó teszt ezen az eszközön"}
+    
+    stop_event.set()
+    return {"success": True, "message": "Leállítási jelzés elküldve"}
+
+
+@app.get("/devices/{device_id}/test-progress")
+async def get_test_progress(device_id: str, after: int = 0):
+    """Futó teszt napló lekérdezése (polling). after = ennyi bejegyzést ugorjon át (incremental)"""
+    log = _active_test_progress.get(device_id)
+    if log is None:
+        return {"entries": [], "total": 0, "running": False}
+    
+    entries = log[after:]  # Csak az új bejegyzések
+    return {
+        "entries": entries,
+        "total": len(log),
+        "running": device_id in _active_test_events,
+    }
 
 
 # =========================================

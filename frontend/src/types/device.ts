@@ -7,6 +7,8 @@ export interface Position {
   c?: number
 }
 
+export type GripperState = 'open' | 'closed' | 'unknown'
+
 export interface DeviceStatus {
   state: DeviceState
   position: Position
@@ -21,6 +23,18 @@ export interface DeviceStatus {
   error_message: string | null
   feed_override: number
   spindle_override: number
+  // Robot arm specific
+  gripper_state?: GripperState
+  sucker_state?: boolean
+  // Endstop states per axis (true = triggered)
+  endstop_states?: Record<string, boolean>
+  // Endstop blocked directions: {'Y': 'positive', ...}
+  endstop_blocked?: Record<string, string>
+}
+
+export interface AxisLimit {
+  min: number
+  max: number
 }
 
 export interface DeviceCapabilities {
@@ -30,6 +44,8 @@ export interface DeviceCapabilities {
   has_coolant: boolean
   has_probe: boolean
   has_tool_changer: boolean
+  has_gripper: boolean
+  has_sucker: boolean
   max_feed_rate: number
   max_spindle_speed: number
   max_laser_power: number
@@ -38,6 +54,8 @@ export interface DeviceCapabilities {
     y: number
     z: number
   }
+  // Per-axis software limits
+  axis_limits?: Record<string, AxisLimit>
 }
 
 export type DeviceState = 

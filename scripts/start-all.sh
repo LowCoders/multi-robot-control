@@ -104,7 +104,7 @@ sg dialout -c "
         echo 'Bridge már fut, kihagyás...'
         exit 0
     fi
-    cd $PROJECT_DIR/drivers && . venv/bin/activate && python -m uvicorn bridge_server:app --host $BRIDGE_HOST --port $BRIDGE_PORT
+    cd $PROJECT_DIR/drivers && . venv/bin/activate && python3 -m uvicorn bridge_server:app --host $BRIDGE_HOST --port $BRIDGE_PORT
 " &
 BRIDGE_PID=$!
 echo $BRIDGE_PID > "$PIDS_DIR/bridge.pid"

@@ -1,0 +1,78 @@
+{
+  "id": "robot_arm_1",
+  "name": "Ipari Robotkar",
+  "type": "robot_arm",
+  "workEnvelope": {
+    "x": 580,
+    "y": 580,
+    "z": 400
+  },
+  "axes": [
+    {
+      "name": "J1",
+      "type": "rotary",
+      "min": -90,
+      "max": 90,
+      "homePosition": 0,
+      "color": "#ef4444"
+    },
+    {
+      "name": "J2",
+      "type": "rotary",
+      "min": -45,
+      "max": 45,
+      "homePosition": 0,
+      "color": "#22c55e",
+      "parent": "J1"
+    },
+    {
+      "name": "J3",
+      "type": "rotary",
+      "min": -45,
+      "max": 45,
+      "homePosition": 0,
+      "color": "#3b82f6",
+      "parent": "J2"
+    }
+  ],
+  "robotArm": {
+    "baseDiameter": 120,
+    "baseHeight": 60,
+    "lowerArmLength": 200,
+    "lowerArmWidth": 50,
+    "upperArmLength": 200,
+    "upperArmWidth": 40,
+    "endEffector": {
+      "type": "gripper",
+      "gripperWidth": 60,
+      "gripperLength": 50,
+      "gripperFingerCount": 2
+    },
+    "jointAngleScale": {
+      "j1": 1.0,
+      "j2": 1.0,
+      "j3": 1.0
+    }
+  },
+  "base": {
+    "width": 150,
+    "height": 20,
+    "depth": 150
+  },
+  "visuals": {
+    "showGrid": true,
+    "showAxesHelper": true,
+    "cameraPosition": {
+      "x": -780,
+      "y": 359,
+      "z": 150
+    },
+    "cameraTarget": {
+      "x": 0,
+      "y": 0,
+      "z": 150
+    },
+    "frameColor": "#f6d32d",
+    "backgroundColor": "#1a5fb4"
+  }
+}

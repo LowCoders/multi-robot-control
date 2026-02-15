@@ -1,8 +1,8 @@
 // Machine Configuration Types for 3D Visualization
 
-export type AxisName = 'X' | 'Y' | 'Z' | 'A' | 'B' | 'C'
+export type AxisName = 'X' | 'Y' | 'Z' | 'A' | 'B' | 'C' | 'J1' | 'J2' | 'J3' | 'J4' | 'J5' | 'J6'
 export type AxisType = 'linear' | 'rotary'
-export type MachineType = 'cnc_mill' | 'cnc_lathe' | 'laser_cutter' | '5axis' | 'custom'
+export type MachineType = 'cnc_mill' | 'cnc_lathe' | 'laser_cutter' | '5axis' | 'robot_arm' | 'custom'
 
 export interface AxisConfig {
   name: AxisName
@@ -34,6 +34,31 @@ export interface ToolConfig {
   type?: 'endmill' | 'ballnose' | 'drill' | 'laser' | 'custom'
 }
 
+export type EndEffectorType = 'gripper' | 'sucker' | 'none'
+
+export interface EndEffectorConfig {
+  type: EndEffectorType
+  // Gripper dimensions (mm)
+  gripperWidth?: number
+  gripperLength?: number
+  gripperFingerCount?: number
+}
+
+// Robot arm link dimensions for 3D visualization
+export interface RobotArmConfig {
+  baseDiameter: number     // Bázis átmérő (mm)
+  baseHeight: number       // Bázis magasság (mm)
+  lowerArmLength: number   // Alsó kar hossz (mm)
+  lowerArmWidth: number    // Alsó kar szélesség (mm)
+  upperArmLength: number   // Felső kar hossz (mm)
+  upperArmWidth: number    // Felső kar szélesség (mm)
+  endEffector: EndEffectorConfig
+  // Firmware érték -> fok szorzó ízületenként (alapértelmezés: 1.0)
+  // Ha a firmware egysége nem felel meg a fizikai foknak,
+  // ezzel kalibrálható a vizualizáció.
+  jointAngleScale?: { j1?: number; j2?: number; j3?: number }
+}
+
 export interface MachineConfig {
   id: string
   name: string
@@ -46,6 +71,8 @@ export interface MachineConfig {
   }
   spindle?: SpindleConfig
   tool?: ToolConfig
+  // Robot arm specific config
+  robotArm?: RobotArmConfig
   // Base/frame dimensions
   base?: {
     width: number
@@ -217,6 +244,44 @@ export const DEFAULT_CUSTOM: MachineConfig = {
   },
 }
 
+export const DEFAULT_ROBOT_ARM: MachineConfig = {
+  id: 'default_robot_arm',
+  name: 'Default 3-Axis Robot Arm',
+  type: 'robot_arm',
+  workEnvelope: { x: 580, y: 580, z: 400 },  // Elérési tartomány (sugár: ~290mm)
+  axes: [
+    { name: 'J1', type: 'rotary', min: -180, max: 180, homePosition: 0, color: '#ef4444' },             // Bázis forgás (függőleges tengely)
+    { name: 'J2', type: 'rotary', min: -90, max: 90, homePosition: 0, color: '#22c55e', parent: 'J1' },  // Váll (vízszintes tengely)
+    { name: 'J3', type: 'rotary', min: -120, max: 120, homePosition: 0, color: '#3b82f6', parent: 'J2' }, // Könyök (vízszintes tengely)
+  ],
+  robotArm: {
+    baseDiameter: 120,
+    baseHeight: 60,
+    lowerArmLength: 200,
+    lowerArmWidth: 50,
+    upperArmLength: 200,
+    upperArmWidth: 40,
+    endEffector: {
+      type: 'gripper',
+      gripperWidth: 60,
+      gripperLength: 50,
+      gripperFingerCount: 2,
+    },
+    jointAngleScale: { j1: 1.0, j2: 1.0, j3: 1.0 },
+  },
+  base: {
+    width: 150,
+    height: 20,
+    depth: 150,
+  },
+  visuals: {
+    showGrid: true,
+    showAxesHelper: true,
+    cameraPosition: { x: 400, y: -400, z: 350 },
+    cameraTarget: { x: 0, y: 0, z: 150 },
+  },
+}
+
 // Get default config for a machine type
 export function getDefaultConfigForType(type: MachineType): MachineConfig {
   switch (type) {
@@ -228,6 +293,8 @@ export function getDefaultConfigForType(type: MachineType): MachineConfig {
       return DEFAULT_CNC_LATHE
     case 'laser_cutter':
       return DEFAULT_LASER_CUTTER
+    case 'robot_arm':
+      return DEFAULT_ROBOT_ARM
     case 'custom':
     default:
       return DEFAULT_CUSTOM

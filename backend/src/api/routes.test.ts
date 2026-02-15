@@ -72,6 +72,8 @@ describe('API Routes', () => {
     has_coolant: true,
     has_probe: true,
     has_tool_changer: false,
+    has_gripper: false,
+    has_sucker: false,
     max_feed_rate: 5000,
     max_spindle_speed: 24000,
     max_laser_power: 0,

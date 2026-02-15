@@ -1,7 +1,8 @@
-import { AlertCircle, FileCode } from 'lucide-react'
+import { AlertCircle, FileCode, GripVertical, Wind } from 'lucide-react'
 import type { MachineConfig } from '../../types/machine-config'
 import type { DeviceStatus, Position } from '../../types/device'
 import MachineVisualization from './MachineVisualization'
+import RobotArmVisualization from './RobotArmVisualization'
 
 interface Props {
   config: MachineConfig
@@ -54,11 +55,19 @@ export default function VisualizationPanel({
       
       {/* 3D Visualization */}
       <div className="flex-1 min-h-0 relative">
-        <MachineVisualization
-          config={config}
-          position={position}
-          status={status}
-        />
+        {config.type === 'robot_arm' ? (
+          <RobotArmVisualization
+            config={config}
+            position={position}
+            status={status}
+          />
+        ) : (
+          <MachineVisualization
+            config={config}
+            position={position}
+            status={status}
+          />
+        )}
         
         {/* Debug overlay - show position updates */}
         {showDebugInfo && (
@@ -75,27 +84,55 @@ export default function VisualizationPanel({
       <div className="bg-steel-900/95 backdrop-blur border-t border-steel-700 px-3 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-4">
           {/* Position display */}
-          <div className="flex items-center gap-3 font-mono">
-            <span className="text-red-400">
-              X: {(position?.x ?? 0).toFixed(3)}
-            </span>
-            <span className="text-green-400">
-              Y: {(position?.y ?? 0).toFixed(3)}
-            </span>
-            <span className="text-blue-400">
-              Z: {(position?.z ?? 0).toFixed(3)}
-            </span>
-            {position?.a !== undefined && (
-              <span className="text-amber-400">
-                A: {position.a.toFixed(2)}°
+          {config.type === 'robot_arm' ? (
+            <div className="flex items-center gap-3 font-mono">
+              <span className="text-red-400">
+                J1: {(position?.x ?? 0).toFixed(2)}°
               </span>
-            )}
-            {position?.b !== undefined && (
-              <span className="text-purple-400">
-                B: {position.b.toFixed(2)}°
+              <span className="text-green-400">
+                J2: {(position?.y ?? 0).toFixed(2)}°
               </span>
-            )}
-          </div>
+              <span className="text-blue-400">
+                J3: {(position?.z ?? 0).toFixed(2)}°
+              </span>
+              {/* Gripper állapot */}
+              {status?.gripper_state && (
+                <span className={`flex items-center gap-1 ${status.gripper_state === 'closed' ? 'text-red-400' : 'text-green-400'}`}>
+                  <GripVertical className="w-3 h-3" />
+                  {status.gripper_state === 'closed' ? 'Zárt' : status.gripper_state === 'open' ? 'Nyitott' : '?'}
+                </span>
+              )}
+              {/* Szívó állapot */}
+              {status?.sucker_state !== undefined && (
+                <span className={`flex items-center gap-1 ${status.sucker_state ? 'text-cyan-400' : 'text-steel-500'}`}>
+                  <Wind className="w-3 h-3" />
+                  {status.sucker_state ? 'BE' : 'KI'}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 font-mono">
+              <span className="text-red-400">
+                X: {(position?.x ?? 0).toFixed(3)}
+              </span>
+              <span className="text-green-400">
+                Y: {(position?.y ?? 0).toFixed(3)}
+              </span>
+              <span className="text-blue-400">
+                Z: {(position?.z ?? 0).toFixed(3)}
+              </span>
+              {position?.a !== undefined && (
+                <span className="text-amber-400">
+                  A: {position.a.toFixed(2)}°
+                </span>
+              )}
+              {position?.b !== undefined && (
+                <span className="text-purple-400">
+                  B: {position.b.toFixed(2)}°
+                </span>
+              )}
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-4 text-steel-400">

@@ -32,6 +32,18 @@ export interface DeviceStatus {
   error_message: string | null;
   feed_override: number;
   spindle_override: number;
+  // Robot arm specific
+  gripper_state?: 'open' | 'closed' | 'unknown';
+  sucker_state?: boolean;
+  // Endstop states per axis (true = triggered)
+  endstop_states?: Record<string, boolean>;
+  // Endstop blocked directions: {'Y': 'positive', ...}
+  endstop_blocked?: Record<string, string>;
+}
+
+export interface AxisLimit {
+  min: number;
+  max: number;
 }
 
 export interface DeviceCapabilities {
@@ -41,6 +53,8 @@ export interface DeviceCapabilities {
   has_coolant: boolean;
   has_probe: boolean;
   has_tool_changer: boolean;
+  has_gripper: boolean;
+  has_sucker: boolean;
   max_feed_rate: number;
   max_spindle_speed: number;
   max_laser_power: number;
@@ -49,6 +63,8 @@ export interface DeviceCapabilities {
     y: number;
     z: number;
   };
+  // Per-axis software limits
+  axis_limits?: Record<string, AxisLimit>;
 }
 
 export interface Device {
@@ -622,6 +638,211 @@ export class DeviceManager {
     } catch (error) {
       console.error(`Spindle override hiba (${deviceId}):`, error);
       return false;
+    }
+  }
+
+  // =========================================
+  // ROBOT ARM SPECIFIKUS MŰVELETEK
+  // =========================================
+
+  async gripperOn(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/gripper/on`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Gripper ON hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async gripperOff(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/gripper/off`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Gripper OFF hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async suckerOn(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/sucker/on`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Sucker ON hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async suckerOff(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/sucker/off`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Sucker OFF hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async robotEnable(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/enable`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Robot enable hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async robotDisable(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/disable`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Robot disable hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async robotCalibrate(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/calibrate`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Robot calibrate hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async teachRecord(deviceId: string): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/teach/record`);
+      return response.data;
+    } catch (error) {
+      console.error(`Teach record hiba (${deviceId}):`, error);
+      return null;
+    }
+  }
+
+  async teachPlay(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/teach/play`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Teach play hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async teachClear(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/teach/clear`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Teach clear hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async teachGetPositions(deviceId: string): Promise<any[]> {
+    try {
+      const response = await this.http.get(`/devices/${deviceId}/teach/positions`);
+      return response.data.positions || [];
+    } catch (error) {
+      console.error(`Teach positions hiba (${deviceId}):`, error);
+      return [];
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async runDiagnostics(deviceId: string, moveTest: boolean = false): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/diagnostics`, null, {
+        params: { move_test: moveTest },
+        timeout: 60000, // 60s - a diagnosztika sokáig tarthat
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Diagnosztika hiba (${deviceId}):`, error);
+      throw error;
+    }
+  }
+
+  // =========================================
+  // MOTOR HANGOLÁS TESZTEK
+  // =========================================
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async runFirmwareProbe(deviceId: string): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/firmware-probe`, null, {
+        timeout: 120000, // 120s - sok parancsot próbál
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Firmware probe hiba (${deviceId}):`, error);
+      throw error;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async runEndstopTest(
+    deviceId: string,
+    stepSize: number = 5.0,
+    speed: number = 15,
+    maxAngle: number = 200.0,
+  ): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/endstop-test`, null, {
+        params: { step_size: stepSize, speed, max_angle: maxAngle },
+        timeout: 300000, // 5 perc - lassú mozgás
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Endstop test hiba (${deviceId}):`, error);
+      throw error;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async runMotionTest(deviceId: string, testAngle: number = 30.0): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/motion-test`, null, {
+        params: { test_angle: testAngle },
+        timeout: 300000, // 5 perc - sok sebesség-teszt
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Motion test hiba (${deviceId}):`, error);
+      throw error;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getTestProgress(deviceId: string, after: number = 0): Promise<any> {
+    try {
+      const response = await this.http.get(`/devices/${deviceId}/test-progress`, {
+        params: { after },
+        timeout: 5000,
+      });
+      return response.data;
+    } catch (error) {
+      // Silently return empty if bridge unavailable
+      return { entries: [], total: 0, running: false };
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async cancelTest(deviceId: string): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/cancel-test`, null, {
+        timeout: 5000,
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Cancel test hiba (${deviceId}):`, error);
+      throw error;
     }
   }
 }

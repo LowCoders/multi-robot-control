@@ -104,6 +104,8 @@ class SimulatedDevice(DeviceDriver):
             has_laser=device_type == DeviceType.LASER_CUTTER,
             has_coolant=device_type == DeviceType.CNC_MILL,
             has_tool_changer=device_type == DeviceType.CNC_MILL,
+            has_gripper=device_type == DeviceType.ROBOT_ARM,
+            has_sucker=device_type == DeviceType.ROBOT_ARM,
             has_probe=True,
             max_feed_rate=5000.0,
             max_spindle_speed=24000.0 if device_type == DeviceType.CNC_MILL else 12000.0,

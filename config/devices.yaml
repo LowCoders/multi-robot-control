@@ -26,13 +26,56 @@ devices:
     driver: grbl
     type: laser_cutter
     enabled: true
-    simulated: false  # Valós eszköz /dev/ttyUSB0 porton
+    simulated: true  # Nincs csatlakoztatva – ha csatlakozik, átállítandó false-ra
     config:
       # Soros port
       port: /dev/ttyUSB0
       # Baud rate (GRBL default: 115200)
       baudrate: 115200
       
+  # =====================================================
+  # Ipari Robotkar - 3 tengelyes + AXIS4UI vezérlő
+  # =====================================================
+  - id: robot_arm_1
+    name: "Ipari Robotkar"
+    driver: robot_arm
+    type: robot_arm
+    enabled: true
+    simulated: false
+    config:
+      # Soros port (CH340 USB-serial adapter)
+      port: /dev/ttyUSB0
+      # Baud rate (AXIS4UI default: 115200)
+      baudrate: 115200
+      # Tengely mapping: logikai tengely -> firmware tengely
+      # A CNC Shield fizikai bekötése alapján:
+      #   Firmware X kimenet → J2 váll motor
+      #   Firmware Y kimenet → J3 könyök motor
+      #   Firmware Z kimenet → J1 bázis motor
+      # axis_mapping:
+      #   X: Z    # Logikai X (J1 bázis) -> firmware Z kimenet
+      #   Y: Y    # Logikai Y (J2 váll) -> firmware X kimenet
+      #   Z: X    # Logikai Z (J3 könyök) -> firmware Y kimenet
+      # Tengely invertálás: ha egy motor iránya fordított
+      # true = az adott logikai tengely pozitív iránya megfordul
+      # axis_invert:
+      #   Y: true   # Y (J2 váll) irány fordított (szükség esetén engedélyezendő)
+      # Tengely skálázás: firmware egység -> fizikai fok konverziós faktor
+      # 1 firmware egység = ennyi fizikai fok
+      # Mérés: python3 drivers/coupling_test.py futtatásával
+      # FONTOS: Kalibrálandó! Az alábbi értékek becsültek (300 fw ≈ 45°)
+      axis_scale:
+        X: 0.21   # J1 bázis: 1 fw egység ≈ 0.15 fok (kalibrálandó!)
+        Y: 0.21   # J2 váll: 1 fw egység ≈ 0.15 fok (kalibrálandó!)
+        Z: 0.21   # J3 könyök: 1 fw egység ≈ 0.15 fok (kalibrálandó!)
+      # Szoftveres tengelylimitek (fizikai fokban, NEM firmware egységben!)
+      # A driver clampolja a célpozíciót ezekre a határokra
+      # FONTOS: A coupling_test.py eredménye alapján kalibrálandó!
+      axis_limits:
+        X: [-90, 90]     # J1 bázis forgás (fizikai fok)
+        Y: [-45, 45]     # J2 váll (fizikai fok)
+        Z: [-45, 45]     # J3 könyök (fizikai fok)
+
   # =====================================================
   # Példa: 3D Nyomtató (jövőbeli bővítés)
   # =====================================================

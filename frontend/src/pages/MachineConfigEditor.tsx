@@ -21,6 +21,7 @@ import {
   Camera,
 } from 'lucide-react'
 import { MachineVisualization } from '../components/visualization'
+import RobotArmVisualization from '../components/visualization/RobotArmVisualization'
 import type { CameraState } from '../components/visualization'
 import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType } from '../types/machine-config'
 import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, getDefaultConfigForType } from '../types/machine-config'
@@ -34,6 +35,12 @@ const AXIS_COLORS: Record<AxisName, string> = {
   A: '#f59e0b',
   B: '#8b5cf6',
   C: '#ec4899',
+  J1: '#ef4444',
+  J2: '#22c55e',
+  J3: '#3b82f6',
+  J4: '#f59e0b',
+  J5: '#8b5cf6',
+  J6: '#ec4899',
 }
 
 // Default axis configs by name
@@ -44,6 +51,12 @@ const DEFAULT_AXIS_CONFIG: Record<AxisName, Partial<AxisConfig>> = {
   A: { type: 'rotary', min: -90, max: 90, homePosition: 0 },
   B: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
   C: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
+  J1: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
+  J2: { type: 'rotary', min: -90, max: 90, homePosition: 0 },
+  J3: { type: 'rotary', min: -120, max: 120, homePosition: 0 },
+  J4: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
+  J5: { type: 'rotary', min: -120, max: 120, homePosition: 0 },
+  J6: { type: 'rotary', min: -360, max: 360, homePosition: 0 },
 }
 
 // Axis editor component
@@ -492,6 +505,28 @@ export default function MachineConfigEditor() {
     )
   }
 
+  // Egységes kamera alapértékek (a value és onChange fallback-ek konzisztensek legyenek)
+  const defaultCameraPosition = {
+    x: Math.round(config.workEnvelope.x / 2 + config.workEnvelope.x * 1.4),
+    y: -Math.round(config.workEnvelope.y),
+    z: Math.round(config.workEnvelope.z + 200),
+  }
+  const defaultCameraTarget = {
+    x: Math.round(config.workEnvelope.x / 2),
+    y: Math.round(config.workEnvelope.y / 2),
+    z: 0,
+  }
+  const currentCameraPosition = {
+    x: config.visuals?.cameraPosition?.x ?? defaultCameraPosition.x,
+    y: config.visuals?.cameraPosition?.y ?? defaultCameraPosition.y,
+    z: config.visuals?.cameraPosition?.z ?? defaultCameraPosition.z,
+  }
+  const currentCameraTarget = {
+    x: config.visuals?.cameraTarget?.x ?? defaultCameraTarget.x,
+    y: config.visuals?.cameraTarget?.y ?? defaultCameraTarget.y,
+    z: config.visuals?.cameraTarget?.z ?? defaultCameraTarget.z,
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -510,6 +545,7 @@ export default function MachineConfigEditor() {
                 {config.type === 'cnc_lathe' && 'CNC Eszterga'}
                 {config.type === 'laser_cutter' && 'Lézervágó'}
                 {config.type === '5axis' && '5 Tengelyes'}
+                {config.type === 'robot_arm' && 'Robotkar'}
                 {config.type === 'custom' && 'Egyedi'}
               </span>
               <span>•</span>
@@ -704,6 +740,7 @@ export default function MachineConfigEditor() {
                     <option value="cnc_lathe">CNC Eszterga</option>
                     <option value="laser_cutter">Lézervágó</option>
                     <option value="5axis">5 Tengelyes</option>
+                    <option value="robot_arm">Robotkar</option>
                     <option value="custom">Egyedi</option>
                   </select>
                 </div>
@@ -901,11 +938,19 @@ export default function MachineConfigEditor() {
             </div>
             <div className="card-body p-0 h-[calc(100%-60px)]">
               {showPreview ? (
-                <MachineVisualization 
-                  config={config} 
-                  position={previewPosition}
-                  onCameraChange={handleCameraChange}
-                />
+                config.type === 'robot_arm' ? (
+                  <RobotArmVisualization
+                    config={config}
+                    position={previewPosition}
+                    onCameraChange={handleCameraChange}
+                  />
+                ) : (
+                  <MachineVisualization 
+                    config={config} 
+                    position={previewPosition}
+                    onCameraChange={handleCameraChange}
+                  />
+                )
               ) : (
                 <div className="flex items-center justify-center h-full text-steel-500">
                   Előnézet kikapcsolva
@@ -1036,6 +1081,81 @@ export default function MachineConfigEditor() {
                 </label>
               </div>
 
+              {/* Joint Angle Scale (robot arm only) */}
+              {config.type === 'robot_arm' && (
+                <div className="border-t border-steel-700 pt-4">
+                  <h4 className="text-sm font-medium text-steel-300 mb-3">Ízületi szög skálázás</h4>
+                  <p className="text-xs text-steel-500 mb-3">
+                    Ha a vizualizáció eltér a valós mozgástól, itt kalibrálható a firmware érték → fok szorzó ízületenként.
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-steel-500 mb-1">J1 (bázis)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={config.robotArm?.jointAngleScale?.j1 ?? 1}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            robotArm: {
+                              ...config.robotArm!,
+                              jointAngleScale: {
+                                ...config.robotArm?.jointAngleScale,
+                                j1: parseFloat(e.target.value) || 1,
+                              },
+                            },
+                          })
+                        }
+                        className="input w-full text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-steel-500 mb-1">J2 (váll)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={config.robotArm?.jointAngleScale?.j2 ?? 1}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            robotArm: {
+                              ...config.robotArm!,
+                              jointAngleScale: {
+                                ...config.robotArm?.jointAngleScale,
+                                j2: parseFloat(e.target.value) || 1,
+                              },
+                            },
+                          })
+                        }
+                        className="input w-full text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-steel-500 mb-1">J3 (könyök)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={config.robotArm?.jointAngleScale?.j3 ?? 1}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            robotArm: {
+                              ...config.robotArm!,
+                              jointAngleScale: {
+                                ...config.robotArm?.jointAngleScale,
+                                j3: parseFloat(e.target.value) || 1,
+                              },
+                            },
+                          })
+                        }
+                        className="input w-full text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Camera settings */}
               <div className="border-t border-steel-700 pt-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1061,16 +1181,15 @@ export default function MachineConfigEditor() {
                     <label className="block text-xs text-steel-500 mb-1">Kamera X</label>
                     <input
                       type="number"
-                      value={config.visuals?.cameraPosition?.x ?? Math.round(config.workEnvelope.x / 2 + config.workEnvelope.x * 1.4)}
+                      value={currentCameraPosition.x}
                       onChange={(e) =>
                         setConfig({
                           ...config,
                           visuals: {
                             ...config.visuals,
                             cameraPosition: {
+                              ...currentCameraPosition,
                               x: parseFloat(e.target.value) || 0,
-                              y: config.visuals?.cameraPosition?.y ?? -config.workEnvelope.y,
-                              z: config.visuals?.cameraPosition?.z ?? config.workEnvelope.z + 200,
                             },
                           },
                         })
@@ -1082,16 +1201,15 @@ export default function MachineConfigEditor() {
                     <label className="block text-xs text-steel-500 mb-1">Kamera Y</label>
                     <input
                       type="number"
-                      value={config.visuals?.cameraPosition?.y ?? -Math.round(config.workEnvelope.y)}
+                      value={currentCameraPosition.y}
                       onChange={(e) =>
                         setConfig({
                           ...config,
                           visuals: {
                             ...config.visuals,
                             cameraPosition: {
-                              x: config.visuals?.cameraPosition?.x ?? config.workEnvelope.x * 1.5,
+                              ...currentCameraPosition,
                               y: parseFloat(e.target.value) || 0,
-                              z: config.visuals?.cameraPosition?.z ?? config.workEnvelope.z + 200,
                             },
                           },
                         })
@@ -1103,15 +1221,14 @@ export default function MachineConfigEditor() {
                     <label className="block text-xs text-steel-500 mb-1">Kamera Z</label>
                     <input
                       type="number"
-                      value={config.visuals?.cameraPosition?.z ?? Math.round(config.workEnvelope.z + 200)}
+                      value={currentCameraPosition.z}
                       onChange={(e) =>
                         setConfig({
                           ...config,
                           visuals: {
                             ...config.visuals,
                             cameraPosition: {
-                              x: config.visuals?.cameraPosition?.x ?? config.workEnvelope.x * 1.5,
-                              y: config.visuals?.cameraPosition?.y ?? -config.workEnvelope.y,
+                              ...currentCameraPosition,
                               z: parseFloat(e.target.value) || 0,
                             },
                           },
@@ -1142,16 +1259,15 @@ export default function MachineConfigEditor() {
                     <label className="block text-xs text-steel-500 mb-1">Cél X</label>
                     <input
                       type="number"
-                      value={config.visuals?.cameraTarget?.x ?? Math.round(config.workEnvelope.x / 2)}
+                      value={currentCameraTarget.x}
                       onChange={(e) =>
                         setConfig({
                           ...config,
                           visuals: {
                             ...config.visuals,
                             cameraTarget: {
+                              ...currentCameraTarget,
                               x: parseFloat(e.target.value) || 0,
-                              y: config.visuals?.cameraTarget?.y ?? config.workEnvelope.y / 2,
-                              z: config.visuals?.cameraTarget?.z ?? 0,
                             },
                           },
                         })
@@ -1163,16 +1279,15 @@ export default function MachineConfigEditor() {
                     <label className="block text-xs text-steel-500 mb-1">Cél Y</label>
                     <input
                       type="number"
-                      value={config.visuals?.cameraTarget?.y ?? Math.round(config.workEnvelope.y / 2)}
+                      value={currentCameraTarget.y}
                       onChange={(e) =>
                         setConfig({
                           ...config,
                           visuals: {
                             ...config.visuals,
                             cameraTarget: {
-                              x: config.visuals?.cameraTarget?.x ?? config.workEnvelope.x / 2,
+                              ...currentCameraTarget,
                               y: parseFloat(e.target.value) || 0,
-                              z: config.visuals?.cameraTarget?.z ?? 0,
                             },
                           },
                         })
@@ -1184,15 +1299,14 @@ export default function MachineConfigEditor() {
                     <label className="block text-xs text-steel-500 mb-1">Cél Z</label>
                     <input
                       type="number"
-                      value={config.visuals?.cameraTarget?.z ?? 0}
+                      value={currentCameraTarget.z}
                       onChange={(e) =>
                         setConfig({
                           ...config,
                           visuals: {
                             ...config.visuals,
                             cameraTarget: {
-                              x: config.visuals?.cameraTarget?.x ?? config.workEnvelope.x / 2,
-                              y: config.visuals?.cameraTarget?.y ?? config.workEnvelope.y / 2,
+                              ...currentCameraTarget,
                               z: parseFloat(e.target.value) || 0,
                             },
                           },

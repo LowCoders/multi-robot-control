@@ -77,10 +77,13 @@ export async function createServer(config: AppConfig): Promise<ServerContext> {
   // WebSocket setup
   setupWebSocket(io, deviceManager, stateManager);
   
-  // Error handler
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Error:', err);
-    res.status(500).json({ error: err.message });
+  // Error handler - forward bridge (axios) error status codes when available
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Error:', err.message || err);
+    const status = err?.response?.status || err?.status || 500;
+    const detail = err?.response?.data?.detail || err.message || 'Internal server error';
+    res.status(status).json({ error: detail });
   });
   
   // 404 handler

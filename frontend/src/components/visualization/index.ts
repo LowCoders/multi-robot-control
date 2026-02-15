@@ -1,4 +1,5 @@
 export { default as MachineVisualization } from './MachineVisualization'
+export { default as RobotArmVisualization } from './RobotArmVisualization'
 export type { CameraState } from './MachineVisualization'
 export { default as VisualizationPanel } from './VisualizationPanel'
 export { default as GcodeOverlay } from './GcodeOverlay'

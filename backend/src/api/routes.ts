@@ -997,6 +997,119 @@ export function createApiRoutes(
   }));
   
   // =========================================
+  // ROBOT ARM SPECIFIKUS VÉGPONTOK
+  // =========================================
+
+  // Gripper
+  router.post('/devices/:id/gripper/on', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.gripperOn(req.params.id);
+    res.json({ success });
+  }));
+
+  router.post('/devices/:id/gripper/off', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.gripperOff(req.params.id);
+    res.json({ success });
+  }));
+
+  // Sucker
+  router.post('/devices/:id/sucker/on', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.suckerOn(req.params.id);
+    res.json({ success });
+  }));
+
+  router.post('/devices/:id/sucker/off', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.suckerOff(req.params.id);
+    res.json({ success });
+  }));
+
+  // Robot enable/disable
+  router.post('/devices/:id/enable', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.robotEnable(req.params.id);
+    res.json({ success });
+  }));
+
+  router.post('/devices/:id/disable', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.robotDisable(req.params.id);
+    res.json({ success });
+  }));
+
+  // Calibration
+  router.post('/devices/:id/calibrate', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.robotCalibrate(req.params.id);
+    res.json({ success });
+  }));
+
+  // Teaching
+  router.post('/devices/:id/teach/record', asyncHandler(async (req: Request, res: Response) => {
+    const result = await deviceManager.teachRecord(req.params.id);
+    res.json(result || { success: false });
+  }));
+
+  router.post('/devices/:id/teach/play', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.teachPlay(req.params.id);
+    res.json({ success });
+  }));
+
+  router.post('/devices/:id/teach/clear', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.teachClear(req.params.id);
+    res.json({ success });
+  }));
+
+  router.get('/devices/:id/teach/positions', asyncHandler(async (req: Request, res: Response) => {
+    const positions = await deviceManager.teachGetPositions(req.params.id);
+    res.json({ positions });
+  }));
+
+  // =========================================
+  // BOARD DIAGNOSZTIKA
+  // =========================================
+
+  router.post('/devices/:id/diagnostics', asyncHandler(async (req: Request, res: Response) => {
+    const moveTest = req.body?.move_test === true;
+    const result = await deviceManager.runDiagnostics(req.params.id, moveTest);
+    res.json(result);
+  }));
+
+  // =========================================
+  // MOTOR HANGOLÁS TESZTEK
+  // =========================================
+
+  // Firmware paraméter felderítés
+  router.post('/devices/:id/firmware-probe', asyncHandler(async (req: Request, res: Response) => {
+    const result = await deviceManager.runFirmwareProbe(req.params.id);
+    res.json(result);
+  }));
+
+  // Végállás teszt
+  router.post('/devices/:id/endstop-test', asyncHandler(async (req: Request, res: Response) => {
+    const stepSize = typeof req.body?.step_size === 'number' ? req.body.step_size : 5.0;
+    const speed = typeof req.body?.speed === 'number' ? req.body.speed : 15;
+    const maxAngle = typeof req.body?.max_angle === 'number' ? req.body.max_angle : 200.0;
+    const result = await deviceManager.runEndstopTest(req.params.id, stepSize, speed, maxAngle);
+    res.json(result);
+  }));
+
+  // Mozgásminőség teszt
+  router.post('/devices/:id/motion-test', asyncHandler(async (req: Request, res: Response) => {
+    const testAngle = typeof req.body?.test_angle === 'number' ? req.body.test_angle : 30.0;
+    const result = await deviceManager.runMotionTest(req.params.id, testAngle);
+    res.json(result);
+  }));
+
+  // Teszt progress (polling)
+  router.get('/devices/:id/test-progress', asyncHandler(async (req: Request, res: Response) => {
+    const after = parseInt(req.query.after as string) || 0;
+    const result = await deviceManager.getTestProgress(req.params.id, after);
+    res.json(result);
+  }));
+
+  // Teszt leállítása
+  router.post('/devices/:id/cancel-test', asyncHandler(async (req: Request, res: Response) => {
+    const result = await deviceManager.cancelTest(req.params.id);
+    res.json(result);
+  }));
+
+  // =========================================
   // STATS
   // =========================================
   
