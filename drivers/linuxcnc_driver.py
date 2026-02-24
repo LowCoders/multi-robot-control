@@ -20,6 +20,7 @@ except ImportError:
 
 from base import (
     DeviceDriver,
+    JogSafeDeviceDriver,
     DeviceType,
     DeviceState,
     DeviceStatus,
@@ -28,7 +29,7 @@ from base import (
 )
 
 
-class LinuxCNCDevice(DeviceDriver):
+class LinuxCNCDevice(JogSafeDeviceDriver):
     """
     LinuxCNC-alapú eszközök drivere.
     
@@ -443,48 +444,50 @@ class LinuxCNCDevice(DeviceDriver):
         if not self._command:
             return False
         
-        try:
-            await self._ensure_enabled()
-            await self._ensure_mode(linuxcnc.MODE_MANUAL)
-            
-            axis_map = {"X": 0, "Y": 1, "Z": 2, "A": 3, "B": 4, "C": 5}
-            joint = axis_map.get(axis.upper())
-            
-            if joint is None or joint >= self._num_joints:
+        async with self._jog_lock:
+            try:
+                await self._ensure_enabled()
+                await self._ensure_mode(linuxcnc.MODE_MANUAL)
+                
+                axis_map = {"X": 0, "Y": 1, "Z": 2, "A": 3, "B": 4, "C": 5}
+                joint = axis_map.get(axis.upper())
+                
+                if joint is None or joint >= self._num_joints:
+                    return False
+                
+                # Sebesség beállítása (units/sec)
+                velocity = feed_rate / 60.0
+                
+                # Inkrementális jog (non-blocking)
+                await asyncio.to_thread(
+                    self._command.jog,
+                    linuxcnc.JOG_INCREMENT,
+                    False,  # joint mode
+                    joint,
+                    velocity,
+                    distance,
+                )
+                
+                return True
+                
+            except linuxcnc.error as e:
+                self._set_error(f"Jog hiba: {str(e)}")
                 return False
-            
-            # Sebesség beállítása (units/sec)
-            velocity = feed_rate / 60.0
-            
-            # Inkrementális jog (non-blocking)
-            await asyncio.to_thread(
-                self._command.jog,
-                linuxcnc.JOG_INCREMENT,
-                False,  # joint mode
-                joint,
-                velocity,
-                distance,
-            )
-            
-            return True
-            
-        except linuxcnc.error as e:
-            self._set_error(f"Jog hiba: {str(e)}")
-            return False
     
     async def jog_stop(self) -> bool:
         """Jog leállítása"""
         if not self._command:
             return False
         
-        try:
-            for joint in range(self._num_joints):
-                await asyncio.to_thread(
-                    self._command.jog, linuxcnc.JOG_STOP, False, joint, 0, 0
-                )
-            return True
-        except linuxcnc.error:
-            return False
+        async with self._jog_lock:
+            try:
+                for joint in range(self._num_joints):
+                    await asyncio.to_thread(
+                        self._command.jog, linuxcnc.JOG_STOP, False, joint, 0, 0
+                    )
+                return True
+            except linuxcnc.error:
+                return False
     
     # =========================================
     # G-CODE KÜLDÉS

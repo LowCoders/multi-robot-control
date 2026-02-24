@@ -46,6 +46,10 @@ export interface DeviceCapabilities {
   has_tool_changer: boolean
   has_gripper: boolean
   has_sucker: boolean
+  has_endstops?: boolean
+  has_vacuum_pump?: boolean
+  supports_motion_test?: boolean
+  supports_firmware_probe?: boolean
   max_feed_rate: number
   max_spindle_speed: number
   max_laser_power: number

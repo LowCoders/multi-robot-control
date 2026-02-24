@@ -10,41 +10,88 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { useDeviceStore } from '../../stores/deviceStore'
-import type { DeviceType, DeviceStatus } from '../../types/device'
+import type { DeviceType, DeviceStatus, DeviceCapabilities } from '../../types/device'
 
 interface Props {
   deviceId: string
   deviceType?: DeviceType
-  /** Current device status (for endstop_blocked) */
   status?: DeviceStatus
+  capabilities?: DeviceCapabilities
+  jogMode?: JogMode
+  onJogModeChange?: (mode: JogMode) => void
 }
 
-const stepSizes = [0.1, 1, 10, 100]
-
-// ============================================================
-// JogButton - MODUL SZINTU komponens (NEM a renderben!)
-// Ha a renderben lenne, minden rendernel uj fuggvenyreferenciat
-// kapna, es a React unmountolna/remountolna -> villogas.
-// ============================================================
+export type JogMode = 'step' | 'continuous'
+export type MotionMode = 'jog' | 'cartesian'
 
 interface JogButtonProps {
-  onJog: (axis: string, direction: number) => void
+  onJogStart: (axis: string, direction: number) => void
+  onJogStop: () => void
   axis: string
   direction: number
   icon: React.ComponentType<{ className?: string }>
   title: string
   isBlocked: boolean
+  jogMode: JogMode
 }
 
-function JogButton({ onJog, axis, direction, icon: Icon, title, isBlocked }: JogButtonProps) {
+function JogButton({ 
+  onJogStart, 
+  onJogStop, 
+  axis, 
+  direction, 
+  icon: Icon, 
+  title, 
+  isBlocked,
+  jogMode,
+}: JogButtonProps) {
+  // Track if THIS button is currently pressed (for continuous mode)
+  const isPressedRef = useRef(false)
+
+  // Step mode: simple click
+  const handleClick = useCallback(() => {
+    if (jogMode === 'step' && !isBlocked) {
+      onJogStart(axis, direction)
+    }
+  }, [jogMode, axis, direction, isBlocked, onJogStart])
+
+  // Continuous mode: mousedown starts movement
+  const handleMouseDown = useCallback(() => {
+    if (jogMode === 'continuous' && !isBlocked) {
+      isPressedRef.current = true
+      onJogStart(axis, direction)
+    }
+  }, [jogMode, axis, direction, isBlocked, onJogStart])
+
+  // Continuous mode: mouseup stops movement only if THIS button was pressed
+  const handleMouseUp = useCallback(() => {
+    if (jogMode === 'continuous' && isPressedRef.current) {
+      isPressedRef.current = false
+      onJogStop()
+    }
+  }, [jogMode, onJogStop])
+
+  // Continuous mode: mouseleave stops movement only if THIS button was pressed
+  const handleMouseLeave = useCallback(() => {
+    if (jogMode === 'continuous' && isPressedRef.current) {
+      isPressedRef.current = false
+      onJogStop()
+    }
+  }, [jogMode, onJogStop])
+
   return (
     <button
-      onClick={() => !isBlocked && onJog(axis, direction)}
+      onClick={handleClick}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleMouseDown}
+      onTouchEnd={handleMouseUp}
       disabled={isBlocked}
-      className={`btn-icon p-3 ${
+      className={`btn-icon p-3 select-none ${
         isBlocked 
           ? 'bg-red-900/30 text-red-400/50 cursor-not-allowed border border-red-500/20' 
-          : 'bg-steel-800 hover:bg-steel-700'
+          : 'bg-steel-800 hover:bg-steel-700 active:bg-machine-600'
       }`}
       title={isBlocked ? `${title} - ENDSTOP` : title}
     >
@@ -53,31 +100,96 @@ function JogButton({ onJog, axis, direction, icon: Icon, title, isBlocked }: Jog
   )
 }
 
-// ============================================================
-// JogControl
-// ============================================================
-
-export default function JogControl({ deviceId, deviceType, status }: Props) {
+export default function JogControl({ 
+  deviceId, 
+  deviceType, 
+  status, 
+  capabilities,
+  jogMode: controlledJogMode,
+  onJogModeChange,
+}: Props) {
   const { jog, jogStop, sendCommand } = useDeviceStore()
   
   const isRobotArm = deviceType === 'robot_arm'
   
-  // Robot arm: fok (°), feed rate 1-100
-  // CNC/lézer: mm, feed rate 100-5000 mm/min
+  const [internalJogMode, setInternalJogMode] = useState<JogMode>('continuous')
+  const jogMode = controlledJogMode ?? internalJogMode
+  // Keep for uncontrolled mode support
+  const _setJogMode = onJogModeChange ?? setInternalJogMode
+  void _setJogMode
+  const [motionMode, setMotionMode] = useState<MotionMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`jog-settings-${deviceId}`)
+      if (saved) {
+        try {
+          const settings = JSON.parse(saved)
+          if (settings.motionMode === 'jog' || settings.motionMode === 'cartesian') {
+            return settings.motionMode
+          }
+        } catch {}
+      }
+    }
+    return 'jog'
+  })
+  
   const unit = isRobotArm ? '°' : ' mm'
   const feedRateMin = isRobotArm ? 1 : 100
-  const feedRateMax = isRobotArm ? 100 : 5000
+  const feedRateMax = capabilities?.max_feed_rate ?? (isRobotArm ? 100 : 5000)
   const feedRateStep = isRobotArm ? 1 : 100
   const feedRateUnit = isRobotArm ? '' : ' mm/min'
   
-  const [stepSize, setStepSize] = useState(10)
-  const [feedRate, setFeedRate] = useState(isRobotArm ? 50 : 1000)
+  const maxWorkEnvelope = Math.max(
+    capabilities?.work_envelope?.x ?? 300,
+    capabilities?.work_envelope?.y ?? 300,
+    capabilities?.work_envelope?.z ?? 100
+  )
+  const stepSizeMax = Math.min(maxWorkEnvelope, isRobotArm ? 180 : 500)
+  
+  const [stepSize, setStepSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`jog-settings-${deviceId}`)
+      if (saved) {
+        try {
+          const settings = JSON.parse(saved)
+          if (typeof settings.stepSize === 'number' && settings.stepSize > 0) {
+            return settings.stepSize
+          }
+        } catch {}
+      }
+    }
+    return 10
+  })
+  const [feedRate, setFeedRate] = useState(() => {
+    const defaultRate = isRobotArm ? 50 : 1000
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`jog-settings-${deviceId}`)
+      if (saved) {
+        try {
+          const settings = JSON.parse(saved)
+          if (typeof settings.feedRate === 'number' && settings.feedRate > 0) {
+            return settings.feedRate
+          }
+        } catch {}
+      }
+    }
+    return defaultRate
+  })
   const [isActive, setIsActive] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Track active jogging axis for keyboard support
   
-  // Endstop-based blocking: only block when a real endstop signal was triggered.
-  // endstop_blocked comes from the driver (via M119 after each jog).
-  // Format: { 'Y': 'positive', 'X': 'negative', ... }
+  // Save settings to local storage
+  useEffect(() => {
+    const settings = {
+      motionMode: isRobotArm ? motionMode : undefined,
+      feedRate,
+      stepSize,
+    }
+    localStorage.setItem(`jog-settings-${deviceId}`, JSON.stringify(settings))
+  }, [motionMode, feedRate, stepSize, deviceId, isRobotArm])
+  const activeJogAxisRef = useRef<string | null>(null)
+  
+  // Endstop-based blocking
   const blocked = useMemo(() => {
     const eb = status?.endstop_blocked
     if (!eb) {
@@ -93,72 +205,141 @@ export default function JogControl({ deviceId, deviceType, status }: Props) {
     }
   }, [status?.endstop_blocked])
   
-  // Any axis at endstop?
   const anyBlocked = Object.values(blocked).some(v => v)
+
+  const getAxisLabels = useCallback(() => {
+    if (!isRobotArm) {
+      return { x: 'X', y: 'Y', z: 'Z' }
+    }
+    switch (motionMode) {
+      case 'cartesian':
+        return { x: 'X', y: 'Y', z: 'Z' }
+      case 'jog':
+      default:
+        return { x: 'J1', y: 'J2', z: 'J3' }
+    }
+  }, [isRobotArm, motionMode])
+
+  const axisLabels = getAxisLabels()
   
-  const handleJog = useCallback((axis: string, direction: number) => {
-    const distance = stepSize * direction
-    jog(deviceId, axis, distance, feedRate)
-  }, [deviceId, stepSize, feedRate, jog])
+  // Stop jog - sends actual stop command to backend
+  const stopContinuousJog = useCallback(() => {
+    activeJogAxisRef.current = null
+    jogStop(deviceId)
+  }, [deviceId, jogStop])
+  
+  // Start jog - handles both step and continuous modes
+  const startJog = useCallback((axis: string, direction: number) => {
+    const modeToSend = isRobotArm ? motionMode : undefined
+    
+    if (jogMode === 'step') {
+      // Step mode: single small distance jog command
+      const distance = stepSize * direction
+      jog(deviceId, axis, distance, feedRate, modeToSend)
+    } else {
+      // Continuous mode: send large distance, stop will be sent on mouseup
+      const continuousDistance = 9999 * direction
+      jog(deviceId, axis, continuousDistance, feedRate, modeToSend)
+      activeJogAxisRef.current = axis
+    }
+  }, [deviceId, stepSize, feedRate, jog, jogMode, isRobotArm, motionMode])
   
   const handleHome = useCallback(() => {
     sendCommand(deviceId, 'home')
   }, [deviceId, sendCommand])
   
-  // Track focus state for keyboard control
   const handleFocus = useCallback(() => setIsActive(true), [])
   const handleBlur = useCallback((e: React.FocusEvent) => {
-    // Only deactivate if focus moves outside the container
     if (!containerRef.current?.contains(e.relatedTarget as Node)) {
       setIsActive(false)
     }
   }, [])
   
-  // Keyboard support - only when this component is active
+  // Keyboard support
   useEffect(() => {
+    const activeKeysRef = new Set<string>()
+    
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle keys when this jog control is active
       if (!isActive) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.repeat) return
       
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return
-      }
+      const key = e.key
+      if (activeKeysRef.has(key)) return
       
-      switch (e.key) {
+      switch (key) {
         case 'ArrowUp':
           e.preventDefault()
-          if (!blocked.yPlus) handleJog('Y', 1)
+          if (!blocked.yPlus) {
+            activeKeysRef.add(key)
+            startJog('Y', 1)
+          }
           break
         case 'ArrowDown':
           e.preventDefault()
-          if (!blocked.yMinus) handleJog('Y', -1)
+          if (!blocked.yMinus) {
+            activeKeysRef.add(key)
+            startJog('Y', -1)
+          }
           break
         case 'ArrowLeft':
           e.preventDefault()
-          if (!blocked.xMinus) handleJog('X', -1)
+          if (!blocked.xMinus) {
+            activeKeysRef.add(key)
+            startJog('X', -1)
+          }
           break
         case 'ArrowRight':
           e.preventDefault()
-          if (!blocked.xPlus) handleJog('X', 1)
+          if (!blocked.xPlus) {
+            activeKeysRef.add(key)
+            startJog('X', 1)
+          }
           break
         case 'PageUp':
           e.preventDefault()
-          if (!blocked.zPlus) handleJog('Z', 1)
+          if (!blocked.zPlus) {
+            activeKeysRef.add(key)
+            startJog('Z', 1)
+          }
           break
         case 'PageDown':
           e.preventDefault()
-          if (!blocked.zMinus) handleJog('Z', -1)
+          if (!blocked.zMinus) {
+            activeKeysRef.add(key)
+            startJog('Z', -1)
+          }
           break
         case 'Escape':
           e.preventDefault()
-          jogStop(deviceId)
+          stopContinuousJog()
           break
+      }
+    }
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!isActive) return
+      
+      const key = e.key
+      if (!activeKeysRef.has(key)) return
+      
+      activeKeysRef.delete(key)
+      
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'].includes(key)) {
+        e.preventDefault()
+        if (jogMode === 'continuous') {
+          stopContinuousJog()
+        }
       }
     }
     
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleJog, jogStop, deviceId, isActive, blocked])
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [startJog, stopContinuousJog, isActive, blocked, jogMode])
   
   return (
     <div 
@@ -169,6 +350,34 @@ export default function JogControl({ deviceId, deviceType, status }: Props) {
       onBlur={handleBlur}
       onClick={handleFocus}
     >
+      {/* Motion Mode Tabs - Only for robot arm */}
+      {isRobotArm && (
+        <div className="flex border-b border-steel-700">
+          <button
+            onClick={() => setMotionMode('jog')}
+            title="Csukló szögek direkt vezérlés (J1/J2/J3 fokban)"
+            className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+              motionMode === 'jog'
+                ? 'text-machine-400 border-b-2 border-machine-500 -mb-px'
+                : 'text-steel-400 hover:text-steel-200'
+            }`}
+          >
+            Jog
+          </button>
+          <button
+            onClick={() => setMotionMode('cartesian')}
+            title="X/Y/Z koordináták mm-ben (IK számítás)"
+            className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+              motionMode === 'cartesian'
+                ? 'text-machine-400 border-b-2 border-machine-500 -mb-px'
+                : 'text-steel-400 hover:text-steel-200'
+            }`}
+          >
+            Cartesian
+          </button>
+        </div>
+      )}
+
       {/* Endstop warning */}
       {anyBlocked && (
         <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-md">
@@ -176,36 +385,40 @@ export default function JogControl({ deviceId, deviceType, status }: Props) {
           <span className="text-xs text-red-300">
             Endstop aktiv:{' '}
             {[
-              blocked.xPlus || blocked.xMinus ? `${isRobotArm ? 'J1' : 'X'}` : null,
-              blocked.yPlus || blocked.yMinus ? `${isRobotArm ? 'J2' : 'Y'}` : null,
-              blocked.zPlus || blocked.zMinus ? `${isRobotArm ? 'J3' : 'Z'}` : null,
+              blocked.xPlus || blocked.xMinus ? axisLabels.x : null,
+              blocked.yPlus || blocked.yMinus ? axisLabels.y : null,
+              blocked.zPlus || blocked.zMinus ? axisLabels.z : null,
             ].filter(Boolean).join(', ')}
           </span>
         </div>
       )}
       
-      {/* XY Controls */}
+      {/* Axis Controls */}
       <div className="flex items-center gap-8">
         {/* XY Pad */}
         <div className="grid grid-cols-3 gap-1">
           <div />
           <JogButton
-            onJog={handleJog}
+            onJogStart={startJog}
+            onJogStop={stopContinuousJog}
             axis="Y"
             direction={1}
             icon={ArrowUp}
-            title={`Y+ (Arrow Up)${isRobotArm ? ' - J2 vall' : ''}`}
+            title={`${axisLabels.y}+ (Arrow Up)`}
             isBlocked={blocked.yPlus}
+            jogMode={jogMode}
           />
           <div />
           
           <JogButton
-            onJog={handleJog}
+            onJogStart={startJog}
+            onJogStop={stopContinuousJog}
             axis="X"
             direction={-1}
             icon={ArrowLeft}
-            title={`X- (Arrow Left)${isRobotArm ? ' - J1 bazis' : ''}`}
+            title={`${axisLabels.x}- (Arrow Left)`}
             isBlocked={blocked.xMinus}
+            jogMode={jogMode}
           />
           <button
             onClick={handleHome}
@@ -215,22 +428,26 @@ export default function JogControl({ deviceId, deviceType, status }: Props) {
             <Home className="w-5 h-5" />
           </button>
           <JogButton
-            onJog={handleJog}
+            onJogStart={startJog}
+            onJogStop={stopContinuousJog}
             axis="X"
             direction={1}
             icon={ArrowRight}
-            title={`X+ (Arrow Right)${isRobotArm ? ' - J1 bazis' : ''}`}
+            title={`${axisLabels.x}+ (Arrow Right)`}
             isBlocked={blocked.xPlus}
+            jogMode={jogMode}
           />
           
           <div />
           <JogButton
-            onJog={handleJog}
+            onJogStart={startJog}
+            onJogStop={stopContinuousJog}
             axis="Y"
             direction={-1}
             icon={ArrowDown}
-            title={`Y- (Arrow Down)${isRobotArm ? ' - J2 vall' : ''}`}
+            title={`${axisLabels.y}- (Arrow Down)`}
             isBlocked={blocked.yMinus}
+            jogMode={jogMode}
           />
           <div />
         </div>
@@ -238,73 +455,124 @@ export default function JogControl({ deviceId, deviceType, status }: Props) {
         {/* Z Controls */}
         <div className="flex flex-col gap-1">
           <JogButton
-            onJog={handleJog}
+            onJogStart={startJog}
+            onJogStop={stopContinuousJog}
             axis="Z"
             direction={1}
             icon={ChevronUp}
-            title={`Z+ (Page Up)${isRobotArm ? ' - J3 konyok' : ''}`}
+            title={`${axisLabels.z}+ (Page Up)`}
             isBlocked={blocked.zPlus}
+            jogMode={jogMode}
           />
           <div className="px-3 py-2 bg-steel-800/50 rounded text-center text-sm text-steel-400">
-            {isRobotArm ? 'J3' : 'Z'}
+            {axisLabels.z}
           </div>
           <JogButton
-            onJog={handleJog}
+            onJogStart={startJog}
+            onJogStop={stopContinuousJog}
             axis="Z"
             direction={-1}
             icon={ChevronDown}
-            title={`Z- (Page Down)${isRobotArm ? ' - J3 konyok' : ''}`}
+            title={`${axisLabels.z}- (Page Down)`}
             isBlocked={blocked.zMinus}
+            jogMode={jogMode}
           />
         </div>
       </div>
       
-      {/* Step Size */}
-      <div className="space-y-2">
-        <label className="text-sm text-steel-400">Lepeskoz</label>
-        <div className="flex gap-2">
-          {stepSizes.map((size) => (
-            <button
-              key={size}
-              onClick={() => setStepSize(size)}
-              className={`
-                flex-1 py-2 rounded-md text-sm font-medium transition-colors
-                ${stepSize === size 
-                  ? 'bg-machine-600 text-white' 
-                  : 'bg-steel-800 text-steel-300 hover:bg-steel-700'
-                }
-              `}
-            >
-              {size}{unit}
-            </button>
-          ))}
+      {/* Step Size - only shown in step mode */}
+      {jogMode === 'step' && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-steel-400">Lépésköz</label>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={1}
+                max={stepSizeMax}
+                step={1}
+                value={Math.round(stepSize)}
+                onChange={(e) => {
+                  const val = Math.round(Number(e.target.value))
+                  if (val >= 1 && val <= stepSizeMax) {
+                    setStepSize(val)
+                  }
+                }}
+                className="w-16 px-1 py-0.5 text-sm text-right bg-transparent border-0 text-steel-200 font-mono 
+                  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
+                  focus:bg-steel-800 focus:border focus:border-steel-600 focus:rounded focus:outline-none
+                  focus:[appearance:auto] focus:[&::-webkit-outer-spin-button]:appearance-auto focus:[&::-webkit-inner-spin-button]:appearance-auto"
+              />
+              <span className="text-sm text-steel-400">{unit}</span>
+            </div>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={stepSizeMax}
+            step={1}
+            value={Math.round(stepSize)}
+            onChange={(e) => setStepSize(Math.round(Number(e.target.value)))}
+            className="w-full h-2 bg-steel-800 rounded-lg appearance-none cursor-pointer accent-machine-500"
+          />
+          <div className="flex justify-between text-xs text-steel-500">
+            <span>1{unit}</span>
+            <span>{stepSizeMax}{unit}</span>
+          </div>
         </div>
-      </div>
+      )}
       
       {/* Feed Rate */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-sm text-steel-400">Sebesseg</label>
-          <span className="text-sm text-steel-300">{feedRate}{feedRateUnit}</span>
+          <label className="text-sm text-steel-400">Sebesség</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={feedRateMin}
+              max={feedRateMax}
+              step={feedRateStep}
+              value={Math.round(feedRate)}
+              onChange={(e) => {
+                const val = Math.round(Number(e.target.value))
+                if (val >= feedRateMin && val <= feedRateMax) {
+                  setFeedRate(val)
+                }
+              }}
+              className="w-20 px-1 py-0.5 text-sm text-right bg-transparent border-0 text-steel-200 font-mono 
+                [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
+                focus:bg-steel-800 focus:border focus:border-steel-600 focus:rounded focus:outline-none
+                focus:[appearance:auto] focus:[&::-webkit-outer-spin-button]:appearance-auto focus:[&::-webkit-inner-spin-button]:appearance-auto"
+            />
+            <span className="text-sm text-steel-400">{feedRateUnit}</span>
+          </div>
         </div>
         <input
           type="range"
           min={feedRateMin}
           max={feedRateMax}
           step={feedRateStep}
-          value={feedRate}
-          onChange={(e) => setFeedRate(Number(e.target.value))}
-          className="w-full h-2 bg-steel-800 rounded-lg appearance-none cursor-pointer"
+          value={Math.round(feedRate)}
+          onChange={(e) => setFeedRate(Math.round(Number(e.target.value)))}
+          className="w-full h-2 bg-steel-800 rounded-lg appearance-none cursor-pointer accent-machine-500"
         />
+        <div className="flex justify-between text-xs text-steel-500">
+          <span>{feedRateMin}{feedRateUnit}</span>
+          <span>{feedRateMax}{feedRateUnit}</span>
+        </div>
       </div>
+
       
       {/* Keyboard hints */}
       <div className="text-xs text-steel-500 space-y-1">
         {isActive ? (
           <>
             <p className="text-machine-400">Billentyuzet aktiv</p>
-            <p>&#8592; &#8594; &#8593; &#8595; {isRobotArm ? 'J1/J2' : 'XY'} mozgas, Page Up/Down {isRobotArm ? 'J3' : 'Z'} mozgas</p>
+            <p>&#8592; &#8594; &#8593; &#8595; {axisLabels.x}/{axisLabels.y} mozgas, Page Up/Down {axisLabels.z} mozgas</p>
             <p>ESC: Leallitas</p>
+            {jogMode === 'continuous' && (
+              <p className="text-orange-400">Folyamatos mod: tartsd nyomva a gombot</p>
+            )}
           </>
         ) : (
           <p>Kattints ide a billentyuzet vezerles aktivalasahoz</p>

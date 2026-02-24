@@ -32,7 +32,7 @@ interface DeviceStore {
   
   // Commands
   sendCommand: (deviceId: string, command: string, params?: Record<string, unknown>) => void
-  jog: (deviceId: string, axis: string, distance: number, feedRate: number) => void
+  jog: (deviceId: string, axis: string, distance: number, feedRate: number, mode?: string) => void
   jogStop: (deviceId: string) => void
   sendMDI: (deviceId: string, gcode: string) => void
 }
@@ -235,10 +235,10 @@ export const useDeviceStore = create<DeviceStore>()(
       }
     },
     
-    jog: (deviceId, axis, distance, feedRate) => {
+    jog: (deviceId, axis, distance, feedRate, mode) => {
       const { socket } = get()
       if (socket) {
-        socket.emit('device:jog', { deviceId, axis, distance, feedRate })
+        socket.emit('device:jog', { deviceId, axis, distance, feedRate, mode })
       }
     },
     

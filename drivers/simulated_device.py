@@ -560,7 +560,7 @@ class SimulatedDevice(DeviceDriver):
             }
         }
     
-    def get_capabilities(self) -> DeviceCapabilities:
+    async def get_capabilities(self) -> DeviceCapabilities:
         """Eszköz képességek"""
         return self._capabilities
     

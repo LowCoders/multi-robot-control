@@ -77,6 +77,20 @@ uint8_t limits_get_state()
 	  if (pin & get_limit_pin_mask(idx)) { limit_state |= (1 << idx); }
 	}
   }
+  
+  #ifdef USE_PROBE_AS_Z_LIMIT
+    // Read Z limit from probe pin (A5) instead of D12, because D12 is E-axis step in grbl4axis.
+    // Clear the Z bit first (it may have been set incorrectly from the limit mask above).
+    limit_state &= ~(1 << Z_AXIS);
+    // Read probe pin state
+    uint8_t probe_pin = (PROBE_PIN & PROBE_MASK);
+    // Apply same invert logic as other limit pins
+    if (bit_isfalse(settings.flags,BITFLAG_INVERT_LIMIT_PINS)) { probe_pin ^= PROBE_MASK; }
+    if (probe_pin) {
+      limit_state |= (1 << Z_AXIS);
+    }
+  #endif
+  
   return(limit_state);
 }
 

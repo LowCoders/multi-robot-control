@@ -113,7 +113,47 @@ if [ -f "$CONFIG_FILE" ]; then
     # Homing-ot runtime-ban kapcsoljuk ki: $22=0
     sed -i 's/^#define HOMING_INIT_LOCK/\/\/ #define HOMING_INIT_LOCK/' "$CONFIG_FILE"
     
-    echo "config.h módosítva (HOMING_INIT_LOCK kikapcsolva)"
+    # VARIABLE_SPINDLE engedélyezése - Z limit pin D12-re kerül (CNC Shield v3 kompatibilitás)
+    # Ezzel a Z limit a D12-re kerül (D11 helyett), ami megfelel a CNC Shield bekötésének
+    sed -i 's/^\/\/ #define VARIABLE_SPINDLE/#define VARIABLE_SPINDLE/' "$CONFIG_FILE"
+    
+    # USE_PROBE_AS_Z_LIMIT hozzáadása a VARIABLE_SPINDLE után
+    # Ez szükséges, mert grbl4axis-ban a D12 az E tengely step pinje
+    # A Z limitet a probe pinről (A5) olvassuk helyette
+    if ! grep -q "USE_PROBE_AS_Z_LIMIT" "$CONFIG_FILE"; then
+        sed -i '/^#define VARIABLE_SPINDLE/a\\n// Robot arm: Use probe pin (A5) as Z limit input.\n// This is needed because in grbl4axis the D12 pin is used for E-axis step.\n#define USE_PROBE_AS_Z_LIMIT' "$CONFIG_FILE"
+    fi
+    
+    echo "config.h módosítva (HOMING_INIT_LOCK ki, VARIABLE_SPINDLE be, USE_PROBE_AS_Z_LIMIT be)"
+fi
+
+# limits.c módosítása - Z limit olvasása probe pinről (A5)
+# Ez szükséges, mert a D12 pin a grbl4axis-ban az E tengely step pinje
+LIMITS_FILE="$GRBL_DIR/src/limits.c"
+if [ -f "$LIMITS_FILE" ]; then
+    if ! grep -q "USE_PROBE_AS_Z_LIMIT" "$LIMITS_FILE"; then
+        echo "limits.c módosítása (USE_PROBE_AS_Z_LIMIT)..."
+        # A return(limit_state); sor elé beszúrjuk a probe pin olvasást
+        # Megjegyzés: a sed-ben a & karaktert escape-elni kell
+        sed -i '/^  return(limit_state);$/i\
+  \
+  #ifdef USE_PROBE_AS_Z_LIMIT\
+    // Read Z limit from probe pin (A5) instead of D12, because D12 is E-axis step in grbl4axis.\
+    // Clear the Z bit first (it may have been set incorrectly from the limit mask above).\
+    limit_state \&= ~(1 << Z_AXIS);\
+    // Read probe pin state\
+    uint8_t probe_pin = (PROBE_PIN \& PROBE_MASK);\
+    // Apply same invert logic as other limit pins\
+    if (bit_isfalse(settings.flags,BITFLAG_INVERT_LIMIT_PINS)) { probe_pin ^= PROBE_MASK; }\
+    if (probe_pin) {\
+      limit_state |= (1 << Z_AXIS);\
+    }\
+  #endif\
+' "$LIMITS_FILE"
+        echo "limits.c módosítva (USE_PROBE_AS_Z_LIMIT kód hozzáadva)"
+    else
+        echo "limits.c már tartalmazza a USE_PROBE_AS_Z_LIMIT kódot"
+    fi
 fi
 
 # grbl4axis fork esetén a cpu_map.h már tartalmazza az A tengelyt

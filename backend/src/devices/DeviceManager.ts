@@ -407,6 +407,11 @@ export class DeviceManager {
           device.lastError = bd.lastError;
         }
       }
+      
+      // Capabilities lekérdezése minden eszközhöz (nem csak csatlakozottakhoz)
+      for (const bd of bridgeDevices) {
+        await this.getDeviceCapabilities(bd.id);
+      }
     } catch (error) {
       console.error('Eszközök frissítési hiba:', error);
     }
@@ -520,13 +525,15 @@ export class DeviceManager {
     deviceId: string,
     axis: string,
     distance: number,
-    feedRate: number
+    feedRate: number,
+    mode?: string
   ): Promise<boolean> {
     try {
       const response = await this.http.post(`/devices/${deviceId}/jog`, {
         axis,
         distance,
         feed_rate: feedRate,
+        mode: mode || null,
       });
       return response.data.success;
     } catch (error) {

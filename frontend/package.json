@@ -2,6 +2,8 @@
   "name": "multi-robot-frontend",
   "private": true,
   "version": "1.0.0",
+  "author": "Sam <lowcoders@protonmail.com>",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

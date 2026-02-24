@@ -39,6 +39,7 @@ except ImportError:
 
 from base import (
     DeviceDriver,
+    JogSafeDeviceDriver,
     DeviceType,
     DeviceState,
     DeviceStatus,
@@ -69,7 +70,7 @@ class ControlMode(Enum):
     CARTESIAN = "cartesian"   # X,Y,Z koordináták IK-val
 
 
-class RobotArmDevice(DeviceDriver):
+class RobotArmDevice(JogSafeDeviceDriver):
     """
     3 tengelyes robotkar driver GRBL firmware-rel.
     
@@ -128,8 +129,13 @@ class RobotArmDevice(DeviceDriver):
         port: str = "/dev/ttyUSB0",
         baudrate: int = 115200,
         timeout: float = 2.0,
-        robot_config: RobotConfig = None,
+        robot_config = None,
         use_grbl: bool = True,
+        axis_mapping: Dict[str, str] = None,
+        axis_invert: Dict[str, bool] = None,
+        axis_limits: Dict[str, list] = None,
+        axis_scale: Dict[str, float] = None,
+        max_feed_rate: float = None,
     ):
         super().__init__(device_id, device_name, DeviceType.ROBOT_ARM)
         
@@ -139,13 +145,24 @@ class RobotArmDevice(DeviceDriver):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
+        self._config_max_feed_rate = max_feed_rate if max_feed_rate else 100.0
         
         # GRBL mód flag
         self._use_grbl = use_grbl
         self._grbl_version = None
         
         # Robot konfiguráció (méretek az IK-hoz)
-        self._robot_config = robot_config or RobotConfig()
+        # Elfogadunk RobotConfig objektumot vagy dict-et (YAML config-ból)
+        if robot_config is None:
+            self._robot_config = RobotConfig()
+        elif isinstance(robot_config, dict):
+            self._robot_config = RobotConfig(
+                L1=robot_config.get('L1', 85.0),
+                L2=robot_config.get('L2', 140.0),
+                L3=robot_config.get('L3', 165.0),
+            )
+        else:
+            self._robot_config = robot_config
         
         # Vezérlési mód
         self._control_mode = ControlMode.JOINT
@@ -169,15 +186,20 @@ class RobotArmDevice(DeviceDriver):
             'J3': (-135, 135),  # Könyök
         }
         
-        # Legacy tengely mapping (AXIS4UI kompatibilitás)
-        self._axis_map = {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
-        self._axis_map_reverse = {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
-        self._axis_invert = {}
-        self._axis_scale = {}
+        # Legacy tengely mapping (AXIS4UI kompatibilitás) - konfigurálható
+        self._axis_map = axis_mapping if axis_mapping else {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
+        self._axis_map_reverse = {v: k for k, v in self._axis_map.items()}
+        self._axis_invert = axis_invert if axis_invert else {}
+        self._axis_scale = axis_scale if axis_scale else {}
         self._axis_limits: Dict[str, tuple] = {}
+        if axis_limits:
+            for axis, limits in axis_limits.items():
+                if isinstance(limits, (list, tuple)) and len(limits) == 2:
+                    self._axis_limits[axis] = (limits[0], limits[1])
         
         self._serial: Optional[serial.Serial] = None
         self._serial_lock = asyncio.Lock()
+        # _jog_lock az ősosztályból (JogSafeDeviceDriver) öröklődik
         self._status_polling = False
         self._poll_task: Optional[asyncio.Task] = None
         self._run_task: Optional[asyncio.Task] = None
@@ -213,7 +235,11 @@ class RobotArmDevice(DeviceDriver):
             has_tool_changer=False,
             has_gripper=True,
             has_sucker=True,
-            max_feed_rate=100.0,  # Sebesség skála (1-100)
+            has_endstops=True,
+            has_vacuum_pump=True,
+            supports_motion_test=True,
+            supports_firmware_probe=True,
+            max_feed_rate=self._config_max_feed_rate,
             max_spindle_speed=0.0,
             max_laser_power=0.0,
             work_envelope={
@@ -690,15 +716,22 @@ class RobotArmDevice(DeviceDriver):
             print(f"🤖 Endstop ellenőrzés hiba jog után: {e}")
     
     async def get_status(self) -> DeviceStatus:
-        """Aktuális állapot lekérdezése.
+        """Aktuális állapot lekérdezése GRBL státusz polling-gal.
         
-        Nem küld serial parancsot - a pozíciót a mozgás válaszokból követjük
-        (_parse_move_response), az M119 endstop lekérdezés pedig felesleges
-        serial forgalmat generált és interferálhatott a mozgásparancsokkal.
+        Aktívan lekérdezi a GRBL állapotot (?) a valós idejű pozíció és
+        állapot frissítéshez, hasonlóan a GrblDevice működéséhez.
         """
-        # Robot-specifikus állapot frissítése (serial kommunikáció nélkül)
+        # Robot-specifikus állapot frissítése
         self._status.gripper_state = self._gripper_state
         self._status.sucker_state = self._sucker_state
+        
+        # GRBL státusz lekérdezése (ha csatlakozva és nincs diagnosztika)
+        if self._connected and self._serial and self._serial.is_open:
+            if not getattr(self, '_diagnostics_running', False):
+                try:
+                    await self.get_grbl_status()
+                except Exception:
+                    pass
         
         return self._status
     
@@ -710,8 +743,8 @@ class RobotArmDevice(DeviceDriver):
     # ÁLLAPOT POLLING
     # =========================================
     
-    def _start_status_polling(self, interval: float = 1.0) -> None:
-        """Állapot polling indítása (lassabb, mert nincs ? query)"""
+    def _start_status_polling(self, interval: float = 0.2) -> None:
+        """Állapot polling indítása (gyors frissítés a valós idejű pozícióhoz)"""
         if self._status_polling:
             return
         self._status_polling = True
@@ -852,10 +885,66 @@ class RobotArmDevice(DeviceDriver):
             return False
     
     async def jog_stop(self) -> bool:
-        """Jog mozgás leállítása - jelenleg nincs dedikált stop parancs"""
-        # A robotkar nem támogat feed hold-ot
-        # A mozgás befejezéséig vár
-        return True
+        """Jog mozgás azonnali leállítása és buffer törlése.
+        
+        A GRBL kezelése:
+        1. Feed hold (!) - azonnal megállítja a mozgást
+        2. Soft reset (0x18) - törli a buffert és visszaállítja Idle-re
+        3. Unlock ($X) - ha szükséges, feloldja a GRBL-t
+        
+        Fontos: A cycle start (~) NEM használható, mert az folytatja az előző mozgást!
+        """
+        import time
+        start_time = time.time()
+        print(f"🤖 Jog stop: hívás kezdete")
+        
+        # Megvárjuk, hogy az előző jog művelet befejeződjön
+        async with self._jog_lock:
+            try:
+                if not self._serial or not self._serial.is_open:
+                    print(f"🤖 Jog stop: serial nincs nyitva!")
+                    return False
+                
+                # Feed hold küldése (azonnal megállítja a mozgást)
+                print(f"🤖 Jog stop: feed hold (!) küldése...")
+                await self._write_bytes(b"!")
+                await asyncio.sleep(0.02)
+                
+                # Aktuális pozíció lekérdezése MIELŐTT soft reset-et küldünk
+                # (a soft reset nullázza a pozíciót)
+                status = await self.get_grbl_status()
+                saved_pos = status.get('grbl', {'x': 0, 'y': 0, 'z': 0})
+                print(f"🤖 Jog stop: pozíció mentve: X={saved_pos['x']}, Y={saved_pos['y']}, Z={saved_pos['z']}")
+                
+                # Soft reset - törli a buffert és visszaállítja Idle-re
+                print(f"🤖 Jog stop: soft reset (0x18) küldése...")
+                await self._write_bytes(b"\x18")
+                await asyncio.sleep(0.1)  # Soft reset-nek több idő kell
+                
+                # Buffer ürítése - a soft reset válaszüzenetei
+                if self._serial and self._serial.is_open:
+                    self._serial.reset_input_buffer()
+                
+                # Unlock ha szükséges (soft reset után alarm állapotba kerülhet)
+                print(f"🤖 Jog stop: unlock ($X) küldése...")
+                await self._send_command("$X")
+                await asyncio.sleep(0.02)
+                
+                # Pozíció visszaállítása G92-vel
+                print(f"🤖 Jog stop: pozíció visszaállítása G92-vel...")
+                await self._send_command(f"G92 X{saved_pos['x']:.3f} Y{saved_pos['y']:.3f} Z{saved_pos['z']:.3f}")
+                await asyncio.sleep(0.02)
+                
+                # Állapot visszaállítása
+                self._set_state(DeviceState.IDLE)
+                
+                elapsed = (time.time() - start_time) * 1000
+                print(f"🤖 Jog stop: kész ({elapsed:.1f}ms)")
+                return True
+                
+            except Exception as e:
+                print(f"🤖 Jog stop hiba: {e}")
+                return False
     
     async def move_to(self, x: float, y: float, z: float, speed: float = 50) -> bool:
         """Abszolút pozícióra mozgás (logikai koordináták, szoftveres limitekkel)"""
@@ -1060,30 +1149,33 @@ class RobotArmDevice(DeviceDriver):
             distance: Szög fokban (pozitív/negatív)
             speed: Sebesség (fok/perc)
         """
+        print(f"🤖 Jog joint: {joint}, distance={distance}, speed={speed}")
+        
         joint = joint.upper()
         if joint not in ['J1', 'J2', 'J3']:
             return False
         
-        # Aktuális pozíció
-        if KINEMATICS_AVAILABLE and self._joint_position:
-            j1 = self._joint_position.j1
-            j2 = self._joint_position.j2
-            j3 = self._joint_position.j3
-        else:
-            # GRBL státuszból olvasás
+        # Lock megszerzése - megvárjuk, ha jog_stop fut
+        async with self._jog_lock:
+            # GRBL pozíció lekérdezése a jog előtt - ez frissíti a _status.position-t
+            await self.get_grbl_status()
+            
+            # Aktuális pozíció - most már a friss GRBL adatokból
             j1 = self._status.position.z  # J1 = GRBL Z
             j2 = self._status.position.x  # J2 = GRBL X
             j3 = self._status.position.y  # J3 = GRBL Y
-        
-        # Cél pozíció
-        if joint == 'J1':
-            j1 += distance
-        elif joint == 'J2':
-            j2 += distance
-        elif joint == 'J3':
-            j3 += distance
-        
-        return await self.move_to_joints(j1, j2, j3, speed)
+            
+            print(f"🤖 Jog joint: aktuális pozíció J1={j1}, J2={j2}, J3={j3}")
+            
+            # Cél pozíció
+            if joint == 'J1':
+                j1 += distance
+            elif joint == 'J2':
+                j2 += distance
+            elif joint == 'J3':
+                j3 += distance
+            
+            return await self.move_to_joints(j1, j2, j3, speed)
     
     async def jog_cartesian(self, axis: str, distance: float, speed: float = 500) -> bool:
         """
@@ -1101,28 +1193,27 @@ class RobotArmDevice(DeviceDriver):
         if axis not in ['X', 'Y', 'Z']:
             return False
         
-        # Aktuális Cartesian pozíció
-        if self._cartesian_position:
-            x = self._cartesian_position.x
-            y = self._cartesian_position.y
-            z = self._cartesian_position.z
-        else:
-            # FK-ból számolás
+        # Lock megszerzése - megvárjuk, ha jog_stop fut
+        async with self._jog_lock:
+            # GRBL pozíció lekérdezése a jog előtt - ez frissíti a _status.position-t
+            await self.get_grbl_status()
+            
+            # Aktuális Cartesian pozíció - most már a friss GRBL adatokból, FK-val számolva
             j1 = self._status.position.z
             j2 = self._status.position.x
             j3 = self._status.position.y
             pos = forward_kinematics(j1, j2, j3, self._robot_config)
             x, y, z = pos.x, pos.y, pos.z
-        
-        # Cél pozíció
-        if axis == 'X':
-            x += distance
-        elif axis == 'Y':
-            y += distance
-        elif axis == 'Z':
-            z += distance
-        
-        return await self.move_to_xyz(x, y, z, speed)
+            
+            # Cél pozíció
+            if axis == 'X':
+                x += distance
+            elif axis == 'Y':
+                y += distance
+            elif axis == 'Z':
+                z += distance
+            
+            return await self.move_to_xyz(x, y, z, speed)
     
     async def get_grbl_status(self) -> dict:
         """GRBL státusz lekérdezése '?' paranccsal"""
@@ -1146,6 +1237,21 @@ class RobotArmDevice(DeviceDriver):
                 
                 # Pozíció frissítése
                 self._status.position = Position(x=grbl_x, y=grbl_y, z=grbl_z)
+                
+                # GRBL state string -> DeviceState konverzió
+                state_map = {
+                    'Idle': DeviceState.IDLE,
+                    'Run': DeviceState.RUNNING,
+                    'Hold': DeviceState.PAUSED,
+                    'Jog': DeviceState.JOG,
+                    'Alarm': DeviceState.ALARM,
+                    'Home': DeviceState.HOMING,
+                    'Door': DeviceState.ALARM,
+                    'Check': DeviceState.IDLE,
+                    'Sleep': DeviceState.IDLE,
+                }
+                new_state = state_map.get(state, DeviceState.IDLE)
+                self._set_state(new_state)
                 
                 if KINEMATICS_AVAILABLE:
                     self._joint_position = JointAngles(j1=j1, j2=j2, j3=j3)

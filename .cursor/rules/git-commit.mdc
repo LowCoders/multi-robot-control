@@ -1,0 +1,28 @@
+---
+description: Git commit beállítások
+globs: 
+alwaysApply: true
+---
+
+# Git Commit Szabályok
+
+## Author információk
+
+Git commitok készítésekor mindig használd a következő author adatokat:
+
+- **Név**: Sam
+- **Email**: lowcoders@protonmail.com
+
+## Commit parancs
+
+Commitoláskor MINDIG add meg az author paramétert:
+
+```bash
+git commit --author="Sam <lowcoders@protonmail.com>" -m "commit message"
+```
+
+## Fontos
+
+- NE használj cursoragent vagy más generikus nevet
+- NE módosítsd a globális git konfigurációt
+- Mindig a `--author` flaget használd a commitoknál

@@ -8,7 +8,6 @@ import {
   Settings,
   Wifi,
   WifiOff,
-  Box,
 } from 'lucide-react'
 import { useDeviceStore } from '../../stores/deviceStore'
 
@@ -20,7 +19,6 @@ const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/jobs', icon: ListTodo, label: 'Job Manager' },
   { path: '/automation', icon: Zap, label: 'Automatizálás' },
-  { path: '/machine-config', icon: Box, label: 'Gép Konfiguráció' },
   { path: '/settings', icon: Settings, label: 'Beállítások' },
 ]
 

@@ -79,6 +79,10 @@ class DeviceCapabilities:
     has_tool_changer: bool = False
     has_gripper: bool = False
     has_sucker: bool = False
+    has_endstops: bool = False
+    has_vacuum_pump: bool = False
+    supports_motion_test: bool = True
+    supports_firmware_probe: bool = True
     max_feed_rate: float = 1000.0  # mm/min
     max_spindle_speed: float = 0.0  # RPM
     max_laser_power: float = 0.0  # %
@@ -100,6 +104,10 @@ class DeviceCapabilities:
             "has_tool_changer": self.has_tool_changer,
             "has_gripper": self.has_gripper,
             "has_sucker": self.has_sucker,
+            "has_endstops": self.has_endstops,
+            "has_vacuum_pump": self.has_vacuum_pump,
+            "supports_motion_test": self.supports_motion_test,
+            "supports_firmware_probe": self.supports_firmware_probe,
             "max_feed_rate": self.max_feed_rate,
             "max_spindle_speed": self.max_spindle_speed,
             "max_laser_power": self.max_laser_power,
@@ -488,3 +496,27 @@ class DeviceDriver(ABC):
             "connected": self._connected,
             "state": self._status.state.value,
         }
+
+
+class JogSafeDeviceDriver(DeviceDriver):
+    """
+    Köztes osztály fizikai eszközökhöz, ahol a jog műveletek szinkronizációja szükséges.
+    
+    A _jog_lock biztosítja, hogy a jog() és jog_stop() műveletek ne fussanak 
+    párhuzamosan, megakadályozva a race condition-öket gyors egérgomb felengedésnél.
+    
+    Használat:
+        - Fizikai eszköz driverek (GrblDevice, RobotArmDevice, LinuxCNCDevice) 
+          ebből az osztályból örököljenek
+        - A jog() és jog_stop() implementációkban használd: async with self._jog_lock:
+        - Szimulált eszközök maradjanak DeviceDriver-nél (nincs valós race condition)
+    """
+    
+    def __init__(
+        self,
+        device_id: str,
+        device_name: str,
+        device_type: DeviceType = DeviceType.CUSTOM,
+    ):
+        super().__init__(device_id, device_name, device_type)
+        self._jog_lock = asyncio.Lock()

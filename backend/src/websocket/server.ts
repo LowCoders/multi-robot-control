@@ -91,15 +91,28 @@ export function setupWebSocket(
       axis: string;
       distance: number;
       feedRate: number;
+      mode?: string;
     }) => {
-      const { deviceId, axis, distance, feedRate } = data;
+      const { deviceId, axis, distance, feedRate, mode } = data;
       let success = false;
       
       try {
-        success = await deviceManager.jog(deviceId, axis, distance, feedRate);
+        success = await deviceManager.jog(deviceId, axis, distance, feedRate, mode);
       } catch (error) {
         console.error('WebSocket device:jog error:', error);
       }
+      
+      // Log jog command to MDI console
+      const isContinuous = Math.abs(distance) > 1000;
+      const jogCommand = isContinuous 
+        ? `[JOG] ${axis}${distance > 0 ? '+' : '-'} F${feedRate} (folyamatos)`
+        : `[JOG] G91 G0 ${axis}${distance} F${feedRate}`;
+      
+      socket.emit('device:mdi:result', {
+        deviceId,
+        gcode: jogCommand,
+        response: success ? 'ok' : 'error',
+      });
       
       socket.emit('device:jog:result', {
         deviceId,
@@ -115,6 +128,13 @@ export function setupWebSocket(
       } catch (error) {
         console.error('WebSocket device:jog:stop error:', error);
       }
+      
+      // Log jog stop to MDI console
+      socket.emit('device:mdi:result', {
+        deviceId: data.deviceId,
+        gcode: '[JOG STOP]',
+        response: success ? 'ok' : 'error',
+      });
       
       socket.emit('device:jog:stop:result', {
         deviceId: data.deviceId,

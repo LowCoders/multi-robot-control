@@ -1,6 +1,8 @@
 {
   "name": "multi-robot-backend",
   "version": "1.0.0",
+  "author": "Sam <lowcoders@protonmail.com>",
+  "license": "MIT",
   "description": "Multi-Robot Control System - Node.js Backend",
   "main": "dist/index.js",
   "scripts": {

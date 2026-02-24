@@ -18,6 +18,7 @@ except ImportError:
 
 from base import (
     DeviceDriver,
+    JogSafeDeviceDriver,
     DeviceType,
     DeviceState,
     DeviceStatus,
@@ -83,9 +84,17 @@ class GrblSettings:
     @property
     def laser_mode(self) -> bool:
         return self.settings.get(32, 0) == 1
+    
+    @property
+    def soft_limits(self) -> bool:
+        return self.settings.get(20, 0) == 1
+    
+    @property
+    def hard_limits(self) -> bool:
+        return self.settings.get(21, 0) == 1
 
 
-class GrblDevice(DeviceDriver):
+class GrblDevice(JogSafeDeviceDriver):
     """
     GRBL-alapú eszközök drivere.
     
@@ -151,6 +160,7 @@ class GrblDevice(DeviceDriver):
         baudrate: int = 115200,
         device_type: DeviceType = DeviceType.LASER_CUTTER,
         timeout: float = 2.0,
+        max_feed_rate: Optional[float] = None,
     ):
         super().__init__(device_id, device_name, device_type)
         
@@ -160,6 +170,11 @@ class GrblDevice(DeviceDriver):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
+        self._config_max_feed_rate = max_feed_rate
+        
+        # Ha config-ból jön max_feed_rate, frissítsük az alapértelmezett capabilities-t
+        if max_feed_rate:
+            self._capabilities.max_feed_rate = max_feed_rate
         
         self._serial: Optional[serial.Serial] = None
         self._settings: Optional[GrblSettings] = None
@@ -168,6 +183,7 @@ class GrblDevice(DeviceDriver):
         self._status_polling = False
         self._poll_task: Optional[asyncio.Task] = None
         self._run_task: Optional[asyncio.Task] = None  # Track running program task
+        self._jog_stopping: bool = False  # Flag to prevent status polling during jog_stop
         
         # Gcode fájl kezelés
         self._gcode_lines: List[str] = []
@@ -333,15 +349,23 @@ class GrblDevice(DeviceDriver):
         
         # Capabilities frissítése a beállítások alapján
         if self._settings:
+            # Config-ból jövő max_feed_rate elsőbbséget élvez
+            grbl_max_rate = max(
+                self._settings.max_rate_x,
+                self._settings.max_rate_y,
+                self._settings.max_rate_z,
+            )
+            effective_max_feed_rate = self._config_max_feed_rate if self._config_max_feed_rate else grbl_max_rate
+            
             self._capabilities = DeviceCapabilities(
                 axes=["X", "Y", "Z"],
                 has_spindle=not self._settings.laser_mode,
                 has_laser=self._settings.laser_mode,
-                max_feed_rate=max(
-                    self._settings.max_rate_x,
-                    self._settings.max_rate_y,
-                    self._settings.max_rate_z,
-                ),
+                has_endstops=self._settings.hard_limits or self._settings.soft_limits,
+                has_vacuum_pump=False,
+                supports_motion_test=True,
+                supports_firmware_probe=True,
+                max_feed_rate=effective_max_feed_rate,
                 work_envelope={
                     "x": self._settings.max_travel_x,
                     "y": self._settings.max_travel_y,
@@ -401,7 +425,11 @@ class GrblDevice(DeviceDriver):
             GrblState.CHECK: DeviceState.IDLE,
             GrblState.SLEEP: DeviceState.IDLE,
         }
-        self._set_state(state_map.get(self._grbl_state, DeviceState.IDLE))
+        new_state = state_map.get(self._grbl_state, DeviceState.IDLE)
+        # Ne frissítsük az állapotot Alarm-ra vagy Hold-ra, ha jog_stop folyamatban van
+        if self._jog_stopping and new_state in (DeviceState.ALARM, DeviceState.PAUSED):
+            return
+        self._set_state(new_state)
         
         # Gép pozíció (MPos)
         self._status.position = Position(
@@ -482,33 +510,93 @@ class GrblDevice(DeviceDriver):
         feed_rate: float,
     ) -> bool:
         """Jog mozgás"""
-        try:
-            axis = axis.upper()
-            if axis not in ["X", "Y", "Z"]:
+        async with self._jog_lock:
+            try:
+                axis = axis.upper()
+                if axis not in ["X", "Y", "Z"]:
+                    return False
+                
+                # GRBL 0.9 kompatibilis jog: G91 G1 (relatív pozícionálás, kontrollált sebesség)
+                # G1 használata G0 helyett, hogy a feed rate érvényesüljön
+                # GRBL 1.1+ esetén $J parancsot is lehetne használni
+                cmd = f"G91 G1 {axis}{distance:.3f} F{feed_rate:.0f}"
+                response = await self._send_command(cmd)
+                
+                # Vissza abszolút módba
+                await self._send_command("G90")
+                
+                return "ok" in response.lower()
+                
+            except Exception as e:
+                self._set_error(f"Jog hiba: {str(e)}")
                 return False
-            
-            # GRBL 0.9 kompatibilis jog: G91 G0 (relatív pozícionálás)
-            # GRBL 1.1+ esetén $J parancsot lehetne használni, de ez mindkettővel működik
-            cmd = f"G91 G0 {axis}{distance:.3f} F{feed_rate:.0f}"
-            response = await self._send_command(cmd)
-            
-            # Vissza abszolút módba
-            await self._send_command("G90")
-            
-            return "ok" in response.lower()
-            
-        except Exception as e:
-            self._set_error(f"Jog hiba: {str(e)}")
-            return False
     
     async def jog_stop(self) -> bool:
-        """Jog leállítása"""
-        try:
-            # Jog cancel (0x85) - non-blocking
-            await self._write_bytes(b"\x85")
-            return True
-        except Exception:
-            return False
+        """Jog mozgás azonnali leállítása és buffer törlése.
+        
+        A GRBL kezelése:
+        1. Feed hold (!) - azonnal megállítja a mozgást
+        2. Pozíció mentése (?) - soft reset előtt
+        3. Soft reset (0x18) - törli a buffert és visszaállítja Idle-re
+        4. Várakozás és üdvözlő üzenet kiolvasása
+        5. Unlock ($X) - ha szükséges, feloldja a GRBL-t
+        6. Pozíció visszaállítása (G92) - a mentett értékekre
+        
+        Fontos: A cycle start (~) NEM használható, mert az folytatja az előző mozgást!
+        """
+        self._jog_stopping = True
+        async with self._jog_lock:
+            try:
+                if not self._serial or not self._serial.is_open:
+                    self._jog_stopping = False
+                    return False
+                
+                # Feed hold küldése (azonnal megállítja a mozgást)
+                await self._write_bytes(b"!")
+                await asyncio.sleep(0.02)
+                
+                # Pozíció lekérdezése soft reset előtt
+                saved_pos = Position()
+                async with self._serial_lock:
+                    await asyncio.to_thread(self._serial.write, b"?")
+                    await asyncio.sleep(0.02)
+                    in_waiting = await asyncio.to_thread(lambda: self._serial.in_waiting if self._serial else 0)
+                    if in_waiting > 0:
+                        line_bytes = await asyncio.to_thread(self._serial.readline)
+                        response = line_bytes.decode().strip()
+                        match = self.STATUS_PATTERN.search(response)
+                        if match:
+                            saved_pos = Position(
+                                x=float(match.group(2)),
+                                y=float(match.group(3)),
+                                z=float(match.group(4)),
+                            )
+                
+                # Soft reset - törli a buffert és visszaállítja Idle-re
+                await self._write_bytes(b"\x18")
+                await asyncio.sleep(0.25)
+                
+                # Üdvözlő üzenet kiolvasása
+                await self._read_response(timeout=0.25)
+                
+                # Unlock - a GRBL 0.9 esetén a soft reset után Alarm állapotba kerül
+                try:
+                    await self._send_command("$X")
+                except Exception:
+                    pass
+                
+                # Pozíció visszaállítása G92-vel
+                await self._send_command(f"G92 X{saved_pos.x:.3f} Y{saved_pos.y:.3f} Z{saved_pos.z:.3f}")
+                await asyncio.sleep(0.02)
+                
+                # Állapot visszaállítása
+                self._set_state(DeviceState.IDLE)
+                
+                self._jog_stopping = False
+                return True
+            except Exception:
+                self._jog_stopping = False
+                return False
     
     # =========================================
     # G-CODE KÜLDÉS

@@ -48,6 +48,7 @@ class JogRequest(BaseModel):
     axis: str
     distance: float
     feed_rate: float
+    mode: Optional[str] = None  # 'jog', 'joint', 'cartesian' (robot arm only)
 
 
 class GCodeRequest(BaseModel):
@@ -141,6 +142,7 @@ class DeviceManager:
                     device_name=config.name,
                     port=port,
                     baudrate=config.config.get('baudrate', 115200),
+                    max_feed_rate=config.config.get('max_feed_rate'),
                 )
                 connection_info = port
                 print(f"🔌 Valós GRBL eszköz: {config.name} ({port})")
@@ -160,10 +162,12 @@ class DeviceManager:
                     device_name=config.name,
                     port=port,
                     baudrate=config.config.get('baudrate', 115200),
+                    robot_config=config.config.get('robot_config'),
                     axis_mapping=config.config.get('axis_mapping'),
                     axis_invert=config.config.get('axis_invert'),
                     axis_limits=config.config.get('axis_limits'),
                     axis_scale=config.config.get('axis_scale'),
+                    max_feed_rate=config.config.get('max_feed_rate'),
                 )
                 connection_info = port
                 print(f"🤖 Valós robotkar eszköz: {config.name} ({port})")
@@ -502,7 +506,21 @@ async def jog_device(device_id: str, request: JogRequest):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
-    result = await device.jog(request.axis, request.distance, request.feed_rate)
+    # Robot arm: jog_joint és jog_cartesian metódusok elérhetők
+    if hasattr(device, 'jog_joint') and hasattr(device, 'jog_cartesian'):
+        if request.mode == 'cartesian':
+            # Cartesian mód: X/Y/Z mm-ben, IK számítással
+            result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
+        else:
+            # Jog és Joint mód: mindkettő joint léptetés (axis->joint mapping)
+            # X->J1 (bázis), Y->J2 (váll), Z->J3 (könyök)
+            joint_map = {'X': 'J1', 'Y': 'J2', 'Z': 'J3'}
+            joint = joint_map.get(request.axis.upper(), request.axis)
+            result = await device.jog_joint(joint, request.distance, request.feed_rate)
+    else:
+        # Nem robot arm (pl. laser, CNC) - standard jog
+        result = await device.jog(request.axis, request.distance, request.feed_rate)
+    
     return {"success": result}
 
 
