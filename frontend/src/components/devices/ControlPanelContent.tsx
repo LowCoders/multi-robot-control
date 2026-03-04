@@ -13,7 +13,6 @@ import {
   GripVertical,
   MousePointer2,
   Repeat,
-  Crosshair,
 } from 'lucide-react'
 import PositionDisplay from './PositionDisplay'
 import JogControl, { type JogMode } from './JogControl'
@@ -100,20 +99,6 @@ export default function ControlPanelContent({
     sendCommand(device.id, command)
   }
 
-  const handleResetCoordinates = async () => {
-    try {
-      const response = await fetch(`/api/devices/${device.id}/reset-coordinates`, {
-        method: 'POST',
-      })
-      if (!response.ok) {
-        const data = await response.json()
-        console.error('Reset coordinates failed:', data.detail)
-      }
-    } catch (err) {
-      console.error('Reset coordinates error:', err)
-    }
-  }
-
   const isRunning = device.state === 'running'
   const isPaused = device.state === 'paused'
   const isIdle = device.state === 'idle'
@@ -142,7 +127,7 @@ export default function ControlPanelContent({
             <div className="card-body space-y-4">
               {device.status && (
                 <>
-                  <PositionDisplay position={device.status.position} />
+                  <PositionDisplay position={device.status.work_position} machineConfig={machineConfig} />
 
                   {/* Progress */}
                   {device.status.current_file && (
@@ -218,7 +203,7 @@ export default function ControlPanelContent({
               <span className="font-medium">Vezérlés</span>
             </div>
             <div className="card-body">
-              <div className="grid grid-cols-6 gap-2">
+              <div className="grid grid-cols-5 gap-2">
                 <button
                   onClick={() => handleCommand('home')}
                   disabled={!isIdle}
@@ -227,16 +212,6 @@ export default function ControlPanelContent({
                 >
                   <Home className="w-5 h-5" />
                   <span className="text-xs">Home</span>
-                </button>
-
-                <button
-                  onClick={handleResetCoordinates}
-                  disabled={!isIdle}
-                  className="btn btn-secondary flex flex-col items-center gap-1 py-3"
-                  title="Koordináták nullázása (G92 X0 Y0 Z0)"
-                >
-                  <Crosshair className="w-5 h-5" />
-                  <span className="text-xs">Zero</span>
                 </button>
 
                 <button
@@ -379,7 +354,7 @@ export default function ControlPanelContent({
               ) : machineConfig ? (
                 <VisualizationPanel
                   config={machineConfig}
-                  position={device.status?.position}
+                  position={device.status?.work_position}
                   status={device.status}
                   className="h-full"
                   showHeader={false}

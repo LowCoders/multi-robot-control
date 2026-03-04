@@ -804,6 +804,20 @@ export function createApiRoutes(
       res.status(500).json({ error: 'Konfiguráció mentési hiba' });
     }
   }));
+
+  // Reload driver config from JSON file (hot reload)
+  // Call this after saving machine-config to apply changes without restart
+  router.post('/devices/:id/reload-config', asyncHandler(async (req: Request, res: Response) => {
+    const deviceId = req.params.id;
+    
+    try {
+      const result = await deviceManager.reloadConfig(deviceId);
+      res.json(result);
+    } catch (error) {
+      console.error('Config reload error:', error);
+      res.status(500).json({ error: 'Konfiguráció újratöltési hiba' });
+    }
+  }));
   
   // Get currently loaded G-code for a device
   router.get('/devices/:id/gcode', asyncHandler(async (req: Request, res: Response) => {

@@ -27,7 +27,110 @@ from robot_arm_driver import RobotArmDevice
 from simulated_device import SimulatedDevice, SimulationMode
 from usb_port_resolver import UsbIdentifier, resolve_port, list_usb_devices
 
+# Machine config path
+MACHINE_CONFIG_DIR = Path(__file__).parent.parent / "config" / "machines"
+
 # Szimulációs mód már csak eszközönként (devices.yaml simulated mezője)
+
+
+def load_machine_config(device_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Betölti az eszköz machine-config.json fájlját.
+    A driver-specifikus beállítások (axis limits, closed_loop, home_position)
+    ebből a fájlból jönnek.
+    """
+    config_path = MACHINE_CONFIG_DIR / f"{device_id}.json"
+    if not config_path.exists():
+        return None
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"⚠️ Nem sikerült betölteni a machine config-ot: {device_id}: {e}")
+        return None
+
+
+def extract_driver_config(machine_config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Kinyeri a driver-specifikus beállításokat a machine config-ból.
+    Átalakítja a frontend formátumot a driver formátumra.
+    """
+    driver_cfg = machine_config.get('driverConfig', {})
+    axes = machine_config.get('axes', [])
+    
+    # Axis limits (frontend: axes[].min/max -> backend: axis_limits)
+    axis_limits = {}
+    axis_invert = {}
+    axis_scale = {}
+    dynamic_limits = {}
+
+    for axis in axes:
+        axis_name = axis.get('name', '').upper()  # X, Y, Z direkt használat
+
+        if 'min' in axis and 'max' in axis:
+            axis_limits[axis_name] = [axis['min'], axis['max']]
+
+        if axis.get('invert', False):
+            axis_invert[axis_name] = True
+
+        if 'scale' in axis and axis['scale'] != 1.0:
+            axis_scale[axis_name] = axis['scale']
+        
+        # Dinamikus limitek (ha van dependsOn)
+        dyn_lim = axis.get('dynamicLimits')
+        if dyn_lim and dyn_lim.get('dependsOn'):
+            dynamic_limits[axis_name] = {
+                'dependsOn': dyn_lim.get('dependsOn', '').upper(),
+                'formula': dyn_lim.get('formula', 'linear_offset'),
+            }
+    
+    # Home position conversion (config már X/Y/Z-t használ)
+    home_position = None
+    hp = driver_cfg.get('homePosition')
+    if hp:
+        home_position = {'mode': hp.get('mode', 'absolute')}
+        positions = hp.get('positions', {})
+        for axis_key, value in positions.items():
+            home_position[axis_key.upper()] = value
+    
+    # Closed loop conversion
+    closed_loop = None
+    cl = driver_cfg.get('closedLoop')
+    if cl and cl.get('enabled'):
+        stall = cl.get('stallDetection', {})
+        closed_loop = {
+            'enabled': True,
+            'driver_type': cl.get('driverType', 'servo'),
+            'stall_detection': {
+                'timeout': stall.get('timeout', 0.3),
+                'tolerance': stall.get('tolerance', 0.5),
+                'speed': stall.get('speed', 150),
+                'max_search_angle': stall.get('maxSearchAngle', 400),
+                'calibrate_joints': stall.get('calibrateJoints', ['Y', 'Z']),
+            }
+        }
+    
+    # Robot config (L1, L2, L3 from robotArm config)
+    robot_config = None
+    ra = machine_config.get('robotArm', {})
+    if ra:
+        robot_config = {
+            'L1': ra.get('baseHeight', 85),
+            'L2': ra.get('lowerArmLength', 140),
+            'L3': ra.get('upperArmLength', 165),
+        }
+    
+    return {
+        'axis_limits': axis_limits if axis_limits else {},
+        'axis_invert': axis_invert,  # Mindig visszaadjuk (üres dict is OK)
+        'axis_scale': axis_scale,    # Mindig visszaadjuk (üres dict is OK)
+        'dynamic_limits': dynamic_limits,  # Dinamikus limit konfigurációk
+        'home_position': home_position,
+        'closed_loop': closed_loop,
+        'robot_config': robot_config,
+        'max_feed_rate': driver_cfg.get('maxFeedRate'),
+    }
 
 
 # =========================================
@@ -165,22 +268,53 @@ class DeviceManager:
                 if port is None:
                     print(f"⚠️ Port nem található: {config.name}")
                     return False
+                
+                # Betöltjük a machine-config.json-ból a driver beállításokat
+                machine_config = load_machine_config(config.id)
+                driver_cfg = {}
+                
+                if machine_config:
+                    driver_cfg = extract_driver_config(machine_config)
+                    print(f"   📋 Machine config betöltve: {config.id}")
+                else:
+                    # Fallback: devices.yaml-ból (átmeneti, migrálás előtt)
+                    print(f"   ⚠️ Machine config nem található, devices.yaml használata: {config.id}")
+                
+                # Driver paraméterek: machine config JSON elsőbbséggel, devices.yaml fallback
+                # Üres dict ({}) is valid érték, ezért None check kell az 'or' helyett
+                axis_limits = driver_cfg.get('axis_limits') if driver_cfg.get('axis_limits') is not None else config.config.get('axis_limits')
+                axis_invert = driver_cfg.get('axis_invert') if driver_cfg.get('axis_invert') is not None else config.config.get('axis_invert')
+                axis_scale = driver_cfg.get('axis_scale') if driver_cfg.get('axis_scale') is not None else config.config.get('axis_scale')
+                robot_config = driver_cfg.get('robot_config') or config.config.get('robot_config')
+                max_feed_rate = driver_cfg.get('max_feed_rate') or config.config.get('max_feed_rate')
+                closed_loop = driver_cfg.get('closed_loop') or config.config.get('closed_loop')
+                home_position = driver_cfg.get('home_position') or config.config.get('home_position')
+                
                 device = RobotArmDevice(
                     device_id=config.id,
                     device_name=config.name,
                     port=port,
                     baudrate=config.config.get('baudrate', 115200),
-                    robot_config=config.config.get('robot_config'),
-                    axis_mapping=config.config.get('axis_mapping'),
-                    axis_invert=config.config.get('axis_invert'),
-                    axis_limits=config.config.get('axis_limits'),
-                    axis_scale=config.config.get('axis_scale'),
-                    max_feed_rate=config.config.get('max_feed_rate'),
-                    closed_loop=config.config.get('closed_loop'),
+                    robot_config=robot_config,
+                    axis_invert=axis_invert,
+                    axis_limits=axis_limits,
+                    axis_scale=axis_scale,
+                    max_feed_rate=max_feed_rate,
+                    closed_loop=closed_loop,
+                    home_position=home_position,
                 )
+                
+                # Dinamikus limitek betöltése (ha vannak)
+                dynamic_limits = driver_cfg.get('dynamic_limits')
+                if dynamic_limits:
+                    device.update_driver_config(dynamic_limits=dynamic_limits)
+                    for axis, cfg in dynamic_limits.items():
+                        print(f"   📐 Dinamikus limit [{axis}]: függ {cfg.get('dependsOn')}-tól")
+                
                 connection_info = port
-                closed_loop_info = " [Closed Loop]" if config.config.get('closed_loop', {}).get('enabled') else ""
-                print(f"🤖 Valós robotkar eszköz: {config.name} ({port}){closed_loop_info}")
+                closed_loop_info = " [Closed Loop]" if (closed_loop or {}).get('enabled') else ""
+                home_info = f" [Home: {(home_position or {}).get('mode', 'absolute')}]" if home_position else ""
+                print(f"🤖 Valós robotkar eszköz: {config.name} ({port}){closed_loop_info}{home_info}")
             else:
                 print(f"Ismeretlen driver: {driver}")
                 return False
@@ -558,13 +692,8 @@ async def jog_device(device_id: str, request: JogRequest):
             # Cartesian mód: X/Y/Z mm-ben, IK számítással
             result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
         else:
-            # Jog mód: frontend axis címke -> robot joint
-            # Frontend X (J1 címke) -> J1 (bázis)
-            # Frontend Y (J2 címke) -> J2 (váll)
-            # Frontend Z (J3 címke) -> J3 (könyök)
-            joint_map = {'X': 'J1', 'Y': 'J2', 'Z': 'J3'}
-            joint = joint_map.get(request.axis.upper(), request.axis)
-            result = await device.jog_joint(joint, request.distance, request.feed_rate)
+            # Jog mód: X/Y/Z tengely direkt mozgatása
+            result = await device.jog_joint(request.axis, request.distance, request.feed_rate)
     else:
         # Nem robot arm (pl. laser, CNC) - standard jog
         result = await device.jog(request.axis, request.distance, request.feed_rate)
@@ -575,24 +704,11 @@ async def jog_device(device_id: str, request: JogRequest):
 @app.post("/devices/{device_id}/jog/stop")
 async def jog_stop_device(device_id: str):
     """Jog leállítása"""
-    # #region agent log
-    import time as _dbg_time; _dbg_start = _dbg_time.time()
-    try:
-        with open('/web/multi-robot-control/.cursor/debug-9435d5.log', 'a') as _f:
-            import json as _j; _f.write(_j.dumps({"sessionId":"9435d5","hypothesisId":"BRIDGE_JOG_STOP","location":"bridge_server.py:jog_stop_device:entry","message":"jog_stop endpoint called","data":{"device_id":device_id},"timestamp":int(_dbg_time.time()*1000)})+"\n")
-    except: pass
-    # #endregion
     device = device_manager.get_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
     result = await device.jog_stop()
-    # #region agent log
-    try:
-        with open('/web/multi-robot-control/.cursor/debug-9435d5.log', 'a') as _f:
-            import json as _j; _f.write(_j.dumps({"sessionId":"9435d5","hypothesisId":"BRIDGE_JOG_STOP","location":"bridge_server.py:jog_stop_device:done","message":"jog_stop returned","data":{"device_id":device_id,"result":result,"elapsed_ms":((_dbg_time.time()-_dbg_start)*1000)},"timestamp":int(_dbg_time.time()*1000)})+"\n")
-    except: pass
-    # #endregion
     return {"success": result}
 
 
@@ -769,29 +885,6 @@ async def robot_calibrate(device_id: str):
     return {"success": result}
 
 
-@app.post("/devices/{device_id}/reset-coordinates")
-async def reset_coordinates(device_id: str):
-    """
-    Koordináták alaphelyzetbe állítása (G92 X0 Y0 Z0).
-    
-    A jelenlegi fizikai pozíciót nullának tekinti - hasznos,
-    ha a gépet kézzel a home pozícióba állítottuk.
-    """
-    device = device_manager.get_device(device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Eszköz nem található")
-    
-    try:
-        response = await device.send_gcode("G92 X0 Y0 Z0")
-        
-        if "error" in response.lower():
-            return {"success": False, "message": response}
-        
-        return {"success": True, "message": "Koordináták nullázva"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Hiba: {str(e)}")
-
-
 class CalibrateLimitsRequest(BaseModel):
     """Végállás kalibráció kérés"""
     speed: float = 300.0
@@ -917,6 +1010,163 @@ async def save_calibration(device_id: str, request: SaveCalibrationRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Mentés hiba: {str(e)}")
+
+
+class SetHomePositionRequest(BaseModel):
+    """Home pozíció beállítás kérés"""
+    mode: str = "absolute"  # "absolute" | "query"
+    X: Optional[float] = None
+    Y: Optional[float] = None
+    Z: Optional[float] = None
+    save_current: bool = False  # Ha true, az aktuális pozíciót menti
+
+
+@app.get("/devices/{device_id}/home-position")
+async def get_home_position(device_id: str):
+    """
+    Home pozíció konfiguráció lekérdezése a machine-config.json-ból.
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Csak robotkar eszközök támogatják a home pozíciót")
+    
+    # Machine config-ból olvasás
+    machine_config = load_machine_config(device_id)
+    if machine_config and 'driverConfig' in machine_config:
+        hp = machine_config['driverConfig'].get('homePosition', {})
+        positions = hp.get('positions', {})
+        return {
+            'mode': hp.get('mode', 'absolute'),
+            'X': positions.get('X', 0.0),
+            'Y': positions.get('Y', 0.0),
+            'Z': positions.get('Z', 0.0),
+        }
+    
+    # Fallback: device internal state
+    return device.get_home_position_config()
+
+
+@app.post("/devices/{device_id}/home-position")
+async def set_home_position(device_id: str, request: SetHomePositionRequest):
+    """
+    Home pozíció beállítása és mentése a machine-config.json fájlba.
+    
+    Ha save_current=true, az aktuális pozíciót menti home pozícióként.
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Csak robotkar eszközök támogatják a home pozíciót")
+    
+    config_path = MACHINE_CONFIG_DIR / f"{device_id}.json"
+    
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail=f"Machine config nem található: {device_id}")
+    
+    try:
+        # Ha save_current, az aktuális pozíciót használjuk
+        if request.save_current:
+            status = await device.get_status()
+            pos = status.position
+            x_val = pos.x
+            y_val = pos.y
+            z_val = pos.z
+        else:
+            x_val = request.X if request.X is not None else 0.0
+            y_val = request.Y if request.Y is not None else 0.0
+            z_val = request.Z if request.Z is not None else 0.0
+        
+        # Driver konfiguráció frissítése (internal state)
+        new_config = {
+            'mode': request.mode,
+            'X': x_val,
+            'Y': y_val,
+            'Z': z_val,
+        }
+        device.set_home_position_config(new_config)
+        
+        # machine-config.json frissítése
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = json.load(f)
+        
+        # Config frissítés X/Y/Z formátumban
+        if 'driverConfig' not in config_data:
+            config_data['driverConfig'] = {}
+        
+        config_data['driverConfig']['homePosition'] = {
+            'mode': request.mode,
+            'positions': {
+                'X': x_val,
+                'Y': y_val,
+                'Z': z_val,
+            }
+        }
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=2, ensure_ascii=False)
+        
+        return {
+            "success": True,
+            "message": "Home pozíció mentve",
+            "home_position": new_config,
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mentés hiba: {str(e)}")
+
+
+@app.post("/devices/{device_id}/reload-config")
+async def reload_device_config(device_id: str):
+    """
+    Konfiguráció újratöltése a machine-config.json fájlból.
+    A MachineConfigTab mentése után hívandó, hogy az új beállítások
+    (pl. tengely invertálás, scale, limitek) azonnal életbe lépjenek.
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(
+            status_code=400,
+            detail="Csak robotkar eszközök támogatják a config reload-ot"
+        )
+    
+    machine_config = load_machine_config(device_id)
+    if not machine_config:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Machine config nem található: {device_id}"
+        )
+    
+    driver_cfg = extract_driver_config(machine_config)
+
+    device.update_driver_config(
+        axis_invert=driver_cfg.get('axis_invert'),
+        axis_scale=driver_cfg.get('axis_scale'),
+        axis_limits=driver_cfg.get('axis_limits'),
+        max_feed_rate=driver_cfg.get('max_feed_rate'),
+        dynamic_limits=driver_cfg.get('dynamic_limits'),
+    )
+
+    print(f"🔄 Konfiguráció újratöltve: {device_id}")
+
+    return {
+        "success": True,
+        "message": "Konfiguráció újratöltve",
+        "config": {
+            "axis_invert": driver_cfg.get('axis_invert'),
+            "axis_scale": driver_cfg.get('axis_scale'),
+            "axis_limits": driver_cfg.get('axis_limits'),
+            "max_feed_rate": driver_cfg.get('max_feed_rate'),
+            "dynamic_limits": driver_cfg.get('dynamic_limits'),
+        }
+    }
 
 
 @app.post("/devices/{device_id}/teach/record")
@@ -1159,17 +1409,11 @@ async def run_endstop_test(
     stop_event = threading.Event()
     _active_test_events[device_id] = stop_event
     
-    # Axis mapping átadása a tesztnek (ha RobotArmDevice)
-    axis_mapping = None
-    if hasattr(device, '_axis_map'):
-        axis_mapping = device._axis_map
-    
     test = EndstopTest(
         port=device.port,
         step_size=step_size,
         speed=speed,
         max_search_angle=max_angle,
-        axis_mapping=axis_mapping,
     )
     _active_test_progress[device_id] = test._log_entries
     
@@ -1308,6 +1552,81 @@ async def get_test_progress(device_id: str, after: int = 0):
         "total": len(log),
         "running": device_id in _active_test_events,
     }
+
+
+# =========================================
+# GRBL SETTINGS
+# =========================================
+
+@app.get("/devices/{device_id}/grbl-settings")
+async def get_grbl_settings(device_id: str):
+    """GRBL beállítások lekérdezése ($$)"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    if not hasattr(device, 'get_grbl_settings'):
+        raise HTTPException(status_code=400, detail="Device does not support GRBL settings")
+    
+    try:
+        settings = await device.get_grbl_settings()
+        return {"settings": settings}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class GrblSettingRequest(BaseModel):
+    setting: int
+    value: float
+
+
+@app.post("/devices/{device_id}/grbl-settings")
+async def set_grbl_setting(device_id: str, request: GrblSettingRequest):
+    """GRBL beállítás módosítása ($N=value)"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    if not hasattr(device, 'set_grbl_setting'):
+        raise HTTPException(status_code=400, detail="Device does not support GRBL settings")
+    
+    try:
+        success = await device.set_grbl_setting(request.setting, request.value)
+        if success:
+            return {"success": True, "message": f"${request.setting}={request.value} beállítva"}
+        else:
+            raise HTTPException(status_code=500, detail="Beállítás sikertelen")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class GrblSettingsBatchRequest(BaseModel):
+    settings: Dict[int, float]
+
+
+@app.post("/devices/{device_id}/grbl-settings/batch")
+async def set_grbl_settings_batch(device_id: str, request: GrblSettingsBatchRequest):
+    """Több GRBL beállítás módosítása egyszerre"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    if not hasattr(device, 'set_grbl_setting'):
+        raise HTTPException(status_code=400, detail="Device does not support GRBL settings")
+    
+    results = {}
+    try:
+        for setting, value in request.settings.items():
+            success = await device.set_grbl_setting(int(setting), value)
+            results[setting] = {"success": success, "value": value}
+        
+        all_success = all(r["success"] for r in results.values())
+        return {
+            "success": all_success,
+            "results": results,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =========================================

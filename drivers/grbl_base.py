@@ -548,6 +548,10 @@ class GrblDeviceBase(SerialDeviceBase):
                 await self._grbl_feed_hold()
                 await asyncio.sleep(0.05)
                 
+                # Cycle start - visszatérés Idle állapotba (Hold állapotból)
+                await self._grbl_cycle_start()
+                await asyncio.sleep(0.02)
+                
                 self._set_state(DeviceState.IDLE)
                 self._jog_stopping = False
                 return True

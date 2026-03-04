@@ -316,12 +316,14 @@ const KinematicArm = memo(function KinematicArm({ config, position, gripperState
   const animJ3 = useRef(0)
   const isFirst = useRef(true)
 
-  // J1 = X (bázis forgás), J2 = Y (váll), J3 = Z (könyök)
+  // X = bázis forgás, Y = váll, Z = könyök
   // jointAngleScale: firmware érték -> fok szorzó (kalibrálható a vizualizáció)
+  // jointAngleOffset: vizuális offset fokokban (a firmware értékhez adódik)
   const scale = config.jointAngleScale ?? {}
-  const targetJ1 = (position.x ?? 0) * (scale.j1 ?? 1)
-  const targetJ2 = (position.y ?? 0) * (scale.j2 ?? 1)
-  const targetJ3 = (position.z ?? 0) * (scale.j3 ?? 1)
+  const offset = config.jointAngleOffset ?? {}
+  const targetJ1 = (position.x ?? 0) * (scale.x ?? 1) + (offset.x ?? 0)
+  const targetJ2 = (position.y ?? 0) * (scale.y ?? 1) + (offset.y ?? 0)
+  const targetJ3 = (position.z ?? 0) * (scale.z ?? 1) + (offset.z ?? 0)
 
   // Első rendereléskor azonnal a cél pozícióba
   useEffect(() => {
@@ -337,21 +339,21 @@ const KinematicArm = memo(function KinematicArm({ config, position, gripperState
   useFrame((_, delta) => {
     const lerpSpeed = 6
 
-    // J1 - bázis forgás (Y tengely körül - vízszintes síkban)
+    // X tengely - bázis forgás
     if (Math.abs(targetJ1 - animJ1.current) > 0.01) {
       animJ1.current = THREE.MathUtils.lerp(animJ1.current, targetJ1, Math.min(1, lerpSpeed * delta))
     } else {
       animJ1.current = targetJ1
     }
 
-    // J2 - váll (X tengely)
+    // Y tengely - váll
     if (Math.abs(targetJ2 - animJ2.current) > 0.01) {
       animJ2.current = THREE.MathUtils.lerp(animJ2.current, targetJ2, Math.min(1, lerpSpeed * delta))
     } else {
       animJ2.current = targetJ2
     }
 
-    // J3 - könyök (X tengely)
+    // Z tengely - könyök
     if (Math.abs(targetJ3 - animJ3.current) > 0.01) {
       animJ3.current = THREE.MathUtils.lerp(animJ3.current, targetJ3, Math.min(1, lerpSpeed * delta))
     } else {
@@ -377,12 +379,12 @@ const KinematicArm = memo(function KinematicArm({ config, position, gripperState
       {/* Bázis (fix talp) */}
       <RobotBase diameter={baseDiameter} height={baseHeight} />
 
-      {/* J1 - Bázis forgás (függőleges tengely körül) */}
+      {/* X tengely - Bázis forgás (függőleges tengely körül) */}
       <group ref={j1Ref} position={[0, 0, baseHeight]}>
         {/* Váll ízület */}
         <Joint radius={lowerArmWidth * 0.45} color="#ef4444" />
 
-        {/* J2 - Váll forgás (vízszintes tengely körül) */}
+        {/* Y tengely - Váll forgás (vízszintes tengely körül) */}
         <group ref={j2Ref}>
           {/* Alsó kar */}
           <ArmLink length={lowerArmLength} width={lowerArmWidth} color="#22c55e" />
@@ -391,7 +393,7 @@ const KinematicArm = memo(function KinematicArm({ config, position, gripperState
           <group position={[0, 0, lowerArmLength]}>
             <Joint radius={upperArmWidth * 0.45} color="#22c55e" />
 
-            {/* J3 - Könyök forgás */}
+            {/* Z tengely - Könyök forgás */}
             <group ref={j3Ref}>
               {/* Felső kar */}
               <ArmLink length={upperArmLength} width={upperArmWidth} color="#3b82f6" />

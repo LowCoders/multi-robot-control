@@ -897,4 +897,19 @@ export class DeviceManager {
       throw error;
     }
   }
+
+  /**
+   * Konfiguráció újratöltése a JSON fájlból.
+   * A MachineConfigTab mentése után hívandó, hogy az új beállítások
+   * (pl. tengely invertálás, scale, limitek) azonnal életbe lépjenek.
+   */
+  async reloadConfig(deviceId: string): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/reload-config`);
+      return response.data;
+    } catch (error) {
+      console.error(`Config reload hiba (${deviceId}):`, error);
+      throw error;
+    }
+  }
 }

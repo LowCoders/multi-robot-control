@@ -7,7 +7,6 @@ A host osztálynak rendelkeznie kell:
 - _send_command(cmd) metódus
 - get_grbl_status() metódus
 - _set_state(state) metódus
-- JOINT_TO_GRBL mapping
 """
 
 import asyncio
@@ -29,8 +28,8 @@ class ClosedLoopCapability:
                 ClosedLoopCapability.__init__(self, closed_loop)
     """
     
-    # Joint-GRBL tengely mapping (felülírható a host osztályban)
-    JOINT_TO_GRBL = {'J1': 'Z', 'J2': 'X', 'J3': 'Y'}
+    # Tengely mapping (X=J1, Y=J2, Z=J3)
+    AXIS_TO_GRBL = {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
     
     def __init__(self, closed_loop_config: Dict[str, Any] = None):
         """
@@ -46,7 +45,7 @@ class ClosedLoopCapability:
                         'tolerance': float,
                         'speed': float,
                         'max_search_angle': float,
-                        'calibrate_joints': ['J2', 'J3'],  # mely tengelyeket kalibrálja
+                        'calibrate_joints': ['Y', 'Z'],  # mely tengelyeket kalibrálja
                     }
                 }
         """
@@ -56,7 +55,7 @@ class ClosedLoopCapability:
             'tolerance': 0.5,
             'speed': 150.0,  # Kisebb sebesség = kisebb erő
             'max_search_angle': 400.0,
-            'calibrate_joints': ['J2', 'J3'],  # J1 (bázis) nincs fizikai végállása
+            'calibrate_joints': ['Y', 'Z'],  # X (bázis) nincs fizikai végállása
         }
         
         # Kalibráció állapot
@@ -71,7 +70,7 @@ class ClosedLoopCapability:
                 self._stall_detection_config['tolerance'] = stall_cfg.get('tolerance', 0.5)
                 self._stall_detection_config['speed'] = stall_cfg.get('speed', 150.0)
                 self._stall_detection_config['max_search_angle'] = stall_cfg.get('max_search_angle', 400.0)
-                self._stall_detection_config['calibrate_joints'] = stall_cfg.get('calibrate_joints', ['J2', 'J3'])
+                self._stall_detection_config['calibrate_joints'] = stall_cfg.get('calibrate_joints', ['Y', 'Z'])
     
     @property
     def is_closed_loop(self) -> bool:
@@ -101,17 +100,17 @@ class ClosedLoopCapability:
         
         Args:
             speed: Keresési sebesség (fok/perc)
-            joints: Mely tengelyeket kalibrálja (default: ['J1', 'J2', 'J3'])
+            joints: Mely tengelyeket kalibrálja (default: ['Y', 'Z'])
             stall_timeout: Mennyi ideig várjon pozíció változásra (mp)
             stall_tolerance: Mekkora elmozdulás számít "nem változásnak" (fok)
         
         Returns:
             {
                 'completed': True/False,
-                'j1_limits': [min, max],
-                'j2_limits': [min, max],
-                'j3_limits': [min, max],
-                'home_position': {'j1': float, 'j2': float, 'j3': float},
+                'x_limits': [min, max],
+                'y_limits': [min, max],
+                'z_limits': [min, max],
+                'home_position': {'x': float, 'y': float, 'z': float},
                 'error': str (ha volt hiba)
             }
         """
@@ -131,8 +130,8 @@ class ClosedLoopCapability:
         max_search_angle = self._stall_detection_config.get('max_search_angle', 400.0)
         
         if joints is None:
-            # Konfig alapján vagy default: J2, J3 (J1 bázisnak nincs fizikai végállása)
-            joints = self._stall_detection_config.get('calibrate_joints', ['J2', 'J3'])
+            # Konfig alapján vagy default: Y, Z (X bázisnak nincs fizikai végállása)
+            joints = self._stall_detection_config.get('calibrate_joints', ['Y', 'Z'])
         
         self._calibration_stop_requested = False
         self._calibration_status = {
@@ -148,10 +147,10 @@ class ClosedLoopCapability:
         
         results = {
             'completed': False,
-            'j1_limits': [None, None],
-            'j2_limits': [None, None],
-            'j3_limits': [None, None],
-            'home_position': {'j1': 0.0, 'j2': 0.0, 'j3': 0.0},
+            'x_limits': [None, None],
+            'y_limits': [None, None],
+            'z_limits': [None, None],
+            'home_position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
         }
         
         try:
@@ -218,19 +217,19 @@ class ClosedLoopCapability:
                 'message': 'Home pozícióba állás...',
             })
             
-            # Default home: J1=0, J2=középen, J3=középen
-            j2_home = 45.0
-            j3_home = 0.0
-            if results['j2_limits'][0] is not None and results['j2_limits'][1] is not None:
-                j2_home = (results['j2_limits'][0] + results['j2_limits'][1]) / 2
-            if results['j3_limits'][0] is not None and results['j3_limits'][1] is not None:
-                j3_home = (results['j3_limits'][0] + results['j3_limits'][1]) / 2
+            # Default home: X=0, Y=középen, Z=középen
+            y_home = 45.0
+            z_home = 0.0
+            if results['y_limits'][0] is not None and results['y_limits'][1] is not None:
+                y_home = (results['y_limits'][0] + results['y_limits'][1]) / 2
+            if results['z_limits'][0] is not None and results['z_limits'][1] is not None:
+                z_home = (results['z_limits'][0] + results['z_limits'][1]) / 2
             
             await self._send_command("G90")
-            await self._send_command(f"G1 X{j2_home:.1f} Y{j3_home:.1f} Z0 F{speed:.0f}")
+            await self._send_command(f"G1 X0 Y{y_home:.1f} Z{z_home:.1f} F{speed:.0f}")
             await self._wait_for_idle(timeout=30.0)
             
-            results['home_position'] = {'j1': 0.0, 'j2': j2_home, 'j3': j3_home}
+            results['home_position'] = {'x': 0.0, 'y': y_home, 'z': z_home}
             results['completed'] = True
             
             self._calibration_status.update({
@@ -275,7 +274,7 @@ class ClosedLoopCapability:
         Ha a pozíció nem változik stall_timeout ideig, az elakadást jelent.
         
         Args:
-            joint: 'J1', 'J2', vagy 'J3'
+            joint: 'X', 'Y', vagy 'Z'
             direction: +1 (pozitív) vagy -1 (negatív irány)
             speed: Mozgás sebesség (fok/perc)
             stall_timeout: Mennyi ideig várjon (mp)
@@ -285,9 +284,9 @@ class ClosedLoopCapability:
         Returns:
             A végállás pozíciója fokban, vagy None ha nem található
         """
-        grbl_axis = self.JOINT_TO_GRBL.get(joint.upper())
-        if not grbl_axis:
-            print(f"  Ismeretlen joint: {joint}")
+        grbl_axis = self.AXIS_TO_GRBL.get(joint.upper(), joint.upper())
+        if grbl_axis not in ['X', 'Y', 'Z']:
+            print(f"  Ismeretlen tengely: {joint}")
             return None
         
         direction_name = "pozitív" if direction > 0 else "negatív"

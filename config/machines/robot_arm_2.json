@@ -9,38 +9,45 @@
   },
   "axes": [
     {
-      "name": "J1",
+      "name": "X",
       "type": "rotary",
-      "min": -180,
-      "max": 180,
-      "homePosition": 0,
-      "color": "#ef4444"
+      "min": -175,
+      "max": 175,
+      "color": "#ef4444",
+      "invert": false,
+      "scale": 1
     },
     {
-      "name": "J2",
+      "name": "Y",
       "type": "rotary",
-      "min": -90,
-      "max": 90,
-      "homePosition": 0,
+      "min": -45,
+      "max": 12,
       "color": "#22c55e",
-      "parent": "J1"
+      "parent": "X",
+      "invert": true,
+      "scale": 1
     },
     {
-      "name": "J3",
+      "name": "Z",
       "type": "rotary",
-      "min": -120,
-      "max": 120,
-      "homePosition": 0,
+      "min": 23,
+      "max": 33,
       "color": "#3b82f6",
-      "parent": "J2"
+      "parent": "Y",
+      "invert": true,
+      "scale": 1,
+      "dynamicLimits": {
+        "dependsOn": "Y",
+        "formula": "linear_offset"
+      }
     }
   ],
   "robotArm": {
     "baseDiameter": 120,
-    "baseHeight": 60,
-    "lowerArmLength": 200,
+    "baseHeight": 85,
+    "lowerArmLength": 140,
     "lowerArmWidth": 50,
-    "upperArmLength": 200,
+    "upperArmLength": 165,
     "upperArmWidth": 40,
     "endEffector": {
       "type": "gripper",
@@ -49,9 +56,14 @@
       "gripperFingerCount": 2
     },
     "jointAngleScale": {
-      "j1": 1,
-      "j2": 1,
-      "j3": 1
+      "x": 1,
+      "y": -1,
+      "z": -1
+    },
+    "jointAngleOffset": {
+      "x": 0,
+      "y": 0,
+      "z": 5
     }
   },
   "base": {
@@ -63,14 +75,39 @@
     "showGrid": true,
     "showAxesHelper": true,
     "cameraPosition": {
-      "x": 400,
-      "y": -400,
-      "z": 350
+      "x": 589,
+      "y": 61,
+      "z": 245
     },
     "cameraTarget": {
       "x": 0,
       "y": 0,
       "z": 150
+    }
+  },
+  "driverConfig": {
+    "maxFeedRate": 2000,
+    "homePosition": {
+      "mode": "absolute",
+      "positions": {
+        "X": 24,
+        "Y": -45,
+        "Z": 35
+      }
+    },
+    "closedLoop": {
+      "enabled": true,
+      "driverType": "servo",
+      "stallDetection": {
+        "timeout": 0.3,
+        "tolerance": 0.5,
+        "speed": 150,
+        "maxSearchAngle": 400,
+        "calibrateJoints": [
+          "Y",
+          "Z"
+        ]
+      }
     }
   }
 }

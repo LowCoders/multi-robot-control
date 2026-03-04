@@ -88,6 +88,7 @@ function JogButton({
       onTouchStart={handleMouseDown}
       onTouchEnd={handleMouseUp}
       disabled={isBlocked}
+      tabIndex={-1}
       className={`btn-icon p-3 select-none ${
         isBlocked 
           ? 'bg-red-900/30 text-red-400/50 cursor-not-allowed border border-red-500/20' 
@@ -176,6 +177,8 @@ export default function JogControl({
   })
   const [isActive, setIsActive] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Track pressed keys for keyboard support - must persist across useEffect re-runs
+  const activeKeysRef = useRef<Set<string>>(new Set())
   // Track active jogging axis for keyboard support
   
   // Save settings to local storage
@@ -216,7 +219,7 @@ export default function JogControl({
         return { x: 'X', y: 'Y', z: 'Z' }
       case 'jog':
       default:
-        return { x: 'J1', y: 'J2', z: 'J3' }
+        return { x: 'X', y: 'Y', z: 'Z' }
     }
   }, [isRobotArm, motionMode])
 
@@ -257,56 +260,59 @@ export default function JogControl({
   
   // Keyboard support
   useEffect(() => {
-    const activeKeysRef = new Set<string>()
-    
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isActive) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.repeat) return
       
       const key = e.key
-      if (activeKeysRef.has(key)) return
+      
+      // In continuous mode: ignore key repeat events (one press = start, release = stop)
+      // In step mode: allow key repeat for repeated steps (holding = repeated steps)
+      if (jogMode === 'continuous') {
+        if (e.repeat) return
+        if (activeKeysRef.current.has(key)) return
+      }
       
       switch (key) {
         case 'ArrowUp':
           e.preventDefault()
           if (!blocked.yPlus) {
-            activeKeysRef.add(key)
+            activeKeysRef.current.add(key)
             startJog('Y', 1)
           }
           break
         case 'ArrowDown':
           e.preventDefault()
           if (!blocked.yMinus) {
-            activeKeysRef.add(key)
+            activeKeysRef.current.add(key)
             startJog('Y', -1)
           }
           break
         case 'ArrowLeft':
           e.preventDefault()
           if (!blocked.xMinus) {
-            activeKeysRef.add(key)
+            activeKeysRef.current.add(key)
             startJog('X', -1)
           }
           break
         case 'ArrowRight':
           e.preventDefault()
           if (!blocked.xPlus) {
-            activeKeysRef.add(key)
+            activeKeysRef.current.add(key)
             startJog('X', 1)
           }
           break
         case 'PageUp':
           e.preventDefault()
           if (!blocked.zPlus) {
-            activeKeysRef.add(key)
+            activeKeysRef.current.add(key)
             startJog('Z', 1)
           }
           break
         case 'PageDown':
           e.preventDefault()
           if (!blocked.zMinus) {
-            activeKeysRef.add(key)
+            activeKeysRef.current.add(key)
             startJog('Z', -1)
           }
           break
@@ -321,9 +327,9 @@ export default function JogControl({
       if (!isActive) return
       
       const key = e.key
-      if (!activeKeysRef.has(key)) return
+      if (!activeKeysRef.current.has(key)) return
       
-      activeKeysRef.delete(key)
+      activeKeysRef.current.delete(key)
       
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'].includes(key)) {
         e.preventDefault()
@@ -355,7 +361,7 @@ export default function JogControl({
         <div className="flex border-b border-steel-700">
           <button
             onClick={() => setMotionMode('jog')}
-            title="Csukló szögek direkt vezérlés (J1/J2/J3 fokban)"
+            title="Csukló szögek direkt vezérlés (X/Y/Z fokban)"
             className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
               motionMode === 'jog'
                 ? 'text-machine-400 border-b-2 border-machine-500 -mb-px'
@@ -378,21 +384,6 @@ export default function JogControl({
         </div>
       )}
 
-      {/* Endstop warning */}
-      {anyBlocked && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-md">
-          <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-          <span className="text-xs text-red-300">
-            Endstop aktiv:{' '}
-            {[
-              blocked.xPlus || blocked.xMinus ? axisLabels.x : null,
-              blocked.yPlus || blocked.yMinus ? axisLabels.y : null,
-              blocked.zPlus || blocked.zMinus ? axisLabels.z : null,
-            ].filter(Boolean).join(', ')}
-          </span>
-        </div>
-      )}
-      
       {/* Axis Controls */}
       <div className="flex items-center gap-8">
         {/* XY Pad */}
@@ -422,6 +413,7 @@ export default function JogControl({
           />
           <button
             onClick={handleHome}
+            tabIndex={-1}
             className="btn-icon bg-machine-600/20 hover:bg-machine-600/30 text-machine-400 p-3"
             title="Home"
           >
@@ -479,6 +471,21 @@ export default function JogControl({
           />
         </div>
       </div>
+
+      {/* Endstop warning - below buttons */}
+      {anyBlocked && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-md">
+          <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+          <span className="text-xs text-red-300">
+            Endstop aktiv:{' '}
+            {[
+              blocked.xPlus || blocked.xMinus ? axisLabels.x : null,
+              blocked.yPlus || blocked.yMinus ? axisLabels.y : null,
+              blocked.zPlus || blocked.zMinus ? axisLabels.z : null,
+            ].filter(Boolean).join(', ')}
+          </span>
+        </div>
+      )}
       
       {/* Step Size - only shown in step mode */}
       {jogMode === 'step' && (

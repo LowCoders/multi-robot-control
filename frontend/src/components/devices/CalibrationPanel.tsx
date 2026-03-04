@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   Save,
+  Power,
 } from 'lucide-react'
 
 interface CalibrationStatus {
@@ -45,6 +46,8 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
   const [showSettings, setShowSettings] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savingHome, setSavingHome] = useState(false)
+  const [homeSaveSuccess, setHomeSaveSuccess] = useState(false)
   
   const [settings, setSettings] = useState({
     speed: 150,
@@ -53,9 +56,9 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
   })
   
   const [selectedJoints, setSelectedJoints] = useState({
-    J1: false,  // Bázis - nincs fizikai végállás
-    J2: true,   // Váll - van fizikai végállás
-    J3: true,   // Könyök - van fizikai végállás
+    X: false,  // Bázis - nincs fizikai végállás
+    Y: true,   // Váll - van fizikai végállás
+    Z: true,   // Könyök - van fizikai végállás
   })
   
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
@@ -185,6 +188,41 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
     }
   }
 
+  const handleSaveAsHome = async () => {
+    if (!results || !results.home_position) return
+    
+    setSavingHome(true)
+    setError(null)
+    setHomeSaveSuccess(false)
+    
+    try {
+      const hp = results.home_position
+      const response = await fetch(`/api/devices/${deviceId}/home-position`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'absolute',
+          X: hp.j2,
+          Y: hp.j3,
+          Z: hp.j1,
+          save_current: false,
+        }),
+      })
+      
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.detail || 'Mentés sikertelen')
+      }
+      
+      setHomeSaveSuccess(true)
+      setTimeout(() => setHomeSaveSuccess(false), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Mentés sikertelen')
+    } finally {
+      setSavingHome(false)
+    }
+  }
+
   const formatLimit = (value: number | null): string => {
     if (value === null) return '-'
     return `${value.toFixed(1)}°`
@@ -226,33 +264,33 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
               <label className="flex items-center gap-2 text-xs text-steel-300 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={selectedJoints.J1}
-                  onChange={(e) => setSelectedJoints({ ...selectedJoints, J1: e.target.checked })}
+                  checked={selectedJoints.X}
+                  onChange={(e) => setSelectedJoints({ ...selectedJoints, X: e.target.checked })}
                   className="w-3 h-3 rounded border-steel-600 bg-steel-700 text-machine-500 focus:ring-machine-500"
                 />
-                J1 (Bázis)
+                X (Bázis)
               </label>
               <label className="flex items-center gap-2 text-xs text-steel-300 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={selectedJoints.J2}
-                  onChange={(e) => setSelectedJoints({ ...selectedJoints, J2: e.target.checked })}
+                  checked={selectedJoints.Y}
+                  onChange={(e) => setSelectedJoints({ ...selectedJoints, Y: e.target.checked })}
                   className="w-3 h-3 rounded border-steel-600 bg-steel-700 text-machine-500 focus:ring-machine-500"
                 />
-                J2 (Váll)
+                Y (Váll)
               </label>
               <label className="flex items-center gap-2 text-xs text-steel-300 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={selectedJoints.J3}
-                  onChange={(e) => setSelectedJoints({ ...selectedJoints, J3: e.target.checked })}
+                  checked={selectedJoints.Z}
+                  onChange={(e) => setSelectedJoints({ ...selectedJoints, Z: e.target.checked })}
                   className="w-3 h-3 rounded border-steel-600 bg-steel-700 text-machine-500 focus:ring-machine-500"
                 />
-                J3 (Könyök)
+                Z (Könyök)
               </label>
             </div>
             <p className="text-xs text-steel-600 mt-1">
-              J1 (bázis) általában nem kalibrálható - nincs fizikai végállása.
+              X (bázis) általában nem kalibrálható - nincs fizikai végállása.
             </p>
           </div>
           
@@ -330,24 +368,35 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
           </div>
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="bg-steel-800/50 rounded p-2">
-              <div className="text-steel-500 mb-1">J1 (Bázis)</div>
+              <div className="text-steel-500 mb-1">X (Bázis)</div>
               <div className="text-white">
                 {formatLimit(results.j1_limits[0])} ... {formatLimit(results.j1_limits[1])}
               </div>
             </div>
             <div className="bg-steel-800/50 rounded p-2">
-              <div className="text-steel-500 mb-1">J2 (Váll)</div>
+              <div className="text-steel-500 mb-1">Y (Váll)</div>
               <div className="text-white">
                 {formatLimit(results.j2_limits[0])} ... {formatLimit(results.j2_limits[1])}
               </div>
             </div>
             <div className="bg-steel-800/50 rounded p-2">
-              <div className="text-steel-500 mb-1">J3 (Könyök)</div>
+              <div className="text-steel-500 mb-1">Z (Könyök)</div>
               <div className="text-white">
                 {formatLimit(results.j3_limits[0])} ... {formatLimit(results.j3_limits[1])}
               </div>
             </div>
           </div>
+          {/* Home position info */}
+          {results.home_position && (
+            <div className="bg-steel-800/50 rounded p-2 text-xs">
+              <div className="text-steel-500 mb-1">Kalibrált home pozíció</div>
+              <div className="text-white">
+                X: {results.home_position.j1.toFixed(1)}° |
+                Y: {results.home_position.j2.toFixed(1)}° |
+                Z: {results.home_position.j3.toFixed(1)}°
+              </div>
+            </div>
+          )}
           <div className="flex gap-2">
             {onApplyResults && (
               <button
@@ -370,6 +419,22 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
           {saveSuccess && (
             <div className="text-xs text-green-400 text-center">
               Mentve a devices.yaml fájlba!
+            </div>
+          )}
+          {/* Save as home position button */}
+          {results.home_position && (
+            <button
+              onClick={handleSaveAsHome}
+              disabled={savingHome}
+              className="btn btn-secondary btn-sm w-full flex items-center justify-center gap-1 disabled:opacity-50"
+            >
+              <Power className="w-3 h-3" />
+              {savingHome ? 'Mentés...' : 'Mentés home pozícióként'}
+            </button>
+          )}
+          {homeSaveSuccess && (
+            <div className="text-xs text-green-400 text-center">
+              Home pozíció mentve!
             </div>
           )}
         </div>

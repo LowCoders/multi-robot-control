@@ -87,13 +87,13 @@ export default function VisualizationPanel({
           {config.type === 'robot_arm' ? (
             <div className="flex items-center gap-3 font-mono">
               <span className="text-red-400">
-                J1: {(position?.x ?? 0).toFixed(2)}°
+                X: {(position?.x ?? 0).toFixed(2)}°
               </span>
               <span className="text-green-400">
-                J2: {(position?.y ?? 0).toFixed(2)}°
+                Y: {(position?.y ?? 0).toFixed(2)}°
               </span>
               <span className="text-blue-400">
-                J3: {(position?.z ?? 0).toFixed(2)}°
+                Z: {(position?.z ?? 0).toFixed(2)}°
               </span>
               {/* Gripper állapot */}
               {status?.gripper_state && (

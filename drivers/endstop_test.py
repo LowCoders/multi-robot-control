@@ -89,9 +89,6 @@ class EndstopTest:
     """
     Végállás teszt - végigmozgatja a robotkar tengelyeit
     a végállásokig mindkét irányban.
-    
-    Támogatja az axis_mapping konfigurációt, hogy a firmware tengelyeket
-    helyesen azonosítsa a logikai tengelyekkel (J1/J2/J3).
     """
 
     MOVE_PATTERN = re.compile(
@@ -102,15 +99,8 @@ class EndstopTest:
     )
     ERROR_PATTERN = re.compile(r"ERROR|COMMAND NOT RECOGNIZED", re.IGNORECASE)
 
-    # Alapértelmezett nevek (identitás mapping esetén: firmware X = logikai X = J1)
+    # Tengely nevek: X=J1, Y=J2, Z=J3
     DEFAULT_AXIS_NAMES = {
-        "X": "J1 (bázis)",
-        "Y": "J2 (váll)",
-        "Z": "J3 (könyök)",
-    }
-    
-    # Logikai tengely -> ízület név
-    LOGICAL_JOINT_NAMES = {
         "X": "J1 (bázis)",
         "Y": "J2 (váll)",
         "Z": "J3 (könyök)",
@@ -127,7 +117,6 @@ class EndstopTest:
         speed: int = 15,
         max_search_angle: float = 200.0,
         stop_event: Optional[threading.Event] = None,
-        axis_mapping: Optional[Dict[str, str]] = None,
     ):
         self.port = port
         self.baudrate = baudrate
@@ -140,21 +129,8 @@ class EndstopTest:
         self._log_entries: List[dict] = []
         self._start_time: float = 0.0
         
-        # Axis mapping: logikai -> firmware (pl. {'X': 'Y', 'Y': 'X', 'Z': 'Z'})
-        # Reverse: firmware -> logikai
-        self._axis_mapping = axis_mapping or {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
-        self._axis_map_reverse = {v: k for k, v in self._axis_mapping.items()}
-        
-        # Firmware tengely nevek kiszámítása a mapping alapján
-        # Ha axis_mapping: {'X': 'Y', 'Y': 'X'}, akkor:
-        #   firmware X -> logikai Y -> "J2 (váll)"
-        #   firmware Y -> logikai X -> "J1 (bázis)"
-        self.AXIS_NAMES = {}
-        for fw_axis in ["X", "Y", "Z"]:
-            logical_axis = self._axis_map_reverse.get(fw_axis, fw_axis)
-            self.AXIS_NAMES[fw_axis] = self.LOGICAL_JOINT_NAMES.get(
-                logical_axis, f"{fw_axis} tengely"
-            )
+        # Axis names: X=J1, Y=J2, Z=J3
+        self.AXIS_NAMES = self.DEFAULT_AXIS_NAMES.copy()
 
     # ----------------------------------------------------------
     # Progress napló

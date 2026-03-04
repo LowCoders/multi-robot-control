@@ -4,12 +4,19 @@ export type AxisName = 'X' | 'Y' | 'Z' | 'A' | 'B' | 'C' | 'J1' | 'J2' | 'J3' | 
 export type AxisType = 'linear' | 'rotary'
 export type MachineType = 'cnc_mill' | 'cnc_lathe' | 'laser_cutter' | '5axis' | 'robot_arm' | 'custom'
 
+// Dynamic limits configuration - limits that depend on another axis position
+// Base min/max are derived from the axis's own min/max values
+// Reference value is derived from the dependent axis's min value
+export interface DynamicLimitsConfig {
+  dependsOn: AxisName           // Which axis this depends on
+  formula: 'linear_offset'      // Formula type (extensible for future formulas)
+}
+
 export interface AxisConfig {
   name: AxisName
   type: AxisType
   min: number
   max: number
-  homePosition: number
   color: string
   // Kinematic chain - which axis moves this one
   parent?: AxisName
@@ -19,6 +26,41 @@ export interface AxisConfig {
     height: number
     depth: number
   }
+  // Driver-level settings
+  invert?: boolean      // Tengely irány invertálása
+  scale?: number        // Lépés/fok vagy lépés/mm szorzó
+  // Dynamic limits - limits that depend on another axis position
+  dynamicLimits?: DynamicLimitsConfig
+}
+
+// Home position configuration
+export interface HomePositionConfig {
+  mode: 'absolute' | 'query'
+  // Position values per axis (joint names for robot arms)
+  positions?: Record<string, number>
+}
+
+// Stall detection settings for closed loop motors
+export interface StallDetectionConfig {
+  timeout?: number       // Mennyi ideig várjon pozíció változásra (mp)
+  tolerance?: number     // Mekkora elmozdulás számít változásnak (fok)
+  speed?: number         // Kalibráció keresési sebesség
+  maxSearchAngle?: number // Maximum keresési szög
+  calibrateJoints?: string[] // Mely tengelyeken keresünk végállást
+}
+
+// Closed loop motor configuration
+export interface ClosedLoopConfig {
+  enabled: boolean
+  driverType?: 'servo' | 'stepper_encoder'
+  stallDetection?: StallDetectionConfig
+}
+
+// Driver-level configuration (stored in machine config, used by backend)
+export interface DriverConfig {
+  maxFeedRate?: number
+  homePosition?: HomePositionConfig
+  closedLoop?: ClosedLoopConfig
 }
 
 export interface SpindleConfig {
@@ -53,10 +95,13 @@ export interface RobotArmConfig {
   upperArmLength: number   // Felső kar hossz (mm)
   upperArmWidth: number    // Felső kar szélesség (mm)
   endEffector: EndEffectorConfig
-  // Firmware érték -> fok szorzó ízületenként (alapértelmezés: 1.0)
+  // Firmware érték -> fok szorzó tengelyenként (alapértelmezés: 1.0)
   // Ha a firmware egysége nem felel meg a fizikai foknak,
   // ezzel kalibrálható a vizualizáció.
-  jointAngleScale?: { j1?: number; j2?: number; j3?: number }
+  jointAngleScale?: { x?: number; y?: number; z?: number }
+  // Vizuális offset fokokban - a firmware értékhez adódik hozzá
+  // a 3D modell helyes orientációjához
+  jointAngleOffset?: { x?: number; y?: number; z?: number }
 }
 
 export interface MachineConfig {
@@ -100,6 +145,8 @@ export interface MachineConfig {
     }
     cameraFov?: number       // Field of view (degrees)
   }
+  // Driver-level configuration (used by backend)
+  driverConfig?: DriverConfig
 }
 
 // Default configurations for common machine types
@@ -109,9 +156,9 @@ export const DEFAULT_3AXIS_CNC: MachineConfig = {
   type: 'cnc_mill',
   workEnvelope: { x: 300, y: 400, z: 80 },
   axes: [
-    { name: 'X', type: 'linear', min: 0, max: 300, homePosition: 0, color: '#ef4444' },
-    { name: 'Y', type: 'linear', min: 0, max: 400, homePosition: 0, color: '#22c55e', parent: 'X' },
-    { name: 'Z', type: 'linear', min: -80, max: 0, homePosition: 0, color: '#3b82f6', parent: 'Y' },
+    { name: 'X', type: 'linear', min: 0, max: 300, color: '#ef4444' },
+    { name: 'Y', type: 'linear', min: 0, max: 400, color: '#22c55e', parent: 'X' },
+    { name: 'Z', type: 'linear', min: -80, max: 0, color: '#3b82f6', parent: 'Y' },
   ],
   spindle: {
     maxRpm: 24000,
@@ -140,11 +187,11 @@ export const DEFAULT_5AXIS_CNC: MachineConfig = {
   type: '5axis',
   workEnvelope: { x: 300, y: 300, z: 200 },
   axes: [
-    { name: 'X', type: 'linear', min: 0, max: 300, homePosition: 0, color: '#ef4444' },
-    { name: 'Y', type: 'linear', min: 0, max: 300, homePosition: 0, color: '#22c55e', parent: 'X' },
-    { name: 'Z', type: 'linear', min: -200, max: 0, homePosition: 0, color: '#3b82f6', parent: 'Y' },
-    { name: 'A', type: 'rotary', min: -90, max: 90, homePosition: 0, color: '#f59e0b', parent: 'Z' },
-    { name: 'B', type: 'rotary', min: -180, max: 180, homePosition: 0, color: '#8b5cf6', parent: 'A' },
+    { name: 'X', type: 'linear', min: 0, max: 300, color: '#ef4444' },
+    { name: 'Y', type: 'linear', min: 0, max: 300, color: '#22c55e', parent: 'X' },
+    { name: 'Z', type: 'linear', min: -200, max: 0, color: '#3b82f6', parent: 'Y' },
+    { name: 'A', type: 'rotary', min: -90, max: 90, color: '#f59e0b', parent: 'Z' },
+    { name: 'B', type: 'rotary', min: -180, max: 180, color: '#8b5cf6', parent: 'A' },
   ],
   spindle: {
     maxRpm: 20000,
@@ -173,8 +220,8 @@ export const DEFAULT_CNC_LATHE: MachineConfig = {
   type: 'cnc_lathe',
   workEnvelope: { x: 200, y: 200, z: 400 },
   axes: [
-    { name: 'X', type: 'linear', min: 0, max: 200, homePosition: 200, color: '#ef4444' },
-    { name: 'Z', type: 'linear', min: 0, max: 400, homePosition: 0, color: '#3b82f6', parent: 'X' },
+    { name: 'X', type: 'linear', min: 0, max: 200, color: '#ef4444' },
+    { name: 'Z', type: 'linear', min: 0, max: 400, color: '#3b82f6', parent: 'X' },
   ],
   spindle: {
     maxRpm: 4000,
@@ -203,9 +250,9 @@ export const DEFAULT_LASER_CUTTER: MachineConfig = {
   type: 'laser_cutter',
   workEnvelope: { x: 600, y: 400, z: 50 },
   axes: [
-    { name: 'X', type: 'linear', min: 0, max: 600, homePosition: 0, color: '#ef4444' },
-    { name: 'Y', type: 'linear', min: 0, max: 400, homePosition: 0, color: '#22c55e', parent: 'X' },
-    { name: 'Z', type: 'linear', min: -50, max: 0, homePosition: 0, color: '#3b82f6', parent: 'Y' },
+    { name: 'X', type: 'linear', min: 0, max: 600, color: '#ef4444' },
+    { name: 'Y', type: 'linear', min: 0, max: 400, color: '#22c55e', parent: 'X' },
+    { name: 'Z', type: 'linear', min: -50, max: 0, color: '#3b82f6', parent: 'Y' },
   ],
   tool: {
     diameter: 0.1,
@@ -229,9 +276,9 @@ export const DEFAULT_CUSTOM: MachineConfig = {
   type: 'custom',
   workEnvelope: { x: 200, y: 200, z: 100 },
   axes: [
-    { name: 'X', type: 'linear', min: 0, max: 200, homePosition: 0, color: '#ef4444' },
-    { name: 'Y', type: 'linear', min: 0, max: 200, homePosition: 0, color: '#22c55e', parent: 'X' },
-    { name: 'Z', type: 'linear', min: -100, max: 0, homePosition: 0, color: '#3b82f6', parent: 'Y' },
+    { name: 'X', type: 'linear', min: 0, max: 200, color: '#ef4444' },
+    { name: 'Y', type: 'linear', min: 0, max: 200, color: '#22c55e', parent: 'X' },
+    { name: 'Z', type: 'linear', min: -100, max: 0, color: '#3b82f6', parent: 'Y' },
   ],
   base: {
     width: 300,
@@ -250,9 +297,9 @@ export const DEFAULT_ROBOT_ARM: MachineConfig = {
   type: 'robot_arm',
   workEnvelope: { x: 580, y: 580, z: 400 },  // Elérési tartomány (sugár: ~290mm)
   axes: [
-    { name: 'J1', type: 'rotary', min: -180, max: 180, homePosition: 0, color: '#ef4444' },             // Bázis forgás (függőleges tengely)
-    { name: 'J2', type: 'rotary', min: -90, max: 90, homePosition: 0, color: '#22c55e', parent: 'J1' },  // Váll (vízszintes tengely)
-    { name: 'J3', type: 'rotary', min: -120, max: 120, homePosition: 0, color: '#3b82f6', parent: 'J2' }, // Könyök (vízszintes tengely)
+    { name: 'X', type: 'rotary', min: -180, max: 180, color: '#ef4444' },             // Bázis forgás (függőleges tengely)
+    { name: 'Y', type: 'rotary', min: -90, max: 90, color: '#22c55e', parent: 'X' },  // Váll (vízszintes tengely)
+    { name: 'Z', type: 'rotary', min: -120, max: 120, color: '#3b82f6', parent: 'Y' }, // Könyök (vízszintes tengely)
   ],
   robotArm: {
     baseDiameter: 120,
@@ -267,7 +314,7 @@ export const DEFAULT_ROBOT_ARM: MachineConfig = {
       gripperLength: 50,
       gripperFingerCount: 2,
     },
-    jointAngleScale: { j1: 1.0, j2: 1.0, j3: 1.0 },
+    jointAngleScale: { x: 1.0, y: 1.0, z: 1.0 },
   },
   base: {
     width: 150,

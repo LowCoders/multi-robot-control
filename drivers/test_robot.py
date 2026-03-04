@@ -20,32 +20,31 @@ from robot_arm_driver import RobotArmDevice, ControlMode
 from kinematics import RobotConfig, forward_kinematics, inverse_kinematics
 
 
-# Joint -> GRBL tengely mapping
-JOINT_TO_GRBL = {'J1': 'Z', 'J2': 'X', 'J3': 'Y'}
-GRBL_TO_JOINT = {'Z': 'J1', 'X': 'J2', 'Y': 'J3'}
+# Tengely mapping (identity - X=X, Y=Y, Z=Z)
+AXIS_TO_GRBL = {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
 
 # Végállás pozíciók (fokban) - a kalibrációhoz
 # Ezek az értékek a robot fizikai felépítésétől függenek
-# J2 (váll): pozitív végállás = a függőlegestől (90°) kb. 5°-kal hátra
-# J3 (könyök): negatív végállás = összecsukott, pozitív = kinyújtott/túlfeszített
-# J1 (bázis): pozitív végállás = max forgás egy irányba
+# Y (váll): pozitív végállás = a függőlegestől (90°) kb. 5°-kal hátra
+# Z (könyök): negatív végállás = összecsukott, pozitív = kinyújtott/túlfeszített
+# X (bázis): pozitív végállás = max forgás egy irányba
 ENDSTOP_POSITIONS = {
-    'J1_min': -180.0,       # J1 negatív végállás
-    'J1_max': 180.0,        # J1 pozitív végállás
-    'J2_min': -10.0,        # J2 negatív végállás (lefelé)
-    'J2_max': 96.0,         # J2 pozitív végállás (felfelé)
-    'J3_min': -55.0,        # J3 negatív végállás (összecsukott)
-    'J3_max': 40.0,         # J3 pozitív végállás (kinyújtott)
+    'X_min': -180.0,       # X negatív végállás
+    'X_max': 180.0,        # X pozitív végállás
+    'Y_min': -10.0,        # Y negatív végállás (lefelé)
+    'Y_max': 96.0,         # Y pozitív végállás (felfelé)
+    'Z_min': -55.0,        # Z negatív végállás (összecsukott)
+    'Z_max': 40.0,         # Z pozitív végállás (kinyújtott)
 }
 
 # Biztonságos mozgási tartományok (végállásoktól távolabb)
 SAFE_LIMITS = {
-    'J1_min': -175.0,
-    'J1_max': 175.0,
-    'J2_min': -5.0,
-    'J2_max': 91.0,
-    'J3_min': -50.0,
-    'J3_max': 35.0,
+    'X_min': -175.0,
+    'X_max': 175.0,
+    'Y_min': -5.0,
+    'Y_max': 91.0,
+    'Z_min': -50.0,
+    'Z_max': 35.0,
 }
 
 
@@ -178,7 +177,7 @@ async def move_single_axis(joint: str, distance: float, speed: float = 400) -> b
         return False
     
     joint = joint.upper()
-    grbl_axis = JOINT_TO_GRBL.get(joint)
+    grbl_axis = AXIS_TO_GRBL.get(joint)
     if not grbl_axis:
         return False
     
@@ -316,7 +315,7 @@ async def get_joint_limit_state(joint: str) -> bool:
         True ha a joint végállás kapcsolója aktív
     """
     joint = joint.upper()
-    grbl_axis = JOINT_TO_GRBL.get(joint)
+    grbl_axis = AXIS_TO_GRBL.get(joint)
     if not grbl_axis:
         return False
     
@@ -544,12 +543,12 @@ async def search_endstop_continuous(
         return None
     
     joint = joint.upper()
-    grbl_axis = JOINT_TO_GRBL.get(joint)
+    grbl_axis = AXIS_TO_GRBL.get(joint)
     if not grbl_axis:
         print(f"  Ismeretlen joint: {joint}")
         return None
     
-    avoid_axis = JOINT_TO_GRBL.get(avoid_joint.upper()) if avoid_joint else None
+    avoid_axis = AXIS_TO_GRBL.get(avoid_joint.upper()) if avoid_joint else None
     
     direction_name = "pozitív" if direction > 0 else "negatív"
     print(f"      Folyamatos keresés {direction_name} irányba ({speed} fok/perc)...")
@@ -767,7 +766,7 @@ async def search_endstop(
     
     # Joint -> GRBL tengely mapping
     joint = joint.upper()
-    grbl_axis = JOINT_TO_GRBL.get(joint)
+    grbl_axis = AXIS_TO_GRBL.get(joint)
     if not grbl_axis:
         print(f"  ❌ Ismeretlen joint: {joint}")
         return None
@@ -787,7 +786,7 @@ async def search_endstop(
     print(f"      Keresés {direction_name} irányba ({step_size}° lépésekkel)...")
     
     # Avoid joint GRBL tengely meghatározása
-    avoid_axis = JOINT_TO_GRBL.get(avoid_joint.upper()) if avoid_joint else None
+    avoid_axis = AXIS_TO_GRBL.get(avoid_joint.upper()) if avoid_joint else None
     
     while abs(current_offset) < max_angle:
         # Leállítás ellenőrzése

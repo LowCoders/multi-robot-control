@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { Device } from '../../types/device'
 import { useDeviceStore } from '../../stores/deviceStore'
+import { useMachineConfig } from '../../hooks/useMachineConfig'
 import PositionDisplay from './PositionDisplay'
 import StatusBadge from '../common/StatusBadge'
 
@@ -21,6 +22,7 @@ interface Props {
 
 export default function DeviceCard({ device }: Props) {
   const { sendCommand } = useDeviceStore()
+  const { config: machineConfig } = useMachineConfig(device.id, device.type)
   
   const handleCommand = (command: string) => {
     sendCommand(device.id, command)
@@ -87,7 +89,7 @@ export default function DeviceCard({ device }: Props) {
       <div className="card-body space-y-4">
         {/* Position */}
         {device.status && (
-          <PositionDisplay position={device.status.position} />
+          <PositionDisplay position={device.status.work_position} machineConfig={machineConfig} />
         )}
         
         {/* Progress (if running) */}

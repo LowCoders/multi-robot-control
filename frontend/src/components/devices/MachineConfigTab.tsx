@@ -14,12 +14,15 @@ import {
   Palette,
   Code,
   Layers,
+  Cpu,
+  Power,
+  Gauge,
 } from 'lucide-react'
 import { MachineVisualization } from '../visualization'
 import RobotArmVisualization from '../visualization/RobotArmVisualization'
 import CalibrationPanel from './CalibrationPanel'
 import type { CameraState } from '../visualization'
-import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType } from '../../types/machine-config'
+import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType, DriverConfig, HomePositionConfig, ClosedLoopConfig } from '../../types/machine-config'
 import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, getDefaultConfigForType } from '../../types/machine-config'
 import type { DeviceCapabilities } from '../../types/device'
 
@@ -148,6 +151,32 @@ function AxisEditor({
           </select>
         </div>
       </div>
+
+      {/* Driver-level axis settings */}
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <div>
+          <label className="block text-xs text-steel-500 mb-1">Scale</label>
+          <input
+            type="number"
+            value={axis.scale ?? 1.0}
+            onChange={(e) => onChange({ ...axis, scale: parseFloat(e.target.value) || 1.0 })}
+            className="input w-full text-xs py-1"
+            step={0.001}
+            title="Firmware érték → fizikai egység szorzó"
+          />
+        </div>
+        <div className="flex items-center pt-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={axis.invert ?? false}
+              onChange={(e) => onChange({ ...axis, invert: e.target.checked })}
+              className="w-3 h-3 rounded bg-steel-700 border-steel-600"
+            />
+            <span className="text-xs text-steel-400">Invertálás</span>
+          </label>
+        </div>
+      </div>
     </div>
   )
 }
@@ -251,7 +280,22 @@ export default function MachineConfigTab({
 
       if (response.ok) {
         setOriginalConfig(config)
-        setSuccessMessage('Konfiguráció sikeresen mentve!')
+        
+        // Hot reload: driver config újratöltése, hogy az új beállítások
+        // (pl. tengely invertálás, scale, limitek) azonnal életbe lépjenek
+        try {
+          const reloadResponse = await fetch(`/api/devices/${deviceId}/reload-config`, {
+            method: 'POST',
+          })
+          if (reloadResponse.ok) {
+            setSuccessMessage('Konfiguráció mentve és alkalmazva!')
+          } else {
+            setSuccessMessage('Konfiguráció mentve (újraindítás szükséges az alkalmazáshoz)')
+          }
+        } catch {
+          setSuccessMessage('Konfiguráció mentve (újraindítás szükséges az alkalmazáshoz)')
+        }
+        
         setTimeout(() => setSuccessMessage(null), 3000)
       } else {
         const data = await response.json()
@@ -707,19 +751,273 @@ export default function MachineConfigTab({
                 </div>
               </div>
 
+              {/* Driver Settings */}
+              <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
+                <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
+                  <Cpu className="w-4 h-4" />
+                  Driver Beállítások
+                </div>
+                
+                {/* Max Feed Rate */}
+                <div>
+                  <label className="block text-xs text-steel-500 mb-1">
+                    Maximális előtolás ({config.type === 'robot_arm' ? 'fok/perc' : 'mm/perc'})
+                  </label>
+                  <input
+                    type="number"
+                    value={config.driverConfig?.maxFeedRate ?? 2000}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        driverConfig: {
+                          ...config.driverConfig,
+                          maxFeedRate: parseFloat(e.target.value) || 2000,
+                        },
+                      })
+                    }
+                    className="input w-full text-sm"
+                    min={1}
+                  />
+                </div>
+
+                {/* Home Position */}
+                <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-steel-400 text-xs font-medium">
+                    <Power className="w-3 h-3" />
+                    Home Pozíció
+                  </div>
+                  <div>
+                    <label className="block text-xs text-steel-500 mb-1">Mód</label>
+                    <select
+                      value={config.driverConfig?.homePosition?.mode ?? 'absolute'}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          driverConfig: {
+                            ...config.driverConfig,
+                            homePosition: {
+                              ...config.driverConfig?.homePosition,
+                              mode: e.target.value as 'absolute' | 'query',
+                            },
+                          },
+                        })
+                      }
+                      className="input w-full text-sm"
+                    >
+                      <option value="absolute">Megadott pozíció</option>
+                      <option value="query">Firmware lekérdezés</option>
+                    </select>
+                  </div>
+                  {config.driverConfig?.homePosition?.mode === 'absolute' && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {config.axes.map((axis) => (
+                        <div key={axis.name}>
+                          <label className="block text-xs text-steel-500 mb-1">{axis.name}</label>
+                          <input
+                            type="number"
+                            value={config.driverConfig?.homePosition?.positions?.[axis.name] ?? 0}
+                            onChange={(e) => {
+                              const positions = { ...config.driverConfig?.homePosition?.positions }
+                              positions[axis.name] = parseFloat(e.target.value) || 0
+                              setConfig({
+                                ...config,
+                                driverConfig: {
+                                  ...config.driverConfig,
+                                  homePosition: {
+                                    ...config.driverConfig?.homePosition,
+                                    mode: config.driverConfig?.homePosition?.mode ?? 'absolute',
+                                    positions,
+                                  },
+                                },
+                              })
+                            }}
+                            className="input w-full text-xs py-1"
+                            step={0.1}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Closed Loop Settings - robot_arm only */}
+                {config.type === 'robot_arm' && (
+                  <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-steel-400 text-xs font-medium">
+                        <Gauge className="w-3 h-3" />
+                        Closed Loop
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={config.driverConfig?.closedLoop?.enabled ?? false}
+                          onChange={(e) =>
+                            setConfig({
+                              ...config,
+                              driverConfig: {
+                                ...config.driverConfig,
+                                closedLoop: {
+                                  ...config.driverConfig?.closedLoop,
+                                  enabled: e.target.checked,
+                                },
+                              },
+                            })
+                          }
+                          className="w-3 h-3 rounded bg-steel-700 border-steel-600"
+                        />
+                        <span className="text-xs text-steel-400">Engedélyezve</span>
+                      </label>
+                    </div>
+                    {config.driverConfig?.closedLoop?.enabled && (
+                      <>
+                        <div>
+                          <label className="block text-xs text-steel-500 mb-1">Driver típus</label>
+                          <select
+                            value={config.driverConfig?.closedLoop?.driverType ?? 'servo'}
+                            onChange={(e) =>
+                              setConfig({
+                                ...config,
+                                driverConfig: {
+                                  ...config.driverConfig,
+                                  closedLoop: {
+                                    ...config.driverConfig?.closedLoop,
+                                    enabled: true,
+                                    driverType: e.target.value as 'servo' | 'stepper_encoder',
+                                  },
+                                },
+                              })
+                            }
+                            className="input w-full text-xs"
+                          >
+                            <option value="servo">Servo</option>
+                            <option value="stepper_encoder">Stepper + Encoder</option>
+                          </select>
+                        </div>
+                        <div className="text-xs text-steel-500">Stall Detection</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs text-steel-500 mb-1">Timeout (s)</label>
+                            <input
+                              type="number"
+                              value={config.driverConfig?.closedLoop?.stallDetection?.timeout ?? 0.3}
+                              onChange={(e) =>
+                                setConfig({
+                                  ...config,
+                                  driverConfig: {
+                                    ...config.driverConfig,
+                                    closedLoop: {
+                                      ...config.driverConfig?.closedLoop,
+                                      enabled: true,
+                                      stallDetection: {
+                                        ...config.driverConfig?.closedLoop?.stallDetection,
+                                        timeout: parseFloat(e.target.value) || 0.3,
+                                      },
+                                    },
+                                  },
+                                })
+                              }
+                              className="input w-full text-xs py-1"
+                              step={0.1}
+                              min={0.1}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-steel-500 mb-1">Tolerancia (°)</label>
+                            <input
+                              type="number"
+                              value={config.driverConfig?.closedLoop?.stallDetection?.tolerance ?? 0.5}
+                              onChange={(e) =>
+                                setConfig({
+                                  ...config,
+                                  driverConfig: {
+                                    ...config.driverConfig,
+                                    closedLoop: {
+                                      ...config.driverConfig?.closedLoop,
+                                      enabled: true,
+                                      stallDetection: {
+                                        ...config.driverConfig?.closedLoop?.stallDetection,
+                                        tolerance: parseFloat(e.target.value) || 0.5,
+                                      },
+                                    },
+                                  },
+                                })
+                              }
+                              className="input w-full text-xs py-1"
+                              step={0.1}
+                              min={0.1}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-steel-500 mb-1">Sebesség (°/min)</label>
+                            <input
+                              type="number"
+                              value={config.driverConfig?.closedLoop?.stallDetection?.speed ?? 150}
+                              onChange={(e) =>
+                                setConfig({
+                                  ...config,
+                                  driverConfig: {
+                                    ...config.driverConfig,
+                                    closedLoop: {
+                                      ...config.driverConfig?.closedLoop,
+                                      enabled: true,
+                                      stallDetection: {
+                                        ...config.driverConfig?.closedLoop?.stallDetection,
+                                        speed: parseFloat(e.target.value) || 150,
+                                      },
+                                    },
+                                  },
+                                })
+                              }
+                              className="input w-full text-xs py-1"
+                              min={10}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-steel-500 mb-1">Max keresés (°)</label>
+                            <input
+                              type="number"
+                              value={config.driverConfig?.closedLoop?.stallDetection?.maxSearchAngle ?? 400}
+                              onChange={(e) =>
+                                setConfig({
+                                  ...config,
+                                  driverConfig: {
+                                    ...config.driverConfig,
+                                    closedLoop: {
+                                      ...config.driverConfig?.closedLoop,
+                                      enabled: true,
+                                      stallDetection: {
+                                        ...config.driverConfig?.closedLoop?.stallDetection,
+                                        maxSearchAngle: parseFloat(e.target.value) || 400,
+                                      },
+                                    },
+                                  },
+                                })
+                              }
+                              className="input w-full text-xs py-1"
+                              min={10}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Calibration Panel - robot_arm only */}
               {config.type === 'robot_arm' && (
                 <CalibrationPanel
                   deviceId={deviceId}
                   onApplyResults={(results) => {
                     const newAxes = config.axes.map((axis) => {
-                      if (axis.name === 'J1' && results.j1_limits[0] !== null && results.j1_limits[1] !== null) {
+                      if (axis.name === 'X' && results.j1_limits[0] !== null && results.j1_limits[1] !== null) {
                         return { ...axis, min: results.j1_limits[0], max: results.j1_limits[1] }
                       }
-                      if (axis.name === 'J2' && results.j2_limits[0] !== null && results.j2_limits[1] !== null) {
+                      if (axis.name === 'Y' && results.j2_limits[0] !== null && results.j2_limits[1] !== null) {
                         return { ...axis, min: results.j2_limits[0], max: results.j2_limits[1] }
                       }
-                      if (axis.name === 'J3' && results.j3_limits[0] !== null && results.j3_limits[1] !== null) {
+                      if (axis.name === 'Z' && results.j3_limits[0] !== null && results.j3_limits[1] !== null) {
                         return { ...axis, min: results.j3_limits[0], max: results.j3_limits[1] }
                       }
                       return axis
@@ -730,6 +1028,7 @@ export default function MachineConfigTab({
                   }}
                 />
               )}
+
             </>
           )}
         </div>
