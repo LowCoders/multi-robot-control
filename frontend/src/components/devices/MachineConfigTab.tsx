@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { MachineVisualization } from '../visualization'
 import RobotArmVisualization from '../visualization/RobotArmVisualization'
+import CalibrationPanel from './CalibrationPanel'
 import type { CameraState } from '../visualization'
 import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType } from '../../types/machine-config'
 import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, getDefaultConfigForType } from '../../types/machine-config'
@@ -705,6 +706,30 @@ export default function MachineConfigTab({
                   </label>
                 </div>
               </div>
+
+              {/* Calibration Panel - robot_arm only */}
+              {config.type === 'robot_arm' && (
+                <CalibrationPanel
+                  deviceId={deviceId}
+                  onApplyResults={(results) => {
+                    const newAxes = config.axes.map((axis) => {
+                      if (axis.name === 'J1' && results.j1_limits[0] !== null && results.j1_limits[1] !== null) {
+                        return { ...axis, min: results.j1_limits[0], max: results.j1_limits[1] }
+                      }
+                      if (axis.name === 'J2' && results.j2_limits[0] !== null && results.j2_limits[1] !== null) {
+                        return { ...axis, min: results.j2_limits[0], max: results.j2_limits[1] }
+                      }
+                      if (axis.name === 'J3' && results.j3_limits[0] !== null && results.j3_limits[1] !== null) {
+                        return { ...axis, min: results.j3_limits[0], max: results.j3_limits[1] }
+                      }
+                      return axis
+                    })
+                    setConfig({ ...config, axes: newAxes })
+                    setSuccessMessage('Kalibrációs eredmények alkalmazva!')
+                    setTimeout(() => setSuccessMessage(null), 3000)
+                  }}
+                />
+              )}
             </>
           )}
         </div>

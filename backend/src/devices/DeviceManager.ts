@@ -722,6 +722,51 @@ export class DeviceManager {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async calibrateLimits(deviceId: string, options: any = {}): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/calibrate-limits`, options, {
+        timeout: 300000, // 5 min - kalibráció hosszú lehet
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Calibrate limits hiba (${deviceId}):`, error);
+      throw error;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getCalibrationStatus(deviceId: string): Promise<any> {
+    try {
+      const response = await this.http.get(`/devices/${deviceId}/calibration-status`);
+      return response.data;
+    } catch (error) {
+      console.error(`Get calibration status hiba (${deviceId}):`, error);
+      return { running: false, message: 'Hiba történt' };
+    }
+  }
+
+  async stopCalibration(deviceId: string): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/calibration-stop`);
+      return response.data.success;
+    } catch (error) {
+      console.error(`Stop calibration hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async saveCalibration(deviceId: string, calibrationData: any): Promise<any> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/save-calibration`, calibrationData);
+      return response.data;
+    } catch (error) {
+      console.error(`Save calibration hiba (${deviceId}):`, error);
+      throw error;
+    }
+  }
+
   async teachRecord(deviceId: string): Promise<any> {
     try {
       const response = await this.http.post(`/devices/${deviceId}/teach/record`);

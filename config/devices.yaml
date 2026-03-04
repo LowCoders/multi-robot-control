@@ -3,6 +3,33 @@
 #
 # Ez a fájl tartalmazza az összes eszköz konfigurációját.
 # A bridge szerver indításkor beolvassa és inicializálja az eszközöket.
+#
+# =====================================================
+# USB ESZKÖZAZONOSÍTÁS
+# =====================================================
+# Az eszközök azonosíthatók USB attribútumok alapján a változó /dev/ttyUSB* 
+# portoktól függetlenül. Használd a GET /usb/devices endpointot az elérhető
+# eszközök és azonosítóik lekérdezéséhez.
+#
+# Prioritási sorrend:
+#   1. usb.serial_number - Egyedi sorozatszám (ha az eszköz támogatja)
+#   2. usb.vid + usb.pid + usb.location - VID:PID + USB port pozíció
+#   3. usb.vid + usb.pid - Vendor/Product ID (első találat)
+#   4. port - Statikus port útvonal (fallback)
+#
+# Példa USB azonosítással:
+#   config:
+#     usb:
+#       serial_number: "A50285BI"        # FTDI és minőségi adapterek
+#     # VAGY
+#       vid: "1a86"                      # Vendor ID (hex)
+#       pid: "7523"                      # Product ID (hex)
+#       location: "3-3"                  # USB port pozíció (opcionális)
+#     port: /dev/ttyUSB0                 # Fallback ha USB nem található
+#     baudrate: 115200
+#
+# Megjegyzés: Olcsó CH340/CH341 adapterek nem rendelkeznek serial_number-rel,
+# ezeknél a vid:pid + location kombinációt használd.
 
 devices:
   # =====================================================
@@ -25,7 +52,7 @@ devices:
     name: "Lézervágó"
     driver: grbl
     type: laser_cutter
-    enabled: true
+    enabled: false
     simulated: false  # Nincs csatlakoztatva – ha csatlakozik, átállítandó false-ra
     config:
       # Soros port
@@ -36,43 +63,102 @@ devices:
       max_feed_rate: 20000
       
   # =====================================================
-  # Ipari Robotkar - 3 tengelyes + GRBL firmware
+  # Robotkar v1 - Open Loop (régi board, 3 tengelyes)
   # =====================================================
   - id: robot_arm_1
-    name: "Ipari Robotkar"
+    name: "Robotkar v1 (Open Loop)"
     driver: robot_arm
     type: robot_arm
     enabled: true
-    simulated: false
+    simulated: true
     config:
-      # Soros port (CH340 USB-serial adapter)
-      port: /dev/ttyUSB0
-      # Baud rate (GRBL default: 115200)
+      # USB azonosítás (CH340 adapter - location kötelező a megkülönböztetéshez)
+      usb:
+        vid: "1a86"       # CH340 Vendor ID
+        pid: "7523"       # CH340 Product ID
+        location: "3-4"   # USB port pozíció (robot_arm_2 is CH340, location kell)
+      # Fallback soros port
+      port: /dev/ttyUSB1
       baudrate: 115200
       
-      # Robot kinematikai méretek (mm) - az IK/FK számításokhoz
-      # Forrás: test_robot.py kalibrált értékek
+      # Robot kinematikai méretek (mm)
       robot_config:
         L1: 85    # Bázis magasság (mm)
         L2: 140   # Felkar hossz (mm)
         L3: 165   # Alkar hossz (mm)
       
-      # Joint-GRBL tengely mapping (fix, firmware bekötés alapján):
+      # Joint-GRBL tengely mapping:
       #   J1 (bázis)  -> GRBL Z tengely
       #   J2 (váll)   -> GRBL X tengely
       #   J3 (könyök) -> GRBL Y tengely
-      # A GRBL firmware közvetlenül fokban dolgozik (1:1 mapping)
       
       # Szoftveres tengelylimitek (fokban)
-      # Forrás: test_robot.py SAFE_LIMITS (végállásoktól 5° távolság)
-      # X = J2 (váll), Y = J3 (könyök), Z = J1 (bázis) a GRBL mapping miatt
       axis_limits:
-        X: [-5, 91]       # J2 váll (fok) - GRBL X tengely
-        Y: [-50, 35]      # J3 könyök (fok) - GRBL Y tengely
-        Z: [-175, 175]    # J1 bázis forgás (fok) - GRBL Z tengely
+        X: [-5, 91]       # J2 váll (fok)
+        Y: [-50, 35]      # J3 könyök (fok)
+        Z: [-175, 175]    # J1 bázis forgás (fok)
       
-      # Maximális mozgási sebesség (1-200 skála)
       max_feed_rate: 2000
+
+  # =====================================================
+  # Robotkar v2 - Closed Loop (ESP32 GRBL 6-Axis board)
+  # =====================================================
+  # ESP32 GRBL 6-Axis + closed loop servo driverek
+  # Jelenleg 3 tengely bekötve, azonos kinematika mint robot_arm_1
+  - id: robot_arm_2
+    name: "Robotkar v2 (Closed Loop)"
+    driver: robot_arm
+    type: robot_arm
+    enabled: true
+    simulated: false
+    config:
+      # USB azonosítás (CH340 adapter - location kötelező)
+      usb:
+        vid: "1a86"       # CH340 Vendor ID
+        pid: "7523"       # CH340 Product ID
+        location: "3-3"   # USB port pozíció
+      # Fallback soros port
+      port: /dev/ttyUSB0
+      baudrate: 115200
+      
+      # Robot kinematikai méretek (mm) - azonos mint robot_arm_1
+      robot_config:
+        L1: 85    # Bázis magasság (mm)
+        L2: 140   # Felkar hossz (mm)
+        L3: 165   # Alkar hossz (mm)
+      
+      # Joint-GRBL tengely mapping:
+      #   J1 (bázis)  -> GRBL Z tengely
+      #   J2 (váll)   -> GRBL X tengely
+      #   J3 (könyök) -> GRBL Y tengely
+      
+      # Szoftveres tengelylimitek (fokban)
+      axis_limits:
+        X: [-5, 91]       # J2 váll (fok)
+        Y: [-50, 35]      # J3 könyök (fok)
+        Z: [-175, 175]    # J1 bázis forgás (fok)
+      
+      max_feed_rate: 2000
+      
+      # Closed loop specifikus beállítások
+      # A servo driverek encoder feedback-et adnak, lehetővé téve:
+      # - Stall detection alapú homing (végálláskapcsolók nélkül)
+      # - Pozíció verifikáció
+      # - Automatikus korrekció
+      closed_loop:
+        enabled: true
+        driver_type: "servo"  # "servo" | "stepper_encoder"
+        
+        # Stall detection paraméterek (kalibráció finomhangolás)
+        stall_detection:
+          timeout: 0.3          # Mennyi ideig várjon pozíció változásra (mp)
+          tolerance: 0.5        # Mekkora elmozdulás számít változásnak (fok)
+          speed: 150            # Kalibráció keresési sebesség (fok/perc) - kisebb = kevesebb erő
+          max_search_angle: 400 # Maximum keresési szög per irány (fok)
+          calibrate_joints:     # Mely tengelyeken keresünk végállást
+            - J2                # Váll - van fizikai végállás
+            - J3                # Könyök - van fizikai végállás
+            # J1 (bázis) kimarad - nincs fizikai végállása
 
   # =====================================================
   # Példa: 3D Nyomtató (jövőbeli bővítés)

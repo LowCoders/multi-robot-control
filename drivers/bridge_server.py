@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Python Bridge Server - FastAPI + WebSocket
 Multi-Robot Control System
@@ -24,6 +25,7 @@ from grbl_driver import GrblDevice
 from linuxcnc_driver import LinuxCNCDevice
 from robot_arm_driver import RobotArmDevice
 from simulated_device import SimulatedDevice, SimulationMode
+from usb_port_resolver import UsbIdentifier, resolve_port, list_usb_devices
 
 # Szimulációs mód már csak eszközönként (devices.yaml simulated mezője)
 
@@ -136,7 +138,10 @@ class DeviceManager:
                 connection_info = "Szimulált"
                 print(f"🎮 Szimulált eszköz: {config.name}")
             elif driver == "grbl":
-                port = config.config.get('port', '/dev/ttyUSB0')
+                port = self._resolve_device_port(config)
+                if port is None:
+                    print(f"⚠️ Port nem található: {config.name}")
+                    return False
                 device = GrblDevice(
                     device_id=config.id,
                     device_name=config.name,
@@ -156,7 +161,10 @@ class DeviceManager:
                 connection_info = ini_file or "LinuxCNC"
                 print(f"🔌 Valós LinuxCNC eszköz: {config.name}")
             elif driver == "robot_arm":
-                port = config.config.get('port', '/dev/ttyUSB0')
+                port = self._resolve_device_port(config)
+                if port is None:
+                    print(f"⚠️ Port nem található: {config.name}")
+                    return False
                 device = RobotArmDevice(
                     device_id=config.id,
                     device_name=config.name,
@@ -168,9 +176,11 @@ class DeviceManager:
                     axis_limits=config.config.get('axis_limits'),
                     axis_scale=config.config.get('axis_scale'),
                     max_feed_rate=config.config.get('max_feed_rate'),
+                    closed_loop=config.config.get('closed_loop'),
                 )
                 connection_info = port
-                print(f"🤖 Valós robotkar eszköz: {config.name} ({port})")
+                closed_loop_info = " [Closed Loop]" if config.config.get('closed_loop', {}).get('enabled') else ""
+                print(f"🤖 Valós robotkar eszköz: {config.name} ({port}){closed_loop_info}")
             else:
                 print(f"Ismeretlen driver: {driver}")
                 return False
@@ -209,6 +219,26 @@ class DeviceManager:
         except Exception as e:
             print(f"Eszköz hozzáadási hiba ({config.id}): {str(e)}")
             return False
+    
+    def _resolve_device_port(self, config: DeviceConfig) -> Optional[str]:
+        """
+        Port feloldása USB azonosító vagy statikus port alapján.
+        
+        Prioritás: usb.serial_number > usb.vid:pid+location > usb.vid:pid > port
+        """
+        usb_config = config.config.get('usb')
+        fallback_port = config.config.get('port')
+        
+        if usb_config:
+            usb_id = UsbIdentifier(
+                serial_number=usb_config.get('serial_number'),
+                vid=usb_config.get('vid'),
+                pid=usb_config.get('pid'),
+                location=usb_config.get('location'),
+            )
+            return resolve_port(usb=usb_id, fallback_port=fallback_port)
+        
+        return fallback_port or '/dev/ttyUSB0'
     
     def get_device(self, device_id: str) -> Optional[DeviceDriver]:
         """Eszköz lekérdezése ID alapján"""
@@ -373,6 +403,22 @@ async def root():
     return {"status": "ok", "service": "device-bridge"}
 
 
+@app.get("/usb/devices")
+async def get_usb_devices():
+    """
+    USB-serial eszközök listázása.
+    
+    Diagnosztikai endpoint az USB azonosítók (VID, PID, serial_number, location) 
+    megjelenítésére a devices.yaml konfigurációhoz.
+    """
+    devices = list_usb_devices()
+    return {
+        "devices": devices,
+        "count": len(devices),
+        "hint": "Használd ezeket az értékeket a devices.yaml 'usb' szekciójában"
+    }
+
+
 @app.get("/devices")
 async def list_devices():
     """Összes eszköz listázása"""
@@ -512,8 +558,10 @@ async def jog_device(device_id: str, request: JogRequest):
             # Cartesian mód: X/Y/Z mm-ben, IK számítással
             result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
         else:
-            # Jog és Joint mód: mindkettő joint léptetés (axis->joint mapping)
-            # X->J1 (bázis), Y->J2 (váll), Z->J3 (könyök)
+            # Jog mód: frontend axis címke -> robot joint
+            # Frontend X (J1 címke) -> J1 (bázis)
+            # Frontend Y (J2 címke) -> J2 (váll)
+            # Frontend Z (J3 címke) -> J3 (könyök)
             joint_map = {'X': 'J1', 'Y': 'J2', 'Z': 'J3'}
             joint = joint_map.get(request.axis.upper(), request.axis)
             result = await device.jog_joint(joint, request.distance, request.feed_rate)
@@ -527,11 +575,24 @@ async def jog_device(device_id: str, request: JogRequest):
 @app.post("/devices/{device_id}/jog/stop")
 async def jog_stop_device(device_id: str):
     """Jog leállítása"""
+    # #region agent log
+    import time as _dbg_time; _dbg_start = _dbg_time.time()
+    try:
+        with open('/web/multi-robot-control/.cursor/debug-9435d5.log', 'a') as _f:
+            import json as _j; _f.write(_j.dumps({"sessionId":"9435d5","hypothesisId":"BRIDGE_JOG_STOP","location":"bridge_server.py:jog_stop_device:entry","message":"jog_stop endpoint called","data":{"device_id":device_id},"timestamp":int(_dbg_time.time()*1000)})+"\n")
+    except: pass
+    # #endregion
     device = device_manager.get_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
     result = await device.jog_stop()
+    # #region agent log
+    try:
+        with open('/web/multi-robot-control/.cursor/debug-9435d5.log', 'a') as _f:
+            import json as _j; _f.write(_j.dumps({"sessionId":"9435d5","hypothesisId":"BRIDGE_JOG_STOP","location":"bridge_server.py:jog_stop_device:done","message":"jog_stop returned","data":{"device_id":device_id,"result":result,"elapsed_ms":((_dbg_time.time()-_dbg_start)*1000)},"timestamp":int(_dbg_time.time()*1000)})+"\n")
+    except: pass
+    # #endregion
     return {"success": result}
 
 
@@ -706,6 +767,156 @@ async def robot_calibrate(device_id: str):
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     result = await device.calibrate()
     return {"success": result}
+
+
+@app.post("/devices/{device_id}/reset-coordinates")
+async def reset_coordinates(device_id: str):
+    """
+    Koordináták alaphelyzetbe állítása (G92 X0 Y0 Z0).
+    
+    A jelenlegi fizikai pozíciót nullának tekinti - hasznos,
+    ha a gépet kézzel a home pozícióba állítottuk.
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    try:
+        response = await device.send_gcode("G92 X0 Y0 Z0")
+        
+        if "error" in response.lower():
+            return {"success": False, "message": response}
+        
+        return {"success": True, "message": "Koordináták nullázva"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hiba: {str(e)}")
+
+
+class CalibrateLimitsRequest(BaseModel):
+    """Végállás kalibráció kérés"""
+    speed: float = 300.0
+    joints: Optional[List[str]] = None
+    stall_timeout: float = 0.3
+    stall_tolerance: float = 0.5
+
+
+@app.post("/devices/{device_id}/calibrate-limits")
+async def calibrate_limits(device_id: str, request: CalibrateLimitsRequest = None):
+    """
+    Automatikus végállás kalibráció stall detection-nel.
+    
+    Csak closed loop (SERVO42C) eszközökkel működik megfelelően.
+    A driverek automatikusan érzékelik az elakadást.
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Nem robotkar eszköz")
+    
+    if not hasattr(device, 'calibrate_limits'):
+        raise HTTPException(status_code=400, detail="Ez az eszköz nem támogatja az automatikus kalibrációt")
+    
+    if request is None:
+        request = CalibrateLimitsRequest()
+    
+    result = await device.calibrate_limits(
+        speed=request.speed,
+        joints=request.joints,
+        stall_timeout=request.stall_timeout,
+        stall_tolerance=request.stall_tolerance,
+    )
+    return result
+
+
+@app.get("/devices/{device_id}/calibration-status")
+async def get_calibration_status(device_id: str):
+    """
+    Kalibráció állapot lekérdezése (progress, lépés, eredmények).
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Nem robotkar eszköz")
+    
+    if not hasattr(device, 'get_calibration_status'):
+        return {"running": False, "message": "Nem támogatott"}
+    
+    return device.get_calibration_status()
+
+
+@app.post("/devices/{device_id}/calibration-stop")
+async def stop_calibration(device_id: str):
+    """
+    Futó kalibráció leállítása.
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Nem robotkar eszköz")
+    
+    if hasattr(device, 'stop_calibration'):
+        device.stop_calibration()
+    
+    return {"success": True}
+
+
+class SaveCalibrationRequest(BaseModel):
+    """Kalibráció mentés kérés"""
+    j1_limits: Optional[List[float]] = None
+    j2_limits: Optional[List[float]] = None
+    j3_limits: Optional[List[float]] = None
+
+
+@app.post("/devices/{device_id}/save-calibration")
+async def save_calibration(device_id: str, request: SaveCalibrationRequest):
+    """
+    Kalibrációs eredmények mentése a devices.yaml fájlba.
+    """
+    config_path = Path(__file__).parent.parent / "config" / "devices.yaml"
+    
+    if not config_path.exists():
+        raise HTTPException(status_code=404, detail="devices.yaml nem található")
+    
+    try:
+        with open(config_path, 'r') as f:
+            config_data = yaml.safe_load(f)
+        
+        device_found = False
+        for device_cfg in config_data.get('devices', []):
+            if device_cfg.get('id') == device_id:
+                device_found = True
+                if 'config' not in device_cfg:
+                    device_cfg['config'] = {}
+                if 'axis_limits' not in device_cfg['config']:
+                    device_cfg['config']['axis_limits'] = {}
+                
+                axis_limits = device_cfg['config']['axis_limits']
+                
+                if request.j1_limits and len(request.j1_limits) == 2:
+                    axis_limits['Z'] = request.j1_limits
+                if request.j2_limits and len(request.j2_limits) == 2:
+                    axis_limits['X'] = request.j2_limits
+                if request.j3_limits and len(request.j3_limits) == 2:
+                    axis_limits['Y'] = request.j3_limits
+                
+                break
+        
+        if not device_found:
+            raise HTTPException(status_code=404, detail=f"Eszköz nem található: {device_id}")
+        
+        with open(config_path, 'w') as f:
+            yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        
+        return {"success": True, "message": "Kalibráció mentve a devices.yaml-ba"}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mentés hiba: {str(e)}")
 
 
 @app.post("/devices/{device_id}/teach/record")

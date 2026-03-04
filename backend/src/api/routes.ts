@@ -1039,6 +1039,28 @@ export function createApiRoutes(
     res.json({ success });
   }));
 
+  // Automatic limits calibration (closed loop)
+  router.post('/devices/:id/calibrate-limits', asyncHandler(async (req: Request, res: Response) => {
+    const options = req.body || {};
+    const result = await deviceManager.calibrateLimits(req.params.id, options);
+    res.json(result);
+  }));
+
+  router.get('/devices/:id/calibration-status', asyncHandler(async (req: Request, res: Response) => {
+    const status = await deviceManager.getCalibrationStatus(req.params.id);
+    res.json(status);
+  }));
+
+  router.post('/devices/:id/calibration-stop', asyncHandler(async (req: Request, res: Response) => {
+    const success = await deviceManager.stopCalibration(req.params.id);
+    res.json({ success });
+  }));
+
+  router.post('/devices/:id/save-calibration', asyncHandler(async (req: Request, res: Response) => {
+    const result = await deviceManager.saveCalibration(req.params.id, req.body);
+    res.json(result);
+  }));
+
   // Teaching
   router.post('/devices/:id/teach/record', asyncHandler(async (req: Request, res: Response) => {
     const result = await deviceManager.teachRecord(req.params.id);

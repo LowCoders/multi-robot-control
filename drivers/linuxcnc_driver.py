@@ -18,15 +18,26 @@ try:
 except ImportError:
     LINUXCNC_AVAILABLE = False
 
-from base import (
-    DeviceDriver,
-    JogSafeDeviceDriver,
-    DeviceType,
-    DeviceState,
-    DeviceStatus,
-    DeviceCapabilities,
-    Position,
-)
+try:
+    from base import (
+        DeviceDriver,
+        JogSafeDeviceDriver,
+        DeviceType,
+        DeviceState,
+        DeviceStatus,
+        DeviceCapabilities,
+        Position,
+    )
+except ImportError:
+    from .base import (
+        DeviceDriver,
+        JogSafeDeviceDriver,
+        DeviceType,
+        DeviceState,
+        DeviceStatus,
+        DeviceCapabilities,
+        Position,
+    )
 
 
 class LinuxCNCDevice(JogSafeDeviceDriver):
