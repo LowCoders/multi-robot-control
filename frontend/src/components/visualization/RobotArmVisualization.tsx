@@ -14,66 +14,29 @@ import type { CameraState } from './MachineVisualization'
 interface RobotBaseProps {
   diameter: number
   height: number
+  frameColor?: string
 }
 
-const RobotBase = memo(function RobotBase({ diameter, height }: RobotBaseProps) {
+const RobotBase = memo(function RobotBase({ diameter, height, frameColor = '#2d2d2d' }: RobotBaseProps) {
   const radius = diameter / 2
 
-  const basePlateMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#1a1a1a',
-    metalness: 0.9,
-    roughness: 0.3,
-  }), [])
-
   const baseBodyMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#2d2d2d',
+    color: frameColor,
     metalness: 0.7,
     roughness: 0.4,
-  }), [])
-
-  const accentMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#ef4444',
-    metalness: 0.5,
-    roughness: 0.5,
-    emissive: '#ef4444',
-    emissiveIntensity: 0.1,
-  }), [])
+  }), [frameColor])
 
   useEffect(() => {
     return () => {
-      basePlateMaterial.dispose()
       baseBodyMaterial.dispose()
-      accentMaterial.dispose()
     }
-  }, [basePlateMaterial, baseBodyMaterial, accentMaterial])
+  }, [baseBodyMaterial])
 
   return (
     <group>
-      {/* Alaplap (fix) */}
-      <mesh position={[0, 0, -5]} material={basePlateMaterial}>
-        <cylinderGeometry args={[radius * 1.3, radius * 1.4, 10, 32]} />
-      </mesh>
-
-      {/* Csavarok az alaplapon */}
-      {[0, 1, 2, 3, 4, 5].map((i) => {
-        const angle = (i / 6) * Math.PI * 2
-        const x = Math.cos(angle) * radius * 1.2
-        const y = Math.sin(angle) * radius * 1.2
-        return (
-          <mesh key={i} position={[x, y, 1]} material={accentMaterial}>
-            <cylinderGeometry args={[3, 3, 4, 8]} />
-          </mesh>
-        )
-      })}
-
-      {/* Forgó alap henger */}
+      {/* Bázis henger */}
       <mesh position={[0, 0, height / 2]} material={baseBodyMaterial}>
         <cylinderGeometry args={[radius, radius * 1.1, height, 32]} />
-      </mesh>
-
-      {/* Felső gyűrű (forgási jelző) */}
-      <mesh position={[0, 0, height]} material={accentMaterial}>
-        <torusGeometry args={[radius * 0.9, 2, 8, 32]} />
       </mesh>
     </group>
   )
@@ -132,14 +95,15 @@ interface ArmLinkProps {
   length: number
   width: number
   color: string
+  frameColor?: string
 }
 
-const ArmLink = memo(function ArmLink({ length, width, color }: ArmLinkProps) {
+const ArmLink = memo(function ArmLink({ length, width, color, frameColor = '#3a3a3a' }: ArmLinkProps) {
   const armMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#3a3a3a',
+    color: frameColor,
     metalness: 0.7,
     roughness: 0.35,
-  }), [])
+  }), [frameColor])
 
   const stripeMaterial = useMemo(() => new THREE.MeshStandardMaterial({
     color,
@@ -303,9 +267,10 @@ interface KinematicArmProps {
   config: RobotArmConfig
   position: Position
   gripperState: GripperState
+  frameColor?: string
 }
 
-const KinematicArm = memo(function KinematicArm({ config, position, gripperState }: KinematicArmProps) {
+const KinematicArm = memo(function KinematicArm({ config, position, gripperState, frameColor = '#2d2d2d' }: KinematicArmProps) {
   const j1Ref = useRef<THREE.Group>(null)
   const j2Ref = useRef<THREE.Group>(null)
   const j3Ref = useRef<THREE.Group>(null)
@@ -368,7 +333,9 @@ const KinematicArm = memo(function KinematicArm({ config, position, gripperState
       j2Ref.current.rotation.x = THREE.MathUtils.degToRad(animJ2.current)
     }
     if (j3Ref.current) {
-      j3Ref.current.rotation.x = THREE.MathUtils.degToRad(animJ3.current)
+      // Z szög abszolút (vízszinteshez képest), ezért kivonjuk a Y szöget
+      // hogy kompenzáljuk a Three.js hierarchikus öröklődést
+      j3Ref.current.rotation.x = THREE.MathUtils.degToRad(animJ3.current - animJ2.current)
     }
   })
 
@@ -376,45 +343,48 @@ const KinematicArm = memo(function KinematicArm({ config, position, gripperState
 
   return (
     <group>
-      {/* Bázis (fix talp) */}
-      <RobotBase diameter={baseDiameter} height={baseHeight} />
-
       {/* X tengely - Bázis forgás (függőleges tengely körül) */}
-      <group ref={j1Ref} position={[0, 0, baseHeight]}>
-        {/* Váll ízület */}
-        <Joint radius={lowerArmWidth * 0.45} color="#ef4444" />
+      <group ref={j1Ref}>
+        {/* Bázis (forog a karral együtt) */}
+        <RobotBase diameter={baseDiameter} height={baseHeight} frameColor={frameColor} />
 
-        {/* Y tengely - Váll forgás (vízszintes tengely körül) */}
-        <group ref={j2Ref}>
-          {/* Alsó kar */}
-          <ArmLink length={lowerArmLength} width={lowerArmWidth} color="#22c55e" />
+        {/* Váll pozíció */}
+        <group position={[0, 0, baseHeight]}>
+          {/* Váll ízület */}
+          <Joint radius={lowerArmWidth * 0.45} color="#ef4444" />
 
-          {/* Könyök ízület - a kar tetején */}
-          <group position={[0, 0, lowerArmLength]}>
-            <Joint radius={upperArmWidth * 0.45} color="#22c55e" />
+          {/* Y tengely - Váll forgás (vízszintes tengely körül) */}
+          <group ref={j2Ref}>
+            {/* Alsó kar */}
+            <ArmLink length={lowerArmLength} width={lowerArmWidth} color="#22c55e" frameColor={frameColor} />
 
-            {/* Z tengely - Könyök forgás */}
-            <group ref={j3Ref}>
-              {/* Felső kar */}
-              <ArmLink length={upperArmLength} width={upperArmWidth} color="#3b82f6" />
+            {/* Könyök ízület - a kar tetején */}
+            <group position={[0, 0, lowerArmLength]}>
+              <Joint radius={upperArmWidth * 0.45} color="#22c55e" />
 
-              {/* Végeffektor - a felső kar tetején */}
-              <group position={[0, 0, upperArmLength]}>
-                <Joint radius={upperArmWidth * 0.35} color="#3b82f6" />
+              {/* Z tengely - Könyök forgás */}
+              <group ref={j3Ref}>
+                {/* Felső kar */}
+                <ArmLink length={upperArmLength} width={upperArmWidth} color="#3b82f6" frameColor={frameColor} />
 
-                {/* Gripper */}
-                {config.endEffector.type === 'gripper' && (
-                  <Gripper
-                    width={config.endEffector.gripperWidth ?? 60}
-                    length={config.endEffector.gripperLength ?? 50}
-                    gripperState={gripperState}
-                  />
-                )}
+                {/* Végeffektor - a felső kar tetején */}
+                <group position={[0, 0, upperArmLength]}>
+                  <Joint radius={upperArmWidth * 0.35} color="#3b82f6" />
 
-                {/* Szívó (ha szívó típusú végeffektor) */}
-                {config.endEffector.type === 'sucker' && (
-                  <SuckerEndEffector />
-                )}
+                  {/* Gripper */}
+                  {config.endEffector.type === 'gripper' && (
+                    <Gripper
+                      width={config.endEffector.gripperWidth ?? 60}
+                      length={config.endEffector.gripperLength ?? 50}
+                      gripperState={gripperState}
+                    />
+                  )}
+
+                  {/* Szívó (ha szívó típusú végeffektor) */}
+                  {config.endEffector.type === 'sucker' && (
+                    <SuckerEndEffector />
+                  )}
+                </group>
               </group>
             </group>
           </group>
@@ -616,13 +586,13 @@ function Scene({ config, position, status, cameraPosition, cameraTarget, cameraF
       {config.visuals?.showGrid !== false && (
         <Grid
           args={[1000, 1000]}
-          position={[0, 0, -9.5]}
+          position={[0, -42, 0]}
           cellSize={20}
           cellThickness={0.3}
           cellColor="#252525"
           sectionSize={100}
           sectionThickness={0.8}
-          sectionColor="#353535"
+          sectionColor="#ffffff"
           fadeDistance={1200}
         />
       )}
@@ -640,6 +610,7 @@ function Scene({ config, position, status, cameraPosition, cameraTarget, cameraF
         config={robotArmConfig}
         position={currentPosition}
         gripperState={gripperState}
+        frameColor={config.visuals?.frameColor}
       />
     </>
   )

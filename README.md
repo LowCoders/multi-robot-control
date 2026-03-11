@@ -64,4 +64,4 @@ Web interface: http://localhost:5173
 
 ## Licenc
 
-MIT License - Készítette: Sam
+MIT License - Készítette: Sam <lowcoders@protonmail.com>

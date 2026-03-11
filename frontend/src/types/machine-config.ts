@@ -6,10 +6,13 @@ export type MachineType = 'cnc_mill' | 'cnc_lathe' | 'laser_cutter' | '5axis' | 
 
 // Dynamic limits configuration - limits that depend on another axis position
 // Base min/max are derived from the axis's own min/max values
-// Reference value is derived from the dependent axis's min value
+// Formulas:
+//   - linear_offset: both limits shift linearly with the dependent axis value
+//   - inverse_coupled: upper limit decreases as dependent axis decreases (for 90° coupled arms)
 export interface DynamicLimitsConfig {
-  dependsOn: AxisName           // Which axis this depends on
-  formula: 'linear_offset'      // Formula type (extensible for future formulas)
+  dependsOn: AxisName                          // Which axis this depends on
+  formula: 'linear_offset' | 'inverse_coupled' // Formula type
+  factor?: number                              // Factor for inverse_coupled (default: 0.9)
 }
 
 export interface AxisConfig {

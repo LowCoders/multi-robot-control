@@ -22,7 +22,7 @@ import { MachineVisualization } from '../visualization'
 import RobotArmVisualization from '../visualization/RobotArmVisualization'
 import CalibrationPanel from './CalibrationPanel'
 import type { CameraState } from '../visualization'
-import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType, DriverConfig, HomePositionConfig, ClosedLoopConfig } from '../../types/machine-config'
+import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType } from '../../types/machine-config'
 import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, getDefaultConfigForType } from '../../types/machine-config'
 import type { DeviceCapabilities } from '../../types/device'
 
@@ -42,18 +42,18 @@ const AXIS_COLORS: Record<AxisName, string> = {
 }
 
 const DEFAULT_AXIS_CONFIG: Record<AxisName, Partial<AxisConfig>> = {
-  X: { type: 'linear', min: 0, max: 300, homePosition: 0 },
-  Y: { type: 'linear', min: 0, max: 400, homePosition: 0 },
-  Z: { type: 'linear', min: -80, max: 0, homePosition: 0 },
-  A: { type: 'rotary', min: -90, max: 90, homePosition: 0 },
-  B: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
-  C: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
-  J1: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
-  J2: { type: 'rotary', min: -90, max: 90, homePosition: 0 },
-  J3: { type: 'rotary', min: -120, max: 120, homePosition: 0 },
-  J4: { type: 'rotary', min: -180, max: 180, homePosition: 0 },
-  J5: { type: 'rotary', min: -120, max: 120, homePosition: 0 },
-  J6: { type: 'rotary', min: -360, max: 360, homePosition: 0 },
+  X: { type: 'linear', min: 0, max: 300 },
+  Y: { type: 'linear', min: 0, max: 400 },
+  Z: { type: 'linear', min: -80, max: 0 },
+  A: { type: 'rotary', min: -90, max: 90 },
+  B: { type: 'rotary', min: -180, max: 180 },
+  C: { type: 'rotary', min: -180, max: 180 },
+  J1: { type: 'rotary', min: -180, max: 180 },
+  J2: { type: 'rotary', min: -90, max: 90 },
+  J3: { type: 'rotary', min: -120, max: 120 },
+  J4: { type: 'rotary', min: -180, max: 180 },
+  J5: { type: 'rotary', min: -120, max: 120 },
+  J6: { type: 'rotary', min: -360, max: 360 },
 }
 
 function AxisEditor({
@@ -95,7 +95,8 @@ function AxisEditor({
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      {/* Első sor: Min, Max, Scale */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <div>
           <label className="block text-xs text-steel-500 mb-1">Min</label>
           <input
@@ -115,17 +116,20 @@ function AxisEditor({
           />
         </div>
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Home</label>
+          <label className="block text-xs text-steel-500 mb-1">Scale</label>
           <input
             type="number"
-            value={axis.homePosition}
-            onChange={(e) => onChange({ ...axis, homePosition: parseFloat(e.target.value) || 0 })}
+            value={axis.scale ?? 1.0}
+            onChange={(e) => onChange({ ...axis, scale: parseFloat(e.target.value) || 1.0 })}
             className="input w-full text-xs py-1"
+            step={0.001}
+            title="Firmware érték → fizikai egység szorzó"
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mt-2">
+      {/* Második sor: Típus, Szülő, Invertálás */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
         <div>
           <label className="block text-xs text-steel-500 mb-1">Típus</label>
           <select
@@ -150,22 +154,7 @@ function AxisEditor({
             ))}
           </select>
         </div>
-      </div>
-
-      {/* Driver-level axis settings */}
-      <div className="grid grid-cols-2 gap-2 mt-2">
-        <div>
-          <label className="block text-xs text-steel-500 mb-1">Scale</label>
-          <input
-            type="number"
-            value={axis.scale ?? 1.0}
-            onChange={(e) => onChange({ ...axis, scale: parseFloat(e.target.value) || 1.0 })}
-            className="input w-full text-xs py-1"
-            step={0.001}
-            title="Firmware érték → fizikai egység szorzó"
-          />
-        </div>
-        <div className="flex items-center pt-4">
+        <div className="flex items-center sm:pt-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -191,7 +180,7 @@ interface MachineConfigTabProps {
 export default function MachineConfigTab({ 
   deviceId, 
   deviceName,
-  deviceType,
+  deviceType: _deviceType,
   capabilities 
 }: MachineConfigTabProps) {
   const [config, setConfig] = useState<MachineConfig>(DEFAULT_3AXIS_CNC)
@@ -335,7 +324,6 @@ export default function MachineConfigTab({
       type: defaults.type ?? 'linear',
       min: defaults.min ?? 0,
       max: defaults.max ?? 100,
-      homePosition: defaults.homePosition ?? 0,
       color: AXIS_COLORS[nextName],
       parent: lastAxis?.name,
     }
@@ -665,7 +653,7 @@ export default function MachineConfigTab({
                     Új
                   </button>
                 </div>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                <div className="space-y-2 max-h-[800px] overflow-y-auto">
                   {config.axes.map((axis, index) => (
                     <AxisEditor
                       key={axis.name}
@@ -680,74 +668,6 @@ export default function MachineConfigTab({
                       Nincs tengely definiálva
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* Visual Settings */}
-              <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
-                <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
-                  <Palette className="w-4 h-4" />
-                  Megjelenés
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-steel-500 mb-1">Gépváz színe</label>
-                    <input
-                      type="color"
-                      value={config.visuals?.frameColor ?? '#2d2d2d'}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          visuals: { ...config.visuals, frameColor: e.target.value },
-                        })
-                      }
-                      className="w-full h-8 rounded cursor-pointer bg-steel-800 border border-steel-700"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-steel-500 mb-1">Háttérszín</label>
-                    <input
-                      type="color"
-                      value={config.visuals?.backgroundColor ?? '#0a0a0f'}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          visuals: { ...config.visuals, backgroundColor: e.target.value },
-                        })
-                      }
-                      className="w-full h-8 rounded cursor-pointer bg-steel-800 border border-steel-700"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={config.visuals?.showGrid ?? true}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          visuals: { ...config.visuals, showGrid: e.target.checked },
-                        })
-                      }
-                      className="w-3 h-3 rounded bg-steel-800 border-steel-600"
-                    />
-                    <span className="text-xs text-steel-400">Rács</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={config.visuals?.showAxesHelper ?? true}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          visuals: { ...config.visuals, showAxesHelper: e.target.checked },
-                        })
-                      }
-                      className="w-3 h-3 rounded bg-steel-800 border-steel-600"
-                    />
-                    <span className="text-xs text-steel-400">Tengely jelölők</span>
-                  </label>
                 </div>
               </div>
 
@@ -1087,6 +1007,74 @@ export default function MachineConfigTab({
               >
                 Nézőpont rögzítése
               </button>
+            </div>
+          </div>
+
+          {/* Visual Settings */}
+          <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
+            <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
+              <Palette className="w-4 h-4" />
+              Megjelenés
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-steel-500 mb-1">Gépváz színe</label>
+                <input
+                  type="color"
+                  value={config.visuals?.frameColor ?? '#2d2d2d'}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      visuals: { ...config.visuals, frameColor: e.target.value },
+                    })
+                  }
+                  className="w-full h-8 rounded cursor-pointer bg-steel-800 border border-steel-700"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-steel-500 mb-1">Háttérszín</label>
+                <input
+                  type="color"
+                  value={config.visuals?.backgroundColor ?? '#0a0a0f'}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      visuals: { ...config.visuals, backgroundColor: e.target.value },
+                    })
+                  }
+                  className="w-full h-8 rounded cursor-pointer bg-steel-800 border border-steel-700"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.visuals?.showGrid ?? true}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      visuals: { ...config.visuals, showGrid: e.target.checked },
+                    })
+                  }
+                  className="w-3 h-3 rounded bg-steel-800 border-steel-600"
+                />
+                <span className="text-xs text-steel-400">Rács</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.visuals?.showAxesHelper ?? true}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      visuals: { ...config.visuals, showAxesHelper: e.target.checked },
+                    })
+                  }
+                  className="w-3 h-3 rounded bg-steel-800 border-steel-600"
+                />
+                <span className="text-xs text-steel-400">Tengely jelölők</span>
+              </label>
             </div>
           </div>
         </div>

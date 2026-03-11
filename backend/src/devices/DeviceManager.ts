@@ -511,9 +511,9 @@ export class DeviceManager {
     }
   }
   
-  async home(deviceId: string, axes?: string[]): Promise<boolean> {
+  async home(deviceId: string, axes?: string[], feedRate?: number): Promise<boolean> {
     try {
-      const response = await this.http.post(`/devices/${deviceId}/home`, { axes });
+      const response = await this.http.post(`/devices/${deviceId}/home`, { axes, feed_rate: feedRate });
       return response.data.success;
     } catch (error) {
       console.error(`Homing hiba (${deviceId}):`, error);

@@ -20,18 +20,19 @@
     {
       "name": "Y",
       "type": "rotary",
-      "min": -45,
-      "max": 12,
+      "min": 0,
+      "max": 90,
       "color": "#22c55e",
       "parent": "X",
       "invert": true,
-      "scale": 1
+      "scale": 1,
+      "homePosition": 0
     },
     {
       "name": "Z",
       "type": "rotary",
-      "min": 23,
-      "max": 33,
+      "min": -135,
+      "max": -80,
       "color": "#3b82f6",
       "parent": "Y",
       "invert": true,
@@ -83,16 +84,18 @@
       "x": 0,
       "y": 0,
       "z": 150
-    }
+    },
+    "frameColor": "#f6f5f4",
+    "backgroundColor": "#000000"
   },
   "driverConfig": {
-    "maxFeedRate": 2000,
+    "maxFeedRate": 5000,
     "homePosition": {
       "mode": "absolute",
       "positions": {
         "X": 24,
-        "Y": -45,
-        "Z": 35
+        "Y": 90,
+        "Z": -55
       }
     },
     "closedLoop": {

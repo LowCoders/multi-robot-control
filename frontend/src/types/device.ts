@@ -30,6 +30,8 @@ export interface DeviceStatus {
   endstop_states?: Record<string, boolean>
   // Endstop blocked directions: {'Y': 'positive', ...}
   endstop_blocked?: Record<string, string>
+  // Dynamic limits per axis: {'X': {min: -175, max: 175}, ...}
+  dynamic_limits?: Record<string, AxisLimit>
 }
 
 export interface AxisLimit {

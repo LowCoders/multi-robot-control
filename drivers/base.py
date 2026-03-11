@@ -145,6 +145,8 @@ class DeviceStatus:
     # Endstop blocked directions: {'Y': 'positive', 'X': 'negative', ...}
     # Indicates which axis+direction is blocked by a triggered endstop
     endstop_blocked: Optional[Dict[str, str]] = None
+    # Dynamic limits per axis: {'X': {'min': -175, 'max': 175}, ...}
+    dynamic_limits: Optional[Dict[str, Dict[str, float]]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         result = {
@@ -171,6 +173,8 @@ class DeviceStatus:
             result["endstop_states"] = self.endstop_states
         if self.endstop_blocked is not None:
             result["endstop_blocked"] = self.endstop_blocked
+        if self.dynamic_limits is not None:
+            result["dynamic_limits"] = self.dynamic_limits
         return result
 
 

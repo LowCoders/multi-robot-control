@@ -812,6 +812,13 @@ export function createApiRoutes(
     
     try {
       const result = await deviceManager.reloadConfig(deviceId);
+      
+      // Frissített capabilities broadcast a klienseknek
+      const capabilities = await deviceManager.getDeviceCapabilities(deviceId);
+      if (capabilities) {
+        stateManager.broadcastCapabilities(deviceId, capabilities);
+      }
+      
       res.json(result);
     } catch (error) {
       console.error('Config reload error:', error);

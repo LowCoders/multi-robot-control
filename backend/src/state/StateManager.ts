@@ -154,6 +154,13 @@ export class StateManager {
       timestamp: Date.now(),
     });
   }
+
+  broadcastCapabilities(deviceId: string, capabilities: Record<string, unknown>): void {
+    this.broadcastToAll('device:capabilities', {
+      deviceId,
+      capabilities,
+    });
+  }
   
   broadcastJobComplete(deviceId: string, file: string): void {
     this.broadcastToAll('job:complete', {

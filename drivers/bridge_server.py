@@ -83,6 +83,7 @@ def extract_driver_config(machine_config: Dict[str, Any]) -> Dict[str, Any]:
             dynamic_limits[axis_name] = {
                 'dependsOn': dyn_lim.get('dependsOn', '').upper(),
                 'formula': dyn_lim.get('formula', 'linear_offset'),
+                'factor': dyn_lim.get('factor', 0.9),  # inverse_coupled formula factor
             }
     
     # Home position conversion (config már X/Y/Z-t használ)
@@ -666,6 +667,7 @@ async def reconnect_device(device_id: str):
 
 class HomeRequest(BaseModel):
     axes: Optional[List[str]] = None
+    feed_rate: Optional[float] = None
 
 @app.post("/devices/{device_id}/home")
 async def home_device(device_id: str, request: Optional[HomeRequest] = None):
@@ -675,7 +677,8 @@ async def home_device(device_id: str, request: Optional[HomeRequest] = None):
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
     axes = request.axes if request else None
-    result = await device.home(axes)
+    feed_rate = request.feed_rate if request else None
+    result = await device.home(axes, feed_rate=feed_rate)
     return {"success": result}
 
 
@@ -1118,6 +1121,43 @@ async def set_home_position(device_id: str, request: SetHomePositionRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Mentés hiba: {str(e)}")
+
+
+@app.post("/devices/{device_id}/soft-limits")
+async def set_soft_limits(device_id: str, enabled: bool):
+    """
+    Szoftveres limitek be/kikapcsolása.
+    
+    Ha kikapcsoljuk, a szoftver nem ellenőrzi a tengely limiteket mozgás közben.
+    """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Csak robotkar eszközök támogatják a szoftveres limiteket")
+    
+    device.set_soft_limits_enabled(enabled)
+    
+    return {
+        "success": True,
+        "soft_limits_enabled": enabled,
+    }
+
+
+@app.get("/devices/{device_id}/soft-limits")
+async def get_soft_limits(device_id: str):
+    """Szoftveres limitek állapotának lekérdezése."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(status_code=400, detail="Csak robotkar eszközök támogatják a szoftveres limiteket")
+    
+    return {
+        "soft_limits_enabled": device.get_soft_limits_enabled(),
+    }
 
 
 @app.post("/devices/{device_id}/reload-config")

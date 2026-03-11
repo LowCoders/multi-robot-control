@@ -61,7 +61,7 @@ export function setupWebSocket(
             success = await deviceManager.stop(deviceId);
             break;
           case 'home':
-            success = await deviceManager.home(deviceId, params?.axes as string[]);
+            success = await deviceManager.home(deviceId, params?.axes as string[], params?.feedRate as number | undefined);
             break;
           case 'reset':
             success = await deviceManager.reset(deviceId);

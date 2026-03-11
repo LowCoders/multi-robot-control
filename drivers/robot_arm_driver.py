@@ -240,6 +240,9 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         self._current_jog_axis: Optional[str] = None  # Aktuálisan mozgatott tengely
         self._current_jog_direction: int = 0  # 1 = pozitív, -1 = negatív
         
+        # Szoftveres limit kezelés be/kikapcsolás
+        self._use_soft_limits = True
+        
         # Dinamikus limit konfiguráció (tengely -> config dict)
         self._dynamic_limit_config: Dict[str, dict] = {}
         
@@ -385,35 +388,46 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         Módok:
         - "absolute": G92 a megadott értékkel (jelenlegi pozíció = config érték)
         - "query": Firmware pozíció elfogadása, nincs G92
+        
+        A home pozíciók logikai koordinátákban vannak. G92 parancshoz
+        invertálni kell az értékeket, hogy a GRBL helyes pozíciót tároljon.
         """
         mode = self._home_position_config.get('mode', 'absolute')
         x = self._home_position_config.get('X', 0.0)
         y = self._home_position_config.get('Y', 0.0)
         z = self._home_position_config.get('Z', 0.0)
         
+        # GRBL koordináták (invertálva ha szükséges)
+        grbl_x = -x if self._axis_invert.get('X', False) else x
+        grbl_y = -y if self._axis_invert.get('Y', False) else y
+        grbl_z = -z if self._axis_invert.get('Z', False) else z
+        
         if mode == 'query':
             # Firmware pozíció elfogadása - lekérdezzük és azt használjuk
+            # A get_grbl_status() már logikai pozíciókat ad vissza
             print(f"🤖 Home mód: query - firmware pozíció elfogadása")
             status = await self.get_grbl_status()
             if status:
                 wpos = status.get('wpos')
                 if wpos:
+                    # wpos már logikai koordinátákban van (invertálva)
                     self._status.position = Position(x=wpos.x, y=wpos.y, z=wpos.z)
                     self._status.work_position = Position(x=wpos.x, y=wpos.y, z=wpos.z)
-                    print(f"🤖 Firmware pozíció: X={wpos.x:.1f} Y={wpos.y:.1f} Z={wpos.z:.1f}")
+                    print(f"🤖 Firmware pozíció (logikai): X={wpos.x:.1f} Y={wpos.y:.1f} Z={wpos.z:.1f}")
             else:
                 # Fallback: absolute mode ha nem tudtuk lekérdezni
                 print(f"🤖 Query fallback: absolute - pozíció: X={x:.1f} Y={y:.1f} Z={z:.1f}")
-                await self._send_command_no_response(f"G92 X{x:.2f} Y{y:.2f} Z{z:.2f}")
+                await self._send_command_no_response(f"G92 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f}")
                 await asyncio.sleep(0.3)
                 self._status.position = Position(x=x, y=y, z=z)
                 self._status.work_position = Position(x=x, y=y, z=z)
         
         else:  # mode == 'absolute' (default)
-            # Megadott pozíció beállítása G92-vel
-            print(f"🤖 Home mód: absolute - pozíció: X={x:.1f} Y={y:.1f} Z={z:.1f}")
-            await self._send_command_no_response(f"G92 X{x:.2f} Y{y:.2f} Z{z:.2f}")
+            # Megadott pozíció beállítása G92-vel (GRBL koordinátákban)
+            print(f"🤖 Home mód: absolute - logikai pozíció: X={x:.1f} Y={y:.1f} Z={z:.1f}")
+            await self._send_command_no_response(f"G92 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f}")
             await asyncio.sleep(0.3)
+            # Status-ba logikai koordinátákat mentünk
             self._status.position = Position(x=x, y=y, z=z)
             self._status.work_position = Position(x=x, y=y, z=z)
     
@@ -463,11 +477,13 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             for axis, limits in axis_limits.items():
                 if isinstance(limits, (list, tuple)) and len(limits) == 2:
                     self._axis_limits[axis] = (limits[0], limits[1])
+            self._capabilities.axis_limits = self._axis_limits.copy()
             if axis_limits:
                 print(f"🔄 Tengely limitek frissítve: {axis_limits}")
 
         if max_feed_rate is not None:
             self._config_max_feed_rate = max_feed_rate
+            self._capabilities.max_feed_rate = max_feed_rate
             print(f"🔄 Max feed rate frissítve: {max_feed_rate}")
         
         if dynamic_limits is not None:
@@ -483,11 +499,12 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
     def _get_dynamic_limits(self, axis: str) -> tuple:
         """Kiszámítja a dinamikus limiteket a függő tengely pozíciója alapján.
 
-        Ha az adott tengelynek van dynamicLimits konfigurációja, akkor a limitek
-        a függő tengely aktuális pozíciójától függnek (linear_offset formula).
+        Támogatott formulák:
+        - linear_offset: mindkét limit lineárisan tolódik a függő tengely értékével
+        - inverse_coupled: a felső limit csökken ahogy a függő tengely csökken
+          (robot kar geometriához, ahol Z derékszögben csatlakozik Y-hoz)
         
         A base min/max értékek a tengely saját axis_limits értékeiből származnak.
-        A referencia érték a függő tengely min értéke.
 
         Returns:
             (min, max) tuple az aktuális limitekkel
@@ -500,6 +517,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
 
         config = self._dynamic_limit_config[axis]
         depends_on = config.get('dependsOn', '').upper()
+        formula = config.get('formula', 'linear_offset')
 
         if not depends_on:
             return self._axis_limits.get(axis, (-180, 180))
@@ -510,14 +528,25 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         # Base limitek a saját tengely statikus limitjeiből
         base_min, base_max = self._axis_limits.get(axis, (-180, 180))
         
-        # Referencia érték a függő tengely min értéke
+        # Függő tengely limitjei
         dep_limits = self._axis_limits.get(depends_on, (-180, 180))
-        reference_value = dep_limits[0]  # min érték
+        dep_min, dep_max = dep_limits[0], dep_limits[1]
         
-        # Offset számítás (linear_offset formula)
-        offset = dep_value - reference_value
-
-        return (base_min + offset, base_max + offset)
+        if formula == 'inverse_coupled':
+            # Robot kar geometria: Z derékszögben csatlakozik Y-hoz
+            # Y=max esetén a base limit érvényes
+            # Y csökkenésével a Z felső limit csökken (kevesebb pozitív érték érhető el)
+            # Factor: mennyivel csökken Z_max minden Y fok csökkenésre
+            factor = config.get('factor', 0.9)
+            y_from_max = dep_max - dep_value  # Mennyivel van Y a max alatt
+            z_max_reduction = y_from_max * factor
+            return (base_min, base_max - z_max_reduction)
+        
+        else:  # linear_offset (eredeti formula)
+            # Offset számítás: mindkét limit lineárisan tolódik
+            reference_value = dep_min
+            offset = dep_value - reference_value
+            return (base_min + offset, base_max + offset)
     
     def _clamp_to_limits(self, x: float, y: float, z: float) -> tuple:
         """Logikai pozíciók clampolása a konfigurált limitek közé.
@@ -556,11 +585,31 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         return (x, y, z, clamped)
     
     # =========================================
+    # SZOFTVERES LIMIT KAPCSOLÓ
+    # =========================================
+    
+    def set_soft_limits_enabled(self, enabled: bool) -> None:
+        """Szoftveres limit kezelés be/kikapcsolása."""
+        self._use_soft_limits = enabled
+        print(f"🔧 Szoftveres limitek: {'bekapcsolva' if enabled else 'kikapcsolva'}")
+        if not enabled:
+            self._status.endstop_blocked = None
+            self._status.dynamic_limits = None
+    
+    def get_soft_limits_enabled(self) -> bool:
+        """Visszaadja, hogy a szoftveres limitek engedélyezve vannak-e."""
+        return self._use_soft_limits
+    
+    # =========================================
     # GRBL STÁTUSZ (robot-specifikus override)
     # =========================================
     
     async def get_grbl_status(self) -> Dict[str, Any]:
-        """GRBL státusz lekérdezése robot-specifikus feldolgozással"""
+        """GRBL státusz lekérdezése robot-specifikus feldolgozással
+        
+        Az invertált tengelyek pozíció értékeit transzformálja, hogy a kijelzett
+        pozíciók és a vizualizáció is helyesen működjön.
+        """
         if not self._use_grbl:
             return {}
         
@@ -570,18 +619,41 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             
             if status:
                 wpos = status.get('wpos')
+                mpos = status.get('mpos')
                 if wpos:
-                    # X/Y/Z direkt használat
-                    x = wpos.x
-                    y = wpos.y
-                    z = wpos.z
+                    # Nyers GRBL értékek
+                    raw_x = wpos.x
+                    raw_y = wpos.y
+                    raw_z = wpos.z
                     
+                    # Invertálás alkalmazása - a logikai pozíció a nyers érték negáltja
+                    x = -raw_x if self._axis_invert.get('X', False) else raw_x
+                    y = -raw_y if self._axis_invert.get('Y', False) else raw_y
+                    z = -raw_z if self._axis_invert.get('Z', False) else raw_z
+                    
+                    # Status pozíciók frissítése invertált értékekkel
+                    self._status.work_position = Position(x=x, y=y, z=z)
+                    if mpos:
+                        raw_mx = mpos.x
+                        raw_my = mpos.y
+                        raw_mz = mpos.z
+                        mx = -raw_mx if self._axis_invert.get('X', False) else raw_mx
+                        my = -raw_my if self._axis_invert.get('Y', False) else raw_my
+                        mz = -raw_mz if self._axis_invert.get('Z', False) else raw_mz
+                        self._status.position = Position(x=mx, y=my, z=mz)
+                    else:
+                        self._status.position = Position(x=x, y=y, z=z)
+                    
+                    # Kinematics a logikai (invertált) pozíciókat használja
                     if KINEMATICS_AVAILABLE:
                         self._joint_position = JointAngles(j1=x, j2=y, j3=z)
                         self._cartesian_position = forward_kinematics(x, y, z, self._robot_config)
                     
-                    # Kiterjesztett visszatérési érték
+                    # Kiterjesztett visszatérési érték - logikai pozíciók
                     status['axes'] = {'x': x, 'y': y, 'z': z}
+                    status['wpos'] = Position(x=x, y=y, z=z)
+                    if mpos:
+                        status['mpos'] = self._status.position
                     if KINEMATICS_AVAILABLE and self._cartesian_position:
                         status['cartesian'] = {
                             'x': self._cartesian_position.x,
@@ -589,8 +661,17 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                             'z': self._cartesian_position.z,
                         }
                     
-                    # Szoftveres limit ellenőrzés
-                    self._update_limit_blocked()
+                    # Szoftveres limit kezelés (ha engedélyezve)
+                    if self._use_soft_limits:
+                        # Dinamikus limitek frissítése a státuszban
+                        self._status.dynamic_limits = {
+                            'X': {'min': self._get_dynamic_limits('X')[0], 'max': self._get_dynamic_limits('X')[1]},
+                            'Y': {'min': self._get_dynamic_limits('Y')[0], 'max': self._get_dynamic_limits('Y')[1]},
+                            'Z': {'min': self._get_dynamic_limits('Z')[0], 'max': self._get_dynamic_limits('Z')[1]},
+                        }
+                        
+                        # Szoftveres limit ellenőrzés (már logikai pozíciókon)
+                        self._update_limit_blocked()
             
             return status
             
@@ -602,46 +683,41 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         """Frissíti a status.endstop_blocked mezőt a pozíció és limitek alapján.
         
         Dinamikus limiteket használ ha konfigurálva vannak.
-        Ha egy tengely invertált, a blokkolt irány is invertálódik,
-        mert a fizikai irány ellentétes a logikai iránnyal.
+        A pozíciók már logikai (invertált) koordinátákban vannak, így a blokkolt
+        irányok is logikai irányok - nincs szükség külön invertálás kezelésre.
         """
-        pos = self._status.work_position  # work_position tartalmazza a tényleges pozíciót
+        pos = self._status.work_position  # work_position tartalmazza a logikai pozíciót
         blocked = {}
         
         for axis in ['X', 'Y', 'Z']:
             # Dinamikus limitek lekérése (ha vannak)
             lo, hi = self._get_dynamic_limits(axis)
             val = getattr(pos, axis.lower(), 0.0)
-            is_inverted = self._axis_invert.get(axis, False)
 
             if val <= lo:
-                # Logikailag negatív irány blokkolt
-                # Ha invertált, fizikailag pozitív irány blokkolt
-                blocked[axis] = 'positive' if is_inverted else 'negative'
+                # Logikailag negatív irány blokkolt (alsó limitnél)
+                blocked[axis] = 'negative'
             elif val >= hi:
-                # Logikailag pozitív irány blokkolt
-                # Ha invertált, fizikailag negatív irány blokkolt
-                blocked[axis] = 'negative' if is_inverted else 'positive'
+                # Logikailag pozitív irány blokkolt (felső limitnél)
+                blocked[axis] = 'positive'
         
         # Kétirányú limit: Y blokkolás Z pozíció alapján
-        # Ha Z a limitjénél van, Y nem mozgatható abba az irányba ami Z-t kívülre vinné
+        # Mechanikus csatolás: Y lefele (negatív) → Z felfele, Y felfele (pozitív) → Z lefele
         if 'Z' in self._dynamic_limit_config:
             z_limits = self._get_dynamic_limits('Z')
             z_val = getattr(pos, 'z', 0.0)
-            y_inverted = self._axis_invert.get('Y', False)
             margin = 0.5
             
-            if z_val <= z_limits[0] + margin:
-                # Z felső limitnél → Y lefelé (pozitív logikai irány) blokkolva
-                # Mert ha Y pozitív irányba menne, Z limitje feljebb tolódna, Z kicsúszna
-                y_block_dir = 'negative' if y_inverted else 'positive'
+            if z_val >= z_limits[1] - margin:
+                # Z felső limitnél → Y negatív (lefele) blokkolva
+                # Mert Y lefele mozgás → Z felfele mozogna → túllépné a felső limitet
                 if 'Y' not in blocked:
-                    blocked['Y'] = y_block_dir
-            elif z_val >= z_limits[1] - margin:
-                # Z alsó limitnél → Y felfelé (negatív logikai irány) blokkolva
-                y_block_dir = 'positive' if y_inverted else 'negative'
+                    blocked['Y'] = 'negative'
+            elif z_val <= z_limits[0] + margin:
+                # Z alsó limitnél → Y pozitív (felfele) blokkolva
+                # Mert Y felfele mozgás → Z lefele mozogna → túllépné az alsó limitet
                 if 'Y' not in blocked:
-                    blocked['Y'] = y_block_dir
+                    blocked['Y'] = 'positive'
 
         self._status.endstop_blocked = blocked if blocked else None
     
@@ -650,9 +726,14 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         
         Dinamikus limiteket használ ha konfigurálva vannak.
         Csak az aktuálisan mozgatott tengelyt figyeli, és csak a mozgás irányában.
+        Ha a szoftveres limitek ki vannak kapcsolva, nem csinál semmit.
         """
         while self._limit_monitoring:
             try:
+                # Ha szoftveres limitek kikapcsolva, csak várunk
+                if not self._use_soft_limits:
+                    await asyncio.sleep(0.1)
+                    continue
                 axis = self._current_jog_axis
                 direction = self._current_jog_direction
                 
@@ -681,18 +762,19 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                     print(f"🛑 Limit monitor: {axis} tengely felső limit közelében (val={val:.2f}, max={hi:.2f})")
                 
                 # Kétirányú limit: Y jog közben Z pozíció figyelése
+                # Mechanikus csatolás: Y felfele (pozitív) → Z lefele, Y lefele (negatív) → Z felfele
                 if not should_stop and axis == 'Y' and 'Z' in self._dynamic_limit_config:
                     z_limits = self._get_dynamic_limits('Z')
                     z_val = getattr(pos, 'z', 0.0)
                     
-                    # Y pozitív irány → Z limit felfelé tolódik → ha Z felső limitnél, stop
+                    # Y pozitív (felfele) → Z lefele mozog → ha Z alsó limitnél, stop
                     if direction > 0 and z_val <= z_limits[0] + margin:
                         should_stop = True
-                        print(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte felső limitet={z_limits[0]:.2f})")
-                    # Y negatív irány → Z limit lefelé tolódik → ha Z alsó limitnél, stop
+                        print(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte alsó limitet={z_limits[0]:.2f})")
+                    # Y negatív (lefele) → Z felfele mozog → ha Z felső limitnél, stop
                     elif direction < 0 and z_val >= z_limits[1] - margin:
                         should_stop = True
-                        print(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte alsó limitet={z_limits[1]:.2f})")
+                        print(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte felső limitet={z_limits[1]:.2f})")
 
                 if should_stop:
                     self._limit_monitoring = False
@@ -763,16 +845,32 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
     # MOZGÁS VEZÉRLÉS
     # =========================================
     
-    async def home(self, axes: Optional[List[str]] = None) -> bool:
-        """Home pozícióra mozgatás (konfigurált értékek)"""
+    async def home(self, axes: Optional[List[str]] = None, feed_rate: Optional[float] = None) -> bool:
+        """Home pozícióra mozgatás (konfigurált értékek - logikai koordináták)
+        
+        A home pozíciók logikai koordinátákban vannak definiálva.
+        Az invertált tengelyeket negálva küldjük a GRBL-nek.
+        
+        feed_rate: sebesség (1-100 skála), ha nincs megadva, 50% az alapértelmezett
+        """
         try:
             self._set_state(DeviceState.HOMING)
             
+            # Home pozíciók (logikai koordináták)
             x = self._home_position_config.get('X', 0.0)
             y = self._home_position_config.get('Y', 0.0)
             z = self._home_position_config.get('Z', 0.0)
             
-            response = await self._send_command(f"G1 X{x} Y{y} Z{z} F50")
+            # GRBL koordináták (invertálva ha szükséges)
+            grbl_x = -x if self._axis_invert.get('X', False) else x
+            grbl_y = -y if self._axis_invert.get('Y', False) else y
+            grbl_z = -z if self._axis_invert.get('Z', False) else z
+            
+            # Feed rate: 1-100 skála -> tényleges fok/perc
+            speed_percent = max(1, min(100, int(feed_rate if feed_rate is not None else 50)))
+            actual_feed_rate = (speed_percent / 100.0) * self._config_max_feed_rate
+            
+            response = await self._send_command(f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{actual_feed_rate:.0f}")
 
             if self.ERROR_PATTERN.search(response):
                 self._set_error(f"Homing hiba: {response}")
@@ -879,12 +977,21 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 return False
     
     async def move_to(self, x: float, y: float, z: float, speed: float = 50) -> bool:
-        """Abszolút pozícióra mozgás"""
+        """Abszolút pozícióra mozgás (logikai koordináták)
+        
+        A bemeneti értékek logikai koordináták.
+        Az invertált tengelyeket negálva küldjük a GRBL-nek.
+        """
         try:
-            # Limitek alkalmazása
+            # Limitek alkalmazása (logikai koordinátákban)
             clamped_x, clamped_y, clamped_z, _ = self._clamp_to_limits(x, y, z)
             
-            cmd = f"G1 X{clamped_x:.2f} Y{clamped_y:.2f} Z{clamped_z:.2f} F{speed:.0f}"
+            # GRBL koordináták (invertálva ha szükséges)
+            grbl_x = -clamped_x if self._axis_invert.get('X', False) else clamped_x
+            grbl_y = -clamped_y if self._axis_invert.get('Y', False) else clamped_y
+            grbl_z = -clamped_z if self._axis_invert.get('Z', False) else clamped_z
+            
+            cmd = f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{speed:.0f}"
             response = await self._send_command(cmd)
             
             if self.ERROR_PATTERN.search(response):
@@ -915,14 +1022,23 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         return self._control_mode
     
     async def move_to_joints(self, x: float, y: float, z: float, speed: float = 500) -> bool:
-        """Tengely pozícióra mozgás (X/Y/Z szögek fokban)"""
+        """Tengely pozícióra mozgás (X/Y/Z szögek fokban - logikai koordináták)
+        
+        A bemeneti értékek logikai koordináták (amit a felhasználó lát).
+        Az invertált tengelyeket negálva küldjük a GRBL-nek.
+        """
         try:
-            # Tengely limitek
+            # Tengely limitek (logikai koordinátákban)
             x = max(self._joint_limits['X'][0], min(self._joint_limits['X'][1], x))
             y = max(self._joint_limits['Y'][0], min(self._joint_limits['Y'][1], y))
             z = max(self._joint_limits['Z'][0], min(self._joint_limits['Z'][1], z))
             
-            cmd = f"G1 X{x:.2f} Y{y:.2f} Z{z:.2f} F{speed:.0f}"
+            # GRBL koordináták (invertálva ha szükséges)
+            grbl_x = -x if self._axis_invert.get('X', False) else x
+            grbl_y = -y if self._axis_invert.get('Y', False) else y
+            grbl_z = -z if self._axis_invert.get('Z', False) else z
+            
+            cmd = f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{speed:.0f}"
             response = await self._send_command(cmd)
             
             if self._use_grbl:
@@ -932,7 +1048,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 if self.ERROR_PATTERN.search(response):
                     return False
             
-            # Pozíció frissítése
+            # Pozíció frissítése (logikai koordinátákkal)
             if KINEMATICS_AVAILABLE:
                 self._joint_position = JointAngles(j1=x, j2=y, j3=z)
                 self._cartesian_position = forward_kinematics(x, y, z, self._robot_config)
@@ -963,50 +1079,56 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             return False
     
     async def jog_joint(self, axis: str, distance: float, speed: float = 500) -> bool:
-        """Tengely relatív mozgatása (X/Y/Z)"""
+        """Tengely relatív mozgatása (X/Y/Z)
+        
+        A distance logikai irány (amit a felhasználó lát), az actual_distance
+        a GRBL-nek küldött irány (invertálva ha szükséges).
+        A limit ellenőrzés logikai pozíciókon és logikai irányon alapul.
+        """
         axis = axis.upper()
         if axis not in ['X', 'Y', 'Z']:
             return False
 
-        # Invertálás alkalmazása ELŐBB (mert a limit ellenőrzés a GRBL irányra vonatkozik)
+        # GRBL irány számítása (invertálva ha szükséges)
         actual_distance = distance
         if self._axis_invert.get(axis, False):
             actual_distance = -distance
 
-        # Friss pozíció lekérése a limit ellenőrzés előtt
+        # Friss pozíció lekérése
+        # A get_grbl_status() már logikai pozíciókat állít be
         await self.get_grbl_status()
 
-        # Szoftveres limit ellenőrzés - az actual_distance alapján (invertálás UTÁN)
-        # Dinamikus limiteket használunk ha konfigurálva vannak
-        current_val = getattr(self._status.work_position, axis.lower(), 0.0)
-        lo, hi = self._get_dynamic_limits(axis)
-        
-        # Biztonsági margó - korábban blokkol, hogy legyen idő megállni
-        soft_limit_margin = 1.0
-        
-        # Blokkolás ha a limithez közel van ÉS abba az irányba próbál mozogni (GRBL irány)
-        if actual_distance < 0 and current_val <= lo + soft_limit_margin:
-            print(f"🛑 Soft limit: {axis} tengely negatív irányban blokkolva (current={current_val:.2f} <= min={lo:.2f}+margin)")
-            return False
-        if actual_distance > 0 and current_val >= hi - soft_limit_margin:
-            print(f"🛑 Soft limit: {axis} tengely pozitív irányban blokkolva (current={current_val:.2f} >= max={hi:.2f}-margin)")
-            return False
-        
-        # Kétirányú limit: Y mozgás előtt Z limit ellenőrzés
-        # Ha Y mozgatása Z-t limiten kívülre vinné, blokkolunk
-        if axis == 'Y' and 'Z' in self._dynamic_limit_config:
-            z_limits = self._get_dynamic_limits('Z')
-            z_val = getattr(self._status.work_position, 'z', 0.0)
-            bidir_margin = 2.0
+        # Szoftveres limit ellenőrzés (csak ha engedélyezve)
+        if self._use_soft_limits:
+            current_val = getattr(self._status.work_position, axis.lower(), 0.0)
+            lo, hi = self._get_dynamic_limits(axis)
             
-            # Y pozitív GRBL irány → Z limit felfelé tolódik → ha Z már felső limitnél, blokkolás
-            if actual_distance > 0 and z_val <= z_limits[0] + bidir_margin:
-                print(f"🛑 Kétirányú limit: Y pozitív blokkolva (Z={z_val:.2f} <= Z_min={z_limits[0]:.2f}+margin)")
+            # Biztonsági margó - korábban blokkol, hogy legyen idő megállni
+            soft_limit_margin = 1.0
+            
+            # Blokkolás ha a limithez közel van ÉS abba az irányba próbál mozogni (logikai irány)
+            if distance < 0 and current_val <= lo + soft_limit_margin:
+                print(f"🛑 Soft limit: {axis} tengely negatív irányban blokkolva (current={current_val:.2f} <= min={lo:.2f}+margin)")
                 return False
-            # Y negatív GRBL irány → Z limit lefelé tolódik → ha Z már alsó limitnél, blokkolás
-            if actual_distance < 0 and z_val >= z_limits[1] - bidir_margin:
-                print(f"🛑 Kétirányú limit: Y negatív blokkolva (Z={z_val:.2f} >= Z_max={z_limits[1]:.2f}-margin)")
+            if distance > 0 and current_val >= hi - soft_limit_margin:
+                print(f"🛑 Soft limit: {axis} tengely pozitív irányban blokkolva (current={current_val:.2f} >= max={hi:.2f}-margin)")
                 return False
+            
+            # Kétirányú limit: Y mozgás előtt Z limit ellenőrzés
+            # Mechanikus csatolás: Y felfele → Z lefele, Y lefele → Z felfele
+            if axis == 'Y' and 'Z' in self._dynamic_limit_config:
+                z_limits = self._get_dynamic_limits('Z')
+                z_val = getattr(self._status.work_position, 'z', 0.0)
+                bidir_margin = 2.0
+                
+                # Y pozitív (felfele) → Z lefele mozog → ha Z alsó limitnél, blokkolás
+                if distance > 0 and z_val <= z_limits[0] + bidir_margin:
+                    print(f"🛑 Kétirányú limit: Y pozitív blokkolva (Z={z_val:.2f} <= Z_min={z_limits[0]:.2f}+margin)")
+                    return False
+                # Y negatív (lefele) → Z felfele mozog → ha Z felső limitnél, blokkolás
+                if distance < 0 and z_val >= z_limits[1] - bidir_margin:
+                    print(f"🛑 Kétirányú limit: Y negatív blokkolva (Z={z_val:.2f} >= Z_max={z_limits[1]:.2f}-margin)")
+                    return False
 
         async with self._jog_lock:
             cmd = f"$J=G91 {axis}{actual_distance:.2f} F{speed:.0f}"
@@ -1016,9 +1138,10 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 return False
 
             # Limit monitor indítása folyamatos jog esetén (nagy távolság)
+            # A direction logikai irány a limit monitorhoz
             if abs(actual_distance) > 100 and not self._limit_monitoring:
                 self._current_jog_axis = axis
-                self._current_jog_direction = 1 if actual_distance > 0 else -1
+                self._current_jog_direction = 1 if distance > 0 else -1
                 self._limit_monitoring = True
                 asyncio.create_task(self._limit_monitor_task())
 

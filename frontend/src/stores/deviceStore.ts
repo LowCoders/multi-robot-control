@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { io, Socket } from 'socket.io-client'
-import type { Device, DeviceStatus, Position } from '../types/device'
+import type { Device, DeviceStatus, Position, DeviceCapabilities } from '../types/device'
 
 interface Notification {
   id: string
@@ -26,6 +26,7 @@ interface DeviceStore {
   updateDeviceStatus: (deviceId: string, status: DeviceStatus) => void
   updateDevicePosition: (deviceId: string, position: Position) => void
   updateDeviceState: (deviceId: string, state: string) => void
+  updateDeviceCapabilities: (deviceId: string, capabilities: DeviceCapabilities) => void
   selectDevice: (deviceId: string | null) => void
   addNotification: (deviceId: string, message: string, severity?: 'info' | 'warning' | 'error') => void
   clearNotification: (id: string) => void
@@ -45,6 +46,7 @@ const SOCKET_EVENTS = [
   'device:status',
   'device:position',
   'device:state_change',
+  'device:capabilities',
   'device:error',
   'job:progress',
   'job:complete',
@@ -104,6 +106,10 @@ export const useDeviceStore = create<DeviceStore>()(
       
       socket.on('device:state_change', (data: { deviceId: string; newState: string }) => {
         get().updateDeviceState(data.deviceId, data.newState)
+      })
+
+      socket.on('device:capabilities', (data: { deviceId: string; capabilities: DeviceCapabilities }) => {
+        get().updateDeviceCapabilities(data.deviceId, data.capabilities)
       })
       
       socket.on('device:error', (data: { deviceId: string; message: string }) => {
@@ -222,6 +228,15 @@ export const useDeviceStore = create<DeviceStore>()(
         if (device) {
           device.state = newState as Device['state']
           device.connected = newState !== 'disconnected'
+        }
+      })
+    },
+
+    updateDeviceCapabilities: (deviceId, capabilities) => {
+      set((state) => {
+        const device = state.devices.find(d => d.id === deviceId)
+        if (device) {
+          device.capabilities = capabilities
         }
       })
     },

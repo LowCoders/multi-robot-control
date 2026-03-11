@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   Play,
   Pause,
@@ -25,7 +25,7 @@ interface ControlPanelContentProps {
   device: Device
   machineConfig: MachineConfig | null
   configLoading: boolean
-  sendCommand: (deviceId: string, command: string) => void
+  sendCommand: (deviceId: string, command: string, params?: Record<string, unknown>) => void
   jogStop: (deviceId: string) => void
   capabilities?: DeviceCapabilities
 }
@@ -51,6 +51,65 @@ export default function ControlPanelContent({
     }
     return 'continuous'
   })
+  const [feedRate, setFeedRate] = useState(() => {
+    const isRobotArm = device.type === 'robot_arm'
+    const defaultRate = isRobotArm ? 50 : 1000
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`jog-settings-${device.id}`)
+      if (saved) {
+        try {
+          const settings = JSON.parse(saved)
+          if (typeof settings.feedRate === 'number' && settings.feedRate > 0) {
+            return settings.feedRate
+          }
+        } catch {}
+      }
+    }
+    return defaultRate
+  })
+  const [useSoftLimits, setUseSoftLimits] = useState(true)
+
+  // Soft limits állapot betöltése és szinkronizálása a backenddel
+  useEffect(() => {
+    const loadSoftLimitsState = async () => {
+      try {
+        const response = await fetch(`/api/devices/${device.id}/soft-limits`)
+        if (response.ok) {
+          const data = await response.json()
+          setUseSoftLimits(data.soft_limits_enabled)
+        }
+      } catch {
+        // Hiba esetén marad az alapértelmezett
+      }
+    }
+    loadSoftLimitsState()
+  }, [device.id])
+
+  const handleSoftLimitsChange = async (enabled: boolean) => {
+    setUseSoftLimits(enabled)
+    try {
+      await fetch(`/api/devices/${device.id}/soft-limits?enabled=${enabled}`, {
+        method: 'POST',
+      })
+    } catch {
+      // Hiba esetén visszaállítjuk az előző állapotot
+      setUseSoftLimits(!enabled)
+    }
+  }
+
+  const axisLimits = useMemo(() => {
+    // Dinamikus limitek preferálása a státuszból (valós idejű értékek)
+    if (device.status?.dynamic_limits) {
+      return device.status.dynamic_limits
+    }
+    // Fallback a statikus konfigurációra
+    if (!machineConfig?.axes) return undefined
+    const limits: Record<string, { min: number; max: number }> = {}
+    for (const axis of machineConfig.axes) {
+      limits[axis.name.toUpperCase()] = { min: axis.min, max: axis.max }
+    }
+    return limits
+  }, [device.status?.dynamic_limits, machineConfig])
 
   // Save jogMode to local storage
   useEffect(() => {
@@ -96,7 +155,11 @@ export default function ControlPanelContent({
   }, [])
 
   const handleCommand = (command: string) => {
-    sendCommand(device.id, command)
+    if (command === 'home') {
+      sendCommand(device.id, command, { feedRate })
+    } else {
+      sendCommand(device.id, command)
+    }
   }
 
   const isRunning = device.state === 'running'
@@ -121,13 +184,27 @@ export default function ControlPanelContent({
         <div className="space-y-4">
           {/* Status Card */}
           <div className="card">
-            <div className="card-header">
+            <div className="card-header flex items-center justify-between">
               <span className="font-medium">Állapot</span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useSoftLimits}
+                  onChange={(e) => handleSoftLimitsChange(e.target.checked)}
+                  className="w-3 h-3 accent-machine-500"
+                />
+                <span className="text-xs text-steel-500">Limit</span>
+              </label>
             </div>
             <div className="card-body space-y-4">
               {device.status && (
                 <>
-                  <PositionDisplay position={device.status.work_position} machineConfig={machineConfig} />
+                  <PositionDisplay 
+                    position={device.status.work_position} 
+                    machineConfig={machineConfig}
+                    showLimits={useSoftLimits}
+                    axisLimits={axisLimits}
+                  />
 
                   {/* Progress */}
                   {device.status.current_file && (
@@ -295,6 +372,8 @@ export default function ControlPanelContent({
               capabilities={capabilities}
               jogMode={jogMode}
               onJogModeChange={setJogMode}
+              feedRate={feedRate}
+              onFeedRateChange={setFeedRate}
             />
           </div>
         </div>

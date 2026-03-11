@@ -19,6 +19,8 @@ interface Props {
   capabilities?: DeviceCapabilities
   jogMode?: JogMode
   onJogModeChange?: (mode: JogMode) => void
+  feedRate?: number
+  onFeedRateChange?: (rate: number) => void
 }
 
 export type JogMode = 'step' | 'continuous'
@@ -108,6 +110,8 @@ export default function JogControl({
   capabilities,
   jogMode: controlledJogMode,
   onJogModeChange,
+  feedRate: controlledFeedRate,
+  onFeedRateChange,
 }: Props) {
   const { jog, jogStop, sendCommand } = useDeviceStore()
   
@@ -160,7 +164,7 @@ export default function JogControl({
     }
     return 10
   })
-  const [feedRate, setFeedRate] = useState(() => {
+  const [internalFeedRate, setInternalFeedRate] = useState(() => {
     const defaultRate = isRobotArm ? 50 : 1000
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(`jog-settings-${deviceId}`)
@@ -175,6 +179,8 @@ export default function JogControl({
     }
     return defaultRate
   })
+  const feedRate = controlledFeedRate ?? internalFeedRate
+  const setFeedRate = onFeedRateChange ?? setInternalFeedRate
   const [isActive, setIsActive] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   // Track pressed keys for keyboard support - must persist across useEffect re-runs
