@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { Monitor, Gauge, Activity, Wrench } from 'lucide-react'
+import { Monitor, Gauge, Activity, SlidersHorizontal, Wrench } from 'lucide-react'
 import { Tabs, TabPanel } from '../common/Tabs'
 import ControlPanelContent from './ControlPanelContent'
 import MotorTuningPanel from './MotorTuningPanel'
 import DiagnosticsPanel from './DiagnosticsPanel'
+import GrblConfigPanel from './GrblConfigPanel'
 import MachineConfigTab from './MachineConfigTab'
 import type { Device, DeviceCapabilities } from '../../types/device'
 import type { MachineConfig } from '../../types/machine-config'
 
-type TabId = 'control' | 'motor-tuning' | 'diagnostics' | 'config'
+type TabId = 'control' | 'motor-tuning' | 'diagnostics' | 'grbl-config' | 'config'
 
 interface DeviceConfigTabsProps {
   device: Device
@@ -54,6 +55,12 @@ export default function DeviceConfigTabs({
       icon: Activity,
       disabled: !enabledTabs.includes('diagnostics'),
     },
+    {
+      id: 'grbl-config' as const,
+      label: 'GRBL Konfig',
+      icon: SlidersHorizontal,
+      disabled: !enabledTabs.includes('grbl-config'),
+    },
     { 
       id: 'config' as const, 
       label: 'Gép Konfiguráció', 
@@ -98,6 +105,10 @@ export default function DeviceConfigTabs({
             capabilities={capabilities}
             embedded 
           />
+        </TabPanel>
+
+        <TabPanel isActive={activeTab === 'grbl-config'} keepMounted>
+          <GrblConfigPanel deviceId={device.id} />
         </TabPanel>
 
         <TabPanel isActive={activeTab === 'config'} keepMounted>

@@ -17,6 +17,7 @@ interface Props {
   deviceType?: DeviceType
   status?: DeviceStatus
   capabilities?: DeviceCapabilities
+  useSoftLimits?: boolean
   jogMode?: JogMode
   onJogModeChange?: (mode: JogMode) => void
   feedRate?: number
@@ -108,12 +109,13 @@ export default function JogControl({
   deviceType, 
   status, 
   capabilities,
+  useSoftLimits = true,
   jogMode: controlledJogMode,
   onJogModeChange,
   feedRate: controlledFeedRate,
   onFeedRateChange,
 }: Props) {
-  const { jog, jogStop, sendCommand } = useDeviceStore()
+  const { jog, jogStart, jogBeat, jogStop, sendCommand } = useDeviceStore()
   
   const isRobotArm = deviceType === 'robot_arm'
   
@@ -197,9 +199,18 @@ export default function JogControl({
     localStorage.setItem(`jog-settings-${deviceId}`, JSON.stringify(settings))
   }, [motionMode, feedRate, stepSize, deviceId, isRobotArm])
   const activeJogAxisRef = useRef<string | null>(null)
+  const chunkTimerRef = useRef<number | null>(null)
+  const heartbeatTimerRef = useRef<number | null>(null)
+  const activeStreamingRef = useRef<boolean>(false)
+  const activeDirectionRef = useRef<number>(0)
+  const supportsStreamingJog = capabilities?.supports_streaming_jog === true
+  const supportsHardJogStop = capabilities?.supports_hard_jog_stop === true
   
   // Endstop-based blocking
   const blocked = useMemo(() => {
+    if (!useSoftLimits) {
+      return { xPlus: false, xMinus: false, yPlus: false, yMinus: false, zPlus: false, zMinus: false }
+    }
     const eb = status?.endstop_blocked
     if (!eb) {
       return { xPlus: false, xMinus: false, yPlus: false, yMinus: false, zPlus: false, zMinus: false }
@@ -212,7 +223,7 @@ export default function JogControl({
       zPlus:  eb['Z'] === 'positive',
       zMinus: eb['Z'] === 'negative',
     }
-  }, [status?.endstop_blocked])
+  }, [status?.endstop_blocked, useSoftLimits])
   
   const anyBlocked = Object.values(blocked).some(v => v)
 
@@ -233,9 +244,25 @@ export default function JogControl({
   
   // Stop jog - sends actual stop command to backend
   const stopContinuousJog = useCallback(() => {
+    if (!activeJogAxisRef.current && !activeStreamingRef.current) {
+      return
+    }
+    const wasStreaming = activeStreamingRef.current
+    if (chunkTimerRef.current !== null) {
+      window.clearInterval(chunkTimerRef.current)
+      chunkTimerRef.current = null
+    }
+    if (heartbeatTimerRef.current !== null) {
+      window.clearInterval(heartbeatTimerRef.current)
+      heartbeatTimerRef.current = null
+    }
     activeJogAxisRef.current = null
-    jogStop(deviceId)
-  }, [deviceId, jogStop])
+    activeDirectionRef.current = 0
+    // Streaming jog végén normál stopot kérünk; hard stop csak nem-streaming fallbacknél marad.
+    const useHardStop = !wasStreaming && supportsHardJogStop
+    jogStop(deviceId, useHardStop)
+    activeStreamingRef.current = false
+  }, [deviceId, jogStop, supportsHardJogStop])
   
   // Start jog - handles both step and continuous modes
   const startJog = useCallback((axis: string, direction: number) => {
@@ -246,12 +273,53 @@ export default function JogControl({
       const distance = stepSize * direction
       jog(deviceId, axis, distance, feedRate, modeToSend)
     } else {
-      // Continuous mode: send large distance, stop will be sent on mouseup
-      const continuousDistance = 9999 * direction
-      jog(deviceId, axis, continuousDistance, feedRate, modeToSend)
+      const beatMs = 80
+      if (chunkTimerRef.current !== null) {
+        window.clearInterval(chunkTimerRef.current)
+        chunkTimerRef.current = null
+      }
+      if (heartbeatTimerRef.current !== null) {
+        window.clearInterval(heartbeatTimerRef.current)
+        heartbeatTimerRef.current = null
+      }
+
       activeJogAxisRef.current = axis
+      activeDirectionRef.current = direction
+      activeStreamingRef.current = supportsStreamingJog
+
+      if (supportsStreamingJog) {
+        jogStart(deviceId, axis, direction, feedRate, modeToSend, 0.7, 70)
+        heartbeatTimerRef.current = window.setInterval(() => {
+          if (activeJogAxisRef.current !== axis || activeDirectionRef.current !== direction) return
+          jogBeat(deviceId, axis, direction, feedRate, modeToSend)
+        }, beatMs)
+        return
+      }
+
+      // Fallback: slice-based jog for non-streaming firmware.
+      const distancePerSecond = feedRate / 60
+      const stepDistance = Math.max(0.2, Math.min(5, distancePerSecond * (beatMs / 1000)))
+
+      const sendTick = () => {
+        if (activeJogAxisRef.current !== axis || activeDirectionRef.current !== direction) return
+        jog(deviceId, axis, stepDistance * direction, feedRate, modeToSend)
+      }
+
+      sendTick()
+      chunkTimerRef.current = window.setInterval(sendTick, beatMs)
     }
-  }, [deviceId, stepSize, feedRate, jog, jogMode, isRobotArm, motionMode])
+  }, [
+    deviceId,
+    stepSize,
+    feedRate,
+    jog,
+    jogStart,
+    jogBeat,
+    jogMode,
+    isRobotArm,
+    motionMode,
+    supportsStreamingJog,
+  ])
   
   const handleHome = useCallback(() => {
     sendCommand(deviceId, 'home')
@@ -352,6 +420,35 @@ export default function JogControl({
       window.removeEventListener('keyup', handleKeyUp)
     }
   }, [startJog, stopContinuousJog, isActive, blocked, jogMode])
+
+  // Safety net: if pointer/focus is lost while jogging, force stop.
+  useEffect(() => {
+    const forceStop = () => {
+      if (activeJogAxisRef.current) {
+        stopContinuousJog()
+      }
+    }
+
+    window.addEventListener('mouseup', forceStop)
+    window.addEventListener('touchend', forceStop)
+    window.addEventListener('blur', forceStop)
+    document.addEventListener('visibilitychange', forceStop)
+
+    return () => {
+      window.removeEventListener('mouseup', forceStop)
+      window.removeEventListener('touchend', forceStop)
+      window.removeEventListener('blur', forceStop)
+      document.removeEventListener('visibilitychange', forceStop)
+      if (chunkTimerRef.current !== null) {
+        window.clearInterval(chunkTimerRef.current)
+        chunkTimerRef.current = null
+      }
+      if (heartbeatTimerRef.current !== null) {
+        window.clearInterval(heartbeatTimerRef.current)
+        heartbeatTimerRef.current = null
+      }
+    }
+  }, [stopContinuousJog])
   
   return (
     <div 
@@ -479,7 +576,7 @@ export default function JogControl({
       </div>
 
       {/* Endstop warning - below buttons */}
-      {anyBlocked && (
+      {useSoftLimits && anyBlocked && (
         <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-md">
           <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
           <span className="text-xs text-red-300">

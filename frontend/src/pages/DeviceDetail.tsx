@@ -32,12 +32,19 @@ export default function DeviceDetail() {
     sendCommand(device.id, 'connect')
   }
 
-  const enabledTabs: ('control' | 'motor-tuning' | 'diagnostics' | 'config')[] = [
-    'control',
-    'motor-tuning',
-    'diagnostics',
-    'config',
-  ]
+  const isRobotArm = device.type === 'robot_arm'
+  const isGrblCompatible =
+    device.driver === 'grbl' || machineConfig?.driverConfig?.protocol === 'grbl'
+  const enabledTabs: ('control' | 'motor-tuning' | 'diagnostics' | 'grbl-config' | 'config')[] =
+    isRobotArm
+      ? [
+          'control',
+          'motor-tuning',
+          'diagnostics',
+          ...(isGrblCompatible ? (['grbl-config'] as const) : []),
+          'config',
+        ]
+      : ['control', ...(isGrblCompatible ? (['grbl-config'] as const) : []), 'config']
 
   return (
     <div className="space-y-6">

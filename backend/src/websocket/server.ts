@@ -6,6 +6,16 @@ import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DeviceManager } from '../devices/DeviceManager.js';
 import { StateManager } from '../state/StateManager.js';
 
+const VALID_AXES = new Set(['X', 'Y', 'Z']);
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 export function setupWebSocket(
   io: SocketIOServer,
   deviceManager: DeviceManager,
@@ -68,6 +78,12 @@ export function setupWebSocket(
             break;
           case 'connect':
             success = await deviceManager.connectDevice(deviceId);
+            if (success) {
+              const capabilities = await deviceManager.getDeviceCapabilities(deviceId);
+              if (capabilities) {
+                stateManager.broadcastCapabilities(deviceId, capabilities);
+              }
+            }
             break;
           case 'disconnect':
             success = await deviceManager.disconnectDevice(deviceId);
@@ -119,14 +135,144 @@ export function setupWebSocket(
         success,
       });
     });
-    
-    socket.on('device:jog:stop', async (data: { deviceId: string }) => {
+
+    socket.on('device:jog:start', async (data: {
+      deviceId: string;
+      axis: string;
+      direction: number;
+      feedRate: number;
+      mode?: string;
+      heartbeatTimeout?: number;
+      tickMs?: number;
+    }) => {
+      const {
+        deviceId,
+        axis,
+        direction,
+        feedRate,
+        mode,
+        heartbeatTimeout = 0.5,
+        tickMs = 40,
+      } = data;
       let success = false;
+      let errorMessage: string | undefined;
+
+      if (!isNonEmptyString(deviceId)) {
+        errorMessage = 'Érvénytelen deviceId';
+      } else if (!isNonEmptyString(axis) || !VALID_AXES.has(axis.toUpperCase())) {
+        errorMessage = 'Érvénytelen axis (X/Y/Z)';
+      } else if (!isFiniteNumber(direction) || direction === 0) {
+        errorMessage = 'Érvénytelen direction (nem lehet 0)';
+      } else if (!isFiniteNumber(feedRate) || feedRate <= 0) {
+        errorMessage = 'Érvénytelen feedRate';
+      } else if (!isFiniteNumber(heartbeatTimeout) || heartbeatTimeout <= 0) {
+        errorMessage = 'Érvénytelen heartbeatTimeout';
+      } else if (!isFiniteNumber(tickMs) || tickMs <= 0) {
+        errorMessage = 'Érvénytelen tickMs';
+      }
+
+      if (errorMessage) {
+        socket.emit('device:jog:start:result', {
+          deviceId,
+          success: false,
+          error: errorMessage,
+        });
+        return;
+      }
+
+      try {
+        success = await deviceManager.jogSessionStart(
+          deviceId,
+          axis.toUpperCase(),
+          direction,
+          feedRate,
+          mode,
+          heartbeatTimeout,
+          tickMs,
+        );
+      } catch (error) {
+        console.error('WebSocket device:jog:start error:', error);
+        errorMessage = error instanceof Error ? error.message : 'Jog start hiba';
+      }
+
+      socket.emit('device:jog:start:result', {
+        deviceId,
+        success,
+        error: success ? undefined : errorMessage,
+      });
+    });
+
+    socket.on('device:jog:beat', async (data: {
+      deviceId: string;
+      axis?: string;
+      direction?: number;
+      feedRate?: number;
+      mode?: string;
+    }) => {
+      const { deviceId, axis, direction, feedRate, mode } = data;
+      let success = false;
+      let errorMessage: string | undefined;
+
+      if (!isNonEmptyString(deviceId)) {
+        errorMessage = 'Érvénytelen deviceId';
+      } else if (axis !== undefined && (!isNonEmptyString(axis) || !VALID_AXES.has(axis.toUpperCase()))) {
+        errorMessage = 'Érvénytelen axis (X/Y/Z)';
+      } else if (direction !== undefined && (!isFiniteNumber(direction) || direction === 0)) {
+        errorMessage = 'Érvénytelen direction (nem lehet 0)';
+      } else if (feedRate !== undefined && (!isFiniteNumber(feedRate) || feedRate <= 0)) {
+        errorMessage = 'Érvénytelen feedRate';
+      }
+
+      if (errorMessage) {
+        socket.emit('device:jog:beat:result', {
+          deviceId,
+          success: false,
+          error: errorMessage,
+        });
+        return;
+      }
+
+      try {
+        success = await deviceManager.jogSessionBeat(
+          deviceId,
+          axis?.toUpperCase(),
+          direction,
+          feedRate,
+          mode
+        );
+      } catch (error) {
+        console.error('WebSocket device:jog:beat error:', error);
+        errorMessage = error instanceof Error ? error.message : 'Jog beat hiba';
+      }
+
+      socket.emit('device:jog:beat:result', {
+        deviceId,
+        success,
+        error: success ? undefined : errorMessage,
+      });
+    });
+    
+    socket.on('device:jog:stop', async (data: { deviceId: string; hardStop?: boolean }) => {
+      if (!isNonEmptyString(data.deviceId)) {
+        socket.emit('device:jog:stop:result', {
+          deviceId: data.deviceId,
+          success: false,
+          error: 'Érvénytelen deviceId',
+        });
+        return;
+      }
+
+      let success = false;
+      let errorMessage: string | undefined;
       
       try {
-        success = await deviceManager.jogStop(data.deviceId);
+        success = await deviceManager.jogSessionStop(data.deviceId, data.hardStop === true);
+        if (!success) {
+          success = await deviceManager.jogStop(data.deviceId);
+        }
       } catch (error) {
         console.error('WebSocket device:jog:stop error:', error);
+        errorMessage = error instanceof Error ? error.message : 'Jog stop hiba';
       }
       
       // Log jog stop to MDI console
@@ -139,6 +285,7 @@ export function setupWebSocket(
       socket.emit('device:jog:stop:result', {
         deviceId: data.deviceId,
         success,
+        error: success ? undefined : errorMessage,
       });
     });
     

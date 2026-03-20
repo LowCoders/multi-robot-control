@@ -12,16 +12,26 @@ import sys
 import signal
 import re
 import select
+import json
 from datetime import datetime
-from typing import Optional, Dict, Any, Tuple
+from pathlib import Path
+from time import perf_counter
+from typing import Optional, Dict, Any, Tuple, List
 
 # Importok
 from robot_arm_driver import RobotArmDevice, ControlMode
 from kinematics import RobotConfig, forward_kinematics, inverse_kinematics
 
 
-# Tengely mapping (identity - X=X, Y=Y, Z=Z)
-AXIS_TO_GRBL = {'X': 'X', 'Y': 'Y', 'Z': 'Z'}
+# Tengely mapping (új és legacy elnevezések)
+AXIS_TO_GRBL = {
+    'X': 'X',
+    'Y': 'Y',
+    'Z': 'Z',
+    'J1': 'X',
+    'J2': 'Y',
+    'J3': 'Z',
+}
 
 # Végállás pozíciók (fokban) - a kalibrációhoz
 # Ezek az értékek a robot fizikai felépítésétől függenek
@@ -35,6 +45,13 @@ ENDSTOP_POSITIONS = {
     'Y_max': 96.0,         # Y pozitív végállás (felfelé)
     'Z_min': -55.0,        # Z negatív végállás (összecsukott)
     'Z_max': 40.0,         # Z pozitív végállás (kinyújtott)
+    # Legacy aliasok (J1/J2/J3 néven hivatkozó tesztekhez)
+    'J1_min': -180.0,
+    'J1_max': 180.0,
+    'J2_min': -10.0,
+    'J2_max': 96.0,
+    'J3_min': -55.0,
+    'J3_max': 40.0,
 }
 
 # Biztonságos mozgási tartományok (végállásoktól távolabb)
@@ -45,6 +62,13 @@ SAFE_LIMITS = {
     'Y_max': 91.0,
     'Z_min': -50.0,
     'Z_max': 35.0,
+    # Legacy aliasok
+    'J1_min': -175.0,
+    'J1_max': 175.0,
+    'J2_min': -5.0,
+    'J2_max': 91.0,
+    'J3_min': -50.0,
+    'J3_max': 35.0,
 }
 
 
@@ -54,6 +78,73 @@ device = None
 # Kalibráció globális változók
 calibration_stop_requested = False
 calibration_result: Optional[Dict[str, Any]] = None
+
+# Mozgási/tuning alapértékek
+DEFAULT_TEST_SPEED = 500.0
+Z_TUNING_DISTANCE = 60.0
+Z_TUNING_CYCLES = 6
+Z_RATE_STEPS = [500.0, 700.0, 900.0, 1200.0]
+Z_ACCEL_STEPS = [50.0, 80.0, 120.0, 180.0]
+DEFAULT_DRIVER_FEED_CAP = 20000.0
+
+AXIS_TUNING_CONFIG = {
+    'X': {'joint': 'J1', 'status_key': 'j1', 'rate_setting': 110, 'accel_setting': 120, 'label': 'X (bázis)'},
+    'Y': {'joint': 'J2', 'status_key': 'j2', 'rate_setting': 111, 'accel_setting': 121, 'label': 'Y (váll)'},
+    'Z': {'joint': 'J3', 'status_key': 'j3', 'rate_setting': 112, 'accel_setting': 122, 'label': 'Z (könyök)'},
+}
+
+
+def _status_xyz(status: Dict[str, Any]) -> Tuple[float, float, float]:
+    """Kinyeri az X/Y/Z értékeket új vagy legacy státuszsémából."""
+    axes = status.get('axes')
+    if isinstance(axes, dict):
+        return (
+            float(axes.get('x', 0.0)),
+            float(axes.get('y', 0.0)),
+            float(axes.get('z', 0.0)),
+        )
+
+    wpos = status.get('wpos')
+    if wpos is not None and all(hasattr(wpos, axis) for axis in ('x', 'y', 'z')):
+        return (float(wpos.x), float(wpos.y), float(wpos.z))
+
+    grbl = status.get('grbl')
+    if isinstance(grbl, dict):
+        return (
+            float(grbl.get('x', 0.0)),
+            float(grbl.get('y', 0.0)),
+            float(grbl.get('z', 0.0)),
+        )
+
+    return (0.0, 0.0, 0.0)
+
+
+def normalize_robot_status(status: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Kompatibilis státusz séma:
+    - first-class: state/axes/wpos/mpos/cartesian
+    - legacy alias: joints/grbl
+    """
+    if not isinstance(status, dict):
+        return {
+            'state': 'unknown',
+            'axes': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'grbl': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'joints': {'j1': 0.0, 'j2': 0.0, 'j3': 0.0},
+        }
+
+    x, y, z = _status_xyz(status)
+    normalized = dict(status)
+
+    # Legacy aliasok
+    normalized['grbl'] = {'x': x, 'y': y, 'z': z}
+    normalized['joints'] = {'j1': x, 'j2': y, 'j3': z}
+
+    # Ha hiányzik az axes, pótoljuk
+    if 'axes' not in normalized or not isinstance(normalized.get('axes'), dict):
+        normalized['axes'] = {'x': x, 'y': y, 'z': z}
+
+    return normalized
 
 
 async def connect():
@@ -80,6 +171,29 @@ async def connect():
     print("✓ Csatlakozás sikeres")
     print(f"  GRBL mód: {device._use_grbl}")
     print(f"  GRBL verzió: {device._grbl_version}")
+
+    # Feed cap igazítás: ne maradjon a RobotArmDevice fallback 100-as clamp.
+    try:
+        settings = await device.get_grbl_settings()
+        current_z_max_rate = float(settings.get(112, 500.0))
+        tuned_driver_cap = max(DEFAULT_DRIVER_FEED_CAP, current_z_max_rate)
+        device.update_driver_config(max_feed_rate=tuned_driver_cap)
+        print(
+            f"  Driver cap beállítva: {tuned_driver_cap:.1f} "
+            f"(GRBL $112={current_z_max_rate:.1f})"
+        )
+    except Exception as exc:
+        print(f"  ⚠ Driver cap igazítás kihagyva: {exc}")
+
+    # Egységes státusz-séma wrapper:
+    # a szkript mindenhol kompatibilis dictionary-t kapjon.
+    raw_get_grbl_status = device.get_grbl_status
+
+    async def compat_get_grbl_status():
+        raw_status = await raw_get_grbl_status()
+        return normalize_robot_status(raw_status)
+
+    device.get_grbl_status = compat_get_grbl_status
     
     # Home pozíció beállítása alapértelmezettként (J1=0, J2=90, J3=0)
     # GRBL mapping: X=J2, Y=J3, Z=J1
@@ -218,12 +332,333 @@ async def wait_for_idle(timeout: float = 10.0) -> bool:
                 if 'idle' in state:
                     return True
                 if 'alarm' in state:
-                    return True  # Alarm is állandó állapot
+                    return False
         except Exception:
             pass
         await asyncio.sleep(0.1)
     
     return False
+
+
+def _parse_float_list(raw: str, fallback: List[float]) -> List[float]:
+    """Vesszővel elválasztott float lista parse, üresen fallback."""
+    if not raw.strip():
+        return list(fallback)
+    values: List[float] = []
+    for token in raw.split(','):
+        token = token.strip()
+        if not token:
+            continue
+        values.append(float(token))
+    return values if values else list(fallback)
+
+
+def _ask_yes_no(prompt: str, default: Optional[bool] = None) -> bool:
+    """Igen/nem kérdés robusztus parse-olással. Escape is 'nem'-ként értelmezett."""
+    yes_values = {'i', 'igen', 'y', 'yes'}
+    no_values = {'n', 'nem', 'no'}
+
+    while True:
+        answer = input(prompt).strip().lower()
+        if not answer and default is not None:
+            return default
+        if answer.startswith('\x1b'):
+            return False
+        if answer in yes_values:
+            return True
+        if answer in no_values:
+            return False
+        print("    Érvénytelen válasz. Használd: i/igen, n/nem vagy Escape.")
+
+
+def _print_servo_closedloop_review() -> None:
+    """Kiírja a robot_arm_2 closed-loop paraméterek gyors tuning javaslatát."""
+    config_path = Path("/web/multi-robot-control/config/machines/robot_arm_2.json")
+    try:
+        with config_path.open("r", encoding="utf-8") as f:
+            machine = json.load(f)
+    except Exception as exc:
+        print(f"  ⚠ Closed-loop review nem elérhető ({exc})")
+        return
+
+    stall = (
+        machine.get("driverConfig", {})
+        .get("closedLoop", {})
+        .get("stallDetection", {})
+    )
+    speed = float(stall.get("speed", 150.0))
+    timeout = float(stall.get("timeout", 0.3))
+    tolerance = float(stall.get("tolerance", 0.5))
+
+    print("\n--- Closed-loop gyors áttekintés (robot_arm_2) ---")
+    print(f"  stallDetection.speed:    {speed:.1f} deg/min")
+    print(f"  stallDetection.timeout:  {timeout:.2f} s")
+    print(f"  stallDetection.tolerance:{tolerance:.2f} deg")
+    print("  Javaslat gyorsabb profilhoz (konfig módosítás nélkül):")
+    print("    speed: 300-800 deg/min, timeout: 0.5-1.0 s, tolerance: 1.0-2.0 deg")
+
+
+async def benchmark_axis_cycles(
+    distance: float, speed: float, cycles: int,
+    joint: str = 'J3', status_key: str = 'j3',
+) -> Dict[str, Any]:
+    """
+    Tengely oda-vissza benchmark.
+
+    A mérés célja, hogy ugyanazzal a távolsággal és sebességgel
+    összehasonlítható idő- és drift adatot adjon.
+    """
+    if not device:
+        return {'ok': False, 'error': 'device_not_connected'}
+
+    status_before = await device.get_grbl_status()
+    if not status_before:
+        return {'ok': False, 'error': 'status_before_failed'}
+    axis_start = float(status_before['joints'].get(status_key, 0.0))
+
+    total_elapsed = 0.0
+    for idx in range(cycles):
+        print(f"    Ciklus {idx + 1}/{cycles} (F={speed:.0f}, út={distance:.1f}°)")
+        t0 = perf_counter()
+        ok_fwd = await device.jog_joint(joint, distance, speed=speed)
+        if not ok_fwd:
+            print(f"  ❌ {joint}+ mozgás hiba (ciklus: {idx + 1})")
+            return {'ok': False, 'error': 'jog_fail_forward', 'cycle': idx + 1}
+        expected_sec = (abs(distance) / max(abs(speed), 1.0)) * 60.0
+        move_timeout = max(15.0, expected_sec * 6.0 + 10.0)
+        if not await wait_for_idle(timeout=move_timeout):
+            retry_timeout = move_timeout * 2.0
+            print(
+                f"  ⚠ Timeout {joint}+ mozgásnál (ciklus: {idx + 1}), "
+                f"újrapróba hosszabb timeouttal ({retry_timeout:.1f}s)..."
+            )
+            if not await wait_for_idle(timeout=retry_timeout):
+                print(f"  ❌ Timeout {joint}+ mozgásnál (ciklus: {idx + 1})")
+                return {'ok': False, 'error': 'idle_timeout_forward', 'cycle': idx + 1}
+
+        ok_back = await device.jog_joint(joint, -distance, speed=speed)
+        if not ok_back:
+            print(f"  ❌ {joint}- mozgás hiba (ciklus: {idx + 1})")
+            return {'ok': False, 'error': 'jog_fail_reverse', 'cycle': idx + 1}
+        if not await wait_for_idle(timeout=move_timeout):
+            retry_timeout = move_timeout * 2.0
+            print(
+                f"  ⚠ Timeout {joint}- mozgásnál (ciklus: {idx + 1}), "
+                f"újrapróba hosszabb timeouttal ({retry_timeout:.1f}s)..."
+            )
+            if not await wait_for_idle(timeout=retry_timeout):
+                print(f"  ❌ Timeout {joint}- mozgásnál (ciklus: {idx + 1})")
+                return {'ok': False, 'error': 'idle_timeout_reverse', 'cycle': idx + 1}
+        total_elapsed += perf_counter() - t0
+
+    status_after = await device.get_grbl_status()
+    if not status_after:
+        return {'ok': False, 'error': 'status_after_failed'}
+    axis_end = float(status_after['joints'].get(status_key, 0.0))
+
+    return {
+        'ok': True,
+        'avg_cycle_sec': total_elapsed / max(cycles, 1),
+        'total_sec': total_elapsed,
+        'drift_deg': axis_end - axis_start,
+    }
+
+
+async def benchmark_z_cycles(distance: float, speed: float, cycles: int) -> Dict[str, Any]:
+    """Kompatibilitási wrapper: Z tengely benchmark."""
+    return await benchmark_axis_cycles(distance, speed, cycles, joint='J3', status_key='j3')
+
+
+async def run_speed_tuning():
+    """Progresszív speed tuning tetszőleges tengelyre: lépcsőzés + 'mehet gyorsabban?' kérdés."""
+    global DEFAULT_TEST_SPEED
+    if not device:
+        print("Nincs csatlakozva!")
+        return
+
+    print("\nMelyik tengelyt szeretnéd tuningolni?")
+    for key, cfg in AXIS_TUNING_CONFIG.items():
+        print(f"  {key}: {cfg['label']}  - ${cfg['rate_setting']}/${cfg['accel_setting']}")
+    axis_input = input("Tengely [Enter=Z]: ").strip().upper()
+    if not axis_input:
+        axis_input = 'Z'
+    if axis_input not in AXIS_TUNING_CONFIG:
+        print("❌ Érvénytelen tengely!")
+        return
+    axis_cfg = AXIS_TUNING_CONFIG[axis_input]
+    rate_s = axis_cfg['rate_setting']
+    accel_s = axis_cfg['accel_setting']
+
+    settings = await device.get_grbl_settings()
+    current_rate = float(settings.get(rate_s, 500.0))
+    current_accel = float(settings.get(accel_s, 50.0))
+
+    print("\n" + "=" * 60)
+    print(f"  {axis_cfg['label'].upper()} TENGELY SPEED TUNING (${rate_s} / ${accel_s})")
+    print("=" * 60)
+    print(f"  Jelenlegi ${rate_s} ({axis_input} max rate): {current_rate}")
+    print(f"  Jelenlegi ${accel_s} ({axis_input} accel):    {current_accel}")
+    print(f"  Aktuális alap teszt speed:   {DEFAULT_TEST_SPEED}")
+    print(f"  Aktuális driver feed cap:    {float(getattr(device, '_config_max_feed_rate', 100.0)):.1f}")
+    print(f"  Benchmark: distance={Z_TUNING_DISTANCE}°, cycles={Z_TUNING_CYCLES}")
+    _print_servo_closedloop_review()
+
+    try:
+        raw_start = input(f"Kezdő ${rate_s} [Enter={current_rate}]: ").strip()
+        start_rate = current_rate if not raw_start else max(1.0, float(raw_start))
+
+        raw_step = input(f"Lépcsőköz ${rate_s} [Enter=150]: ").strip()
+        rate_step = 150.0 if not raw_step else max(1.0, float(raw_step))
+
+        raw_max = input(f"Maximum ${rate_s} [Enter=2000]: ").strip()
+        max_rate = 2000.0 if not raw_max else max(start_rate, float(raw_max))
+
+        raw_accel_step = input(f"Lépcsőköz ${accel_s} [Enter=20]: ").strip()
+        accel_step = 20.0 if not raw_accel_step else max(0.0, float(raw_accel_step))
+
+        raw_accel_max = input(f"Maximum ${accel_s} [Enter=220]: ").strip()
+        max_accel = 220.0 if not raw_accel_max else max(current_accel, float(raw_accel_max))
+
+        raw_distance = input(f"Tesztút {axis_input} (fok) [Enter={Z_TUNING_DISTANCE}]: ").strip()
+        tuning_distance = Z_TUNING_DISTANCE if not raw_distance else max(1.0, float(raw_distance))
+
+        raw_cycles = input(f"Ciklusszám [Enter={Z_TUNING_CYCLES}]: ").strip()
+        tuning_cycles = Z_TUNING_CYCLES if not raw_cycles else max(1, int(raw_cycles))
+    except ValueError:
+        print("❌ Hibás számformátum, tuning megszakítva.")
+        return
+
+    if start_rate < current_rate:
+        keep_lower_start = _ask_yes_no(
+            f"Kezdő ${rate_s} ({start_rate:.1f}) kisebb mint a jelenlegi ({current_rate:.1f}). "
+            "Valóban visszavegyük? (i/n): ",
+            default=False,
+        )
+        if not keep_lower_start:
+            start_rate = current_rate
+
+    quick_profile = _ask_yes_no("Gyors tuning profil (rövidebb futás) legyen? (i/n): ", default=True)
+    if quick_profile:
+        tuning_distance = min(tuning_distance, 30.0)
+        tuning_cycles = min(tuning_cycles, 2)
+    print(f"  Tuning profil: distance={tuning_distance:.1f}°, cycles={tuning_cycles}")
+
+    print("\n--- Baseline mérés (jelenlegi beállítással) ---")
+    driver_cap = float(getattr(device, '_config_max_feed_rate', DEFAULT_DRIVER_FEED_CAP))
+    baseline_speed = min(DEFAULT_TEST_SPEED, start_rate, driver_cap)
+    if not await device.set_grbl_setting(rate_s, start_rate):
+        print(f"❌ Nem sikerült a kezdő ${rate_s} értéket beállítani: {start_rate}")
+        return
+    await asyncio.sleep(0.2)
+
+    baseline = await benchmark_axis_cycles(
+        distance=tuning_distance,
+        speed=baseline_speed,
+        cycles=tuning_cycles,
+        joint=axis_cfg['joint'],
+        status_key=axis_cfg['status_key'],
+    )
+    if not baseline.get('ok'):
+        print(
+            f"❌ Baseline mérés sikertelen. ok={baseline.get('ok')} "
+            f"error={baseline.get('error')} cycle={baseline.get('cycle')}"
+        )
+        return
+    print(
+        f"  Baseline: avg={baseline['avg_cycle_sec']:.3f}s/ciklus, "
+        f"drift={baseline['drift_deg']:+.3f}°"
+    )
+    print(f"  Baseline effective feed: F{baseline_speed:.1f} (driver_cap={driver_cap:.1f})")
+
+    stable_rate = start_rate
+    stable_accel = current_accel
+    last_avg_cycle_sec = baseline['avg_cycle_sec']
+
+    print("\n--- Progresszív lépcsőzés ---")
+    print(f"Minden körben emeljük a ${rate_s}/${accel_s} értéket, tesztelünk, majd kérdezünk.")
+
+    while True:
+        next_rate = min(max_rate, stable_rate + rate_step)
+        next_accel = min(max_accel, stable_accel + accel_step)
+
+        if next_rate == stable_rate and next_accel == stable_accel:
+            print("  Elértük a beállított plafont.")
+            extend = _ask_yes_no("    Emeljük a plafont és mehet gyorsabban? (i/n): ", default=False)
+            if not extend:
+                break
+            max_rate += rate_step
+            max_accel += accel_step
+            print(f"    Új plafon: ${rate_s}<={max_rate:.1f}, ${accel_s}<={max_accel:.1f}")
+            continue
+
+        if not await device.set_grbl_setting(rate_s, next_rate):
+            print(f"  ❌ ${rate_s}={next_rate} beállítás nem sikerült")
+            break
+        if next_accel != stable_accel:
+            if not await device.set_grbl_setting(accel_s, next_accel):
+                print(f"  ❌ ${accel_s}={next_accel} beállítás nem sikerült")
+                await device.set_grbl_setting(rate_s, stable_rate)
+                break
+        await asyncio.sleep(0.2)
+
+        effective_feed = min(next_rate, driver_cap)
+        eta_sec = last_avg_cycle_sec * tuning_cycles
+        print(
+            f"    Lépcső indul: target ${rate_s}={next_rate:.1f}, effective F={effective_feed:.1f}, "
+            f"becsült idő ~{eta_sec:.1f}s"
+        )
+
+        result = await benchmark_axis_cycles(
+            distance=tuning_distance,
+            speed=next_rate,
+            cycles=tuning_cycles,
+            joint=axis_cfg['joint'],
+            status_key=axis_cfg['status_key'],
+        )
+        if not result.get('ok'):
+            print(
+                f"  ❌ Teszt hiba. error={result.get('error')} cycle={result.get('cycle')} "
+                "-> visszaállás az utolsó stabil értékekre."
+            )
+            await device.set_grbl_setting(rate_s, stable_rate)
+            await device.set_grbl_setting(accel_s, stable_accel)
+            break
+
+        delta = baseline['avg_cycle_sec'] - result['avg_cycle_sec']
+        print(
+            f"  ${rate_s}={next_rate:.1f}, ${accel_s}={next_accel:.1f} -> "
+            f"avg={result['avg_cycle_sec']:.3f}s/ciklus, drift={result['drift_deg']:+.3f}°, "
+            f"nyereség={delta:+.3f}s, effective F={effective_feed:.1f}/{driver_cap:.1f}"
+        )
+        last_avg_cycle_sec = result['avg_cycle_sec']
+
+        go_faster = _ask_yes_no("    Mehet gyorsabban? (Enter=igen, n/Esc=nem): ", default=True)
+        if go_faster:
+            stable_rate = next_rate
+            stable_accel = next_accel
+            continue
+
+        await device.set_grbl_setting(rate_s, stable_rate)
+        await device.set_grbl_setting(accel_s, stable_accel)
+        print(f"  ↩ Megálltunk. Stabil értékek: ${rate_s}={stable_rate}, ${accel_s}={stable_accel}")
+        break
+
+    daily_rate = stable_rate
+    aggressive_rate = stable_rate
+    if stable_rate > start_rate:
+        daily_rate = (stable_rate + start_rate) / 2.0
+    DEFAULT_TEST_SPEED = max(DEFAULT_TEST_SPEED, stable_rate)
+
+    print("\n" + "=" * 60)
+    print(f"  TUNING EREDMÉNY ({axis_cfg['label']})")
+    print("=" * 60)
+    print(f"  Stabil értékek: ${rate_s}={stable_rate:.1f}, ${accel_s}={stable_accel:.1f}")
+    print(f"  Baseline sebesség: {baseline_speed:.1f}")
+    print(f"  Frissített alap teszt speed: {DEFAULT_TEST_SPEED:.1f}")
+    print(f"  Javasolt 'napi' profil:      ${rate_s}={daily_rate:.1f}, ${accel_s}={stable_accel:.1f}")
+    print(f"  Javasolt 'agresszív' profil: ${rate_s}={aggressive_rate:.1f}, ${accel_s}={stable_accel:.1f}")
+    print(f"  Megjegyzés: UI jog feed legyen <= ${rate_s} (különben firmware clamp-eli).")
+    print("=" * 60)
 
 
 async def get_limit_pins(debug: bool = False) -> Dict[str, bool]:
@@ -1150,32 +1585,32 @@ async def test_joint_mode():
             await show_status()
         elif cmd == 'h':
             print("Home (J1=0, J2=90, J3=0)...")
-            await device.move_to_joints(0, 90, 0, speed=500)
+            await device.move_to_joints(0, 90, 0, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
             await show_status()
         elif cmd == '1':
             print("J1 +10°...")
-            await device.jog_joint('J1', 10, speed=500)
+            await device.jog_joint('J1', 10, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
         elif cmd == '2':
             print("J1 -10°...")
-            await device.jog_joint('J1', -10, speed=500)
+            await device.jog_joint('J1', -10, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
         elif cmd == '3':
             print("J2 +10°...")
-            await device.jog_joint('J2', 10, speed=500)
+            await device.jog_joint('J2', 10, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
         elif cmd == '4':
             print("J2 -10°...")
-            await device.jog_joint('J2', -10, speed=500)
+            await device.jog_joint('J2', -10, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
         elif cmd == '5':
             print("J3 +10°...")
-            await device.jog_joint('J3', 10, speed=500)
+            await device.jog_joint('J3', 10, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
         elif cmd == '6':
             print("J3 -10°...")
-            await device.jog_joint('J3', -10, speed=500)
+            await device.jog_joint('J3', -10, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
         else:
             print("Ismeretlen parancs")
@@ -1213,7 +1648,7 @@ async def test_jog_mode():
             await show_status()
         elif cmd == 'h':
             print("Home (J1=0, J2=90, J3=0)...")
-            await device.move_to_joints(0, 90, 0, speed=500)
+            await device.move_to_joints(0, 90, 0, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
             await show_status()
         elif cmd.startswith('step '):
@@ -1223,22 +1658,22 @@ async def test_jog_mode():
             except:
                 print("Hibás formátum")
         elif cmd == 'j1+':
-            await device.jog_joint('J1', step, speed=500)
+            await device.jog_joint('J1', step, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(1)
         elif cmd == 'j1-':
-            await device.jog_joint('J1', -step, speed=500)
+            await device.jog_joint('J1', -step, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(1)
         elif cmd == 'j2+':
-            await device.jog_joint('J2', step, speed=500)
+            await device.jog_joint('J2', step, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(1)
         elif cmd == 'j2-':
-            await device.jog_joint('J2', -step, speed=500)
+            await device.jog_joint('J2', -step, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(1)
         elif cmd == 'j3+':
-            await device.jog_joint('J3', step, speed=500)
+            await device.jog_joint('J3', step, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(1)
         elif cmd == 'j3-':
-            await device.jog_joint('J3', -step, speed=500)
+            await device.jog_joint('J3', -step, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(1)
         else:
             print("Ismeretlen parancs")
@@ -1306,12 +1741,12 @@ async def test_cartesian_mode():
                 print(f"FK pozíció: X={cart.x:.1f} Y={cart.y:.1f} Z={cart.z:.1f} mm")
         elif cmd == 'h':
             print("Home (J1=0, J2=90, J3=0)...")
-            await device.move_to_joints(0, 90, 0, speed=500)
+            await device.move_to_joints(0, 90, 0, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
             await show_status()
         elif cmd == 'work':
             print("Munka pozíció (J1=0°, J2=45°, J3=0°)...")
-            await device.move_to_joints(0, 45, 0, speed=500)
+            await device.move_to_joints(0, 45, 0, speed=DEFAULT_TEST_SPEED)
             await asyncio.sleep(2)
             status = await device.get_grbl_status()
             if status:
@@ -1446,7 +1881,7 @@ async def test_cartesian_mode():
                 print("1. Munka pozícióba mozgás...")
                 
                 # Először work pozícióba megyünk
-                await device.move_to_joints(0, 15, -30, speed=500)
+                await device.move_to_joints(0, 15, -30, speed=DEFAULT_TEST_SPEED)
                 await asyncio.sleep(2)
                 
                 # Aktuális pozíció lekérdezése
@@ -1532,7 +1967,7 @@ async def test_cartesian_mode():
                 angles = inverse_kinematics(x, y, z, config)
                 if angles.valid:
                     print(f"IK: J1={angles.j1:.1f}° J2={angles.j2:.1f}° J3={angles.j3:.1f}°")
-                    success = await device.move_to_xyz(x, y, z, speed=500)
+                    success = await device.move_to_xyz(x, y, z, speed=DEFAULT_TEST_SPEED)
                     print(f"Eredmény: {'✓' if success else '❌'}")
                     await asyncio.sleep(3)
                 else:
@@ -1559,7 +1994,7 @@ async def test_cartesian_mode():
             angles = inverse_kinematics(new_x, new_y, new_z, config)
             if angles.valid:
                 print(f"IK: J1={angles.j1:.1f}° J2={angles.j2:.1f}° J3={angles.j3:.1f}°")
-                success = await device.move_to_xyz(new_x, new_y, new_z, speed=500)
+                success = await device.move_to_xyz(new_x, new_y, new_z, speed=DEFAULT_TEST_SPEED)
                 print(f"Eredmény: {'✓' if success else '❌'}")
                 await asyncio.sleep(2)
             else:
@@ -1792,6 +2227,7 @@ async def main_menu():
             print("  7: Kalibráció (végállások)")
             print("  8: Végállás kapcsoló teszt")
             print("  9: Pushrod kalibráció (J3)")
+            print(" 10: Speed tuning (tengely választható)")
             print("  q: Kilépés")
             
             cmd = input("> ").strip().lower()
@@ -1810,7 +2246,7 @@ async def main_menu():
                 await show_status()
             elif cmd == '6':
                 print("Home (J1=0, J2=90, J3=0)...")
-                await device.move_to_joints(0, 90, 0, speed=500)
+                await device.move_to_joints(0, 90, 0, speed=DEFAULT_TEST_SPEED)
                 await asyncio.sleep(2)
                 await show_status()
             elif cmd == '7':
@@ -1819,6 +2255,8 @@ async def main_menu():
                 await test_endstop_switches()
             elif cmd == '9':
                 await test_pushrod_calibration()
+            elif cmd == '10':
+                await run_speed_tuning()
             else:
                 print("Ismeretlen parancs")
     

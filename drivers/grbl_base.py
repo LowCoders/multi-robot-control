@@ -123,6 +123,7 @@ GRBL_ERROR_CODES = {
     1: "G-code word consists of a G followed by a value",
     2: "Numeric value format is not valid",
     3: "Grbl '$' system command was not recognized",
+    8: "Command requires Idle/Jog state (transient state window)",
     9: "G-code locked out during alarm or jog state",
     20: "Soft limit exceeded",
     22: "Homing fail - axis not moving",
@@ -186,7 +187,8 @@ class GrblDeviceBase(SerialDeviceBase):
         r">"
     )
     
-    GRBL_WELCOME_PATTERN = re.compile(r"Grbl\s+(\d+\.\d+\w*)")
+    # Supports classic "Grbl 1.1h" and grblHAL-like banners.
+    GRBL_WELCOME_PATTERN = re.compile(r"Grbl(?:HAL)?\s+(\d+\.\d+\w*)", re.IGNORECASE)
     
     def __init__(
         self,
@@ -241,14 +243,14 @@ class GrblDeviceBase(SerialDeviceBase):
             raise ConnectionError("Nincs kapcsolat")
         
         async with self._serial_lock:
+            cmd = command.strip()
             await self._flush_input_buffer_unlocked()
             
             # '?' GRBL realtime parancs - nem kell line terminator
-            if command.strip() == '?':
+            if cmd == '?':
                 await asyncio.to_thread(self._serial.write, b'?')
             else:
-                cmd = command.strip() + "\r\n"
-                await asyncio.to_thread(self._serial.write, cmd.encode())
+                await asyncio.to_thread(self._serial.write, f"{cmd}\r\n".encode())
             
             return await self._read_response_unlocked(timeout=timeout)
     
@@ -488,7 +490,12 @@ class GrblDeviceBase(SerialDeviceBase):
             True ha sikeres
         """
         try:
-            response = await self._send_command(f"${setting}={value}")
+            # Integer-only settings must be sent without decimal point.
+            if setting in (1, 4):
+                command = f"${setting}={int(round(value))}"
+            else:
+                command = f"${setting}={value}"
+            response = await self._send_command(command)
             return "ok" in response.lower()
         except Exception:
             return False
@@ -515,6 +522,12 @@ class GrblDeviceBase(SerialDeviceBase):
         """Állapot polling loop."""
         while self._status_polling and self._connected:
             try:
+                jog_session_active = bool(getattr(self, "_jog_session_active", False))
+                if self._status.state == DeviceState.JOG or jog_session_active:
+                    # Streaming jog alatt ne kérdezzünk extra '?' státuszt pollingból,
+                    # mert a $J= ciklussal lock-kontenciót és jittert okoz.
+                    await asyncio.sleep(interval)
+                    continue
                 await self.get_grbl_status()
             except Exception:
                 pass

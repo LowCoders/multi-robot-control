@@ -7,6 +7,7 @@ import JobManager from './pages/JobManager'
 import Automation from './pages/Automation'
 import Settings from './pages/Settings'
 import { useDeviceStore } from './stores/deviceStore'
+import NotificationOverlay from './components/common/NotificationOverlay'
 
 function App() {
   const { connect, disconnect } = useDeviceStore()
@@ -27,6 +28,7 @@ function App() {
         <Route path="/automation" element={<Automation />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
+      <NotificationOverlay />
     </MainLayout>
   )
 }

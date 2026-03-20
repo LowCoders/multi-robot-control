@@ -62,6 +62,8 @@ export interface ClosedLoopConfig {
 // Driver-level configuration (stored in machine config, used by backend)
 export interface DriverConfig {
   maxFeedRate?: number
+  protocol?: string
+  grblSettings?: Record<string, number>
   homePosition?: HomePositionConfig
   closedLoop?: ClosedLoopConfig
 }

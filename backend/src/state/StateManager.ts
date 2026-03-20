@@ -155,7 +155,7 @@ export class StateManager {
     });
   }
 
-  broadcastCapabilities(deviceId: string, capabilities: Record<string, unknown>): void {
+  broadcastCapabilities(deviceId: string, capabilities: unknown): void {
     this.broadcastToAll('device:capabilities', {
       deviceId,
       capabilities,

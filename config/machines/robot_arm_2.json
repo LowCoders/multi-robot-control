@@ -89,7 +89,7 @@
     "backgroundColor": "#000000"
   },
   "driverConfig": {
-    "maxFeedRate": 5000,
+    "maxFeedRate": 200000,
     "homePosition": {
       "mode": "absolute",
       "positions": {

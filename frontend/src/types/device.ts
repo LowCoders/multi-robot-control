@@ -52,6 +52,9 @@ export interface DeviceCapabilities {
   has_vacuum_pump?: boolean
   supports_motion_test?: boolean
   supports_firmware_probe?: boolean
+  supports_soft_limits?: boolean
+  supports_streaming_jog?: boolean
+  supports_hard_jog_stop?: boolean
   max_feed_rate: number
   max_spindle_speed: number
   max_laser_power: number

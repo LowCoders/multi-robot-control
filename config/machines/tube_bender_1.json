@@ -1,0 +1,91 @@
+{
+  "id": "tube_bender_1",
+  "name": "Csőhajlító",
+  "type": "tube_bender",
+  "workEnvelope": {
+    "x": 500,
+    "y": 180,
+    "z": 360
+  },
+  "axes": [
+    {
+      "name": "X",
+      "label": "Tolás",
+      "type": "linear",
+      "unit": "mm",
+      "min": 0,
+      "max": 5000,
+      "color": "#ef4444",
+      "invert": false,
+      "scale": 1
+    },
+    {
+      "name": "Y",
+      "label": "Hajlítás",
+      "type": "rotary",
+      "unit": "deg",
+      "min": -90,
+      "max": 90,
+      "color": "#22c55e",
+      "invert": false,
+      "scale": 1
+    },
+    {
+      "name": "Z",
+      "label": "Forgatás",
+      "type": "rotary",
+      "unit": "deg",
+      "min": -90,
+      "max": 90,
+      "color": "#3b82f6",
+      "invert": false,
+      "scale": 1
+    }
+  ],
+  "tubeBender": {
+    "maxTubeDiameter": 25,
+    "minBendRadius": 30,
+    "maxBendAngle": 180,
+    "feedLength": 500
+  },
+  "visuals": {
+    "showGrid": true,
+    "showAxesHelper": true,
+    "cameraPosition": {
+      "x": 400,
+      "y": 200,
+      "z": 300
+    },
+    "cameraTarget": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "backgroundColor": "#1a1a2e"
+  },
+  "driverConfig": {
+    "protocol": "grbl",
+    "maxFeedRate": 50000,
+    "stepsPerMmPush": 80,
+    "stepsPerDegBend": 17.78,
+    "stepsPerDegRotate": 8.89,
+    "grblSettings": {
+      "1": 255,
+      "20": 1,
+      "21": 1,
+      "22": 1,
+      "100": 80,
+      "101": 17.78,
+      "102": 8.89,
+      "110": 50000,
+      "111": 50000,
+      "112": 50000,
+      "120": 2000,
+      "121": 2000,
+      "122": 2000,
+      "130": 500,
+      "131": 180,
+      "132": 720
+    }
+  }
+}

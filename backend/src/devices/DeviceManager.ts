@@ -55,6 +55,9 @@ export interface DeviceCapabilities {
   has_tool_changer: boolean;
   has_gripper: boolean;
   has_sucker: boolean;
+  supports_soft_limits?: boolean;
+  supports_streaming_jog?: boolean;
+  supports_hard_jog_stop?: boolean;
   max_feed_rate: number;
   max_spindle_speed: number;
   max_laser_power: number;
@@ -551,6 +554,64 @@ export class DeviceManager {
       return false;
     }
   }
+
+  async jogSessionStart(
+    deviceId: string,
+    axis: string,
+    direction: number,
+    feedRate: number,
+    mode?: string,
+    heartbeatTimeout: number = 0.5,
+    tickMs: number = 40,
+  ): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/jog/session/start`, {
+        axis,
+        direction,
+        feed_rate: feedRate,
+        mode: mode || null,
+        heartbeat_timeout: heartbeatTimeout,
+        tick_ms: tickMs,
+      });
+      return response.data.success;
+    } catch (error) {
+      console.error(`Jog session start hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async jogSessionBeat(
+    deviceId: string,
+    axis?: string,
+    direction?: number,
+    feedRate?: number,
+    mode?: string,
+  ): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/jog/session/beat`, {
+        axis: axis || null,
+        direction: direction ?? null,
+        feed_rate: feedRate ?? null,
+        mode: mode || null,
+      });
+      return response.data.success;
+    } catch (error) {
+      console.error(`Jog session beat hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async jogSessionStop(deviceId: string, hardStop: boolean = false): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/jog/session/stop`, {
+        hard_stop: hardStop,
+      });
+      return response.data.success;
+    } catch (error) {
+      console.error(`Jog session stop hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
   
   async sendGCode(deviceId: string, gcode: string): Promise<string> {
     try {
@@ -644,6 +705,50 @@ export class DeviceManager {
       return response.data.success;
     } catch (error) {
       console.error(`Spindle override hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async setSoftLimits(deviceId: string, enabled: boolean): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/soft-limits`, null, {
+        params: { enabled },
+      });
+      return response.data.success;
+    } catch (error) {
+      console.error(`Soft limits beállítási hiba (${deviceId}):`, error);
+      return false;
+    }
+  }
+
+  async getSoftLimits(deviceId: string): Promise<{ soft_limits_enabled: boolean } | null> {
+    try {
+      const response = await this.http.get(`/devices/${deviceId}/soft-limits`);
+      return response.data as { soft_limits_enabled: boolean };
+    } catch (error) {
+      console.error(`Soft limits állapot lekérdezési hiba (${deviceId}):`, error);
+      return null;
+    }
+  }
+
+  async getGrblSettings(deviceId: string): Promise<Record<string, number> | null> {
+    try {
+      const response = await this.http.get(`/devices/${deviceId}/grbl-settings`);
+      return (response.data?.settings ?? null) as Record<string, number> | null;
+    } catch (error) {
+      console.error(`GRBL settings lekérdezési hiba (${deviceId}):`, error);
+      return null;
+    }
+  }
+
+  async setGrblSettingsBatch(deviceId: string, settings: Record<string, number>): Promise<boolean> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/grbl-settings/batch`, {
+        settings,
+      });
+      return response.data.success;
+    } catch (error) {
+      console.error(`GRBL settings batch beállítási hiba (${deviceId}):`, error);
       return false;
     }
   }

@@ -59,11 +59,19 @@ const DEFAULT_AXIS_CONFIG: Record<AxisName, Partial<AxisConfig>> = {
 function AxisEditor({
   axis,
   allAxes,
+  grblRate,
+  grblAcceleration,
+  onGrblRateChange,
+  onGrblAccelerationChange,
   onChange,
   onDelete,
 }: {
   axis: AxisConfig
   allAxes: AxisConfig[]
+  grblRate?: number
+  grblAcceleration?: number
+  onGrblRateChange?: (rate: number) => void
+  onGrblAccelerationChange?: (acceleration: number) => void
   onChange: (updated: AxisConfig) => void
   onDelete: () => void
 }) {
@@ -128,7 +136,41 @@ function AxisEditor({
         </div>
       </div>
 
-      {/* Második sor: Típus, Szülő, Invertálás */}
+      {/* Második sor: GRBL sebesség és gyorsulás */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+        <div>
+          <label className="block text-xs text-steel-500 mb-1">Max rate (GRBL)</label>
+          <input
+            type="number"
+            value={grblRate ?? ''}
+            onChange={(e) => {
+              if (!onGrblRateChange) return
+              onGrblRateChange(parseFloat(e.target.value) || 0)
+            }}
+            className="input w-full text-xs py-1"
+            min={1}
+            disabled={!onGrblRateChange}
+            title="GRBL $110/$111/$112 érték tengelyenként"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-steel-500 mb-1">Acceleration (GRBL)</label>
+          <input
+            type="number"
+            value={grblAcceleration ?? ''}
+            onChange={(e) => {
+              if (!onGrblAccelerationChange) return
+              onGrblAccelerationChange(parseFloat(e.target.value) || 0)
+            }}
+            className="input w-full text-xs py-1"
+            min={1}
+            disabled={!onGrblAccelerationChange}
+            title="GRBL $120/$121/$122 érték tengelyenként"
+          />
+        </div>
+      </div>
+
+      {/* Harmadik sor: Típus, Szülő, Invertálás */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
         <div>
           <label className="block text-xs text-steel-500 mb-1">Típus</label>
@@ -194,6 +236,106 @@ export default function MachineConfigTab({
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0, z: 0 })
   const [liveCamera, setLiveCamera] = useState<CameraState | null>(null)
+
+  const axisRateSettingByName: Partial<Record<AxisName, string>> = useMemo(
+    () => ({
+      X: '110',
+      Y: '111',
+      Z: '112',
+      A: '113',
+      B: '114',
+      C: '115',
+    }),
+    []
+  )
+  const axisAccelerationSettingByName: Partial<Record<AxisName, string>> = useMemo(
+    () => ({
+      X: '120',
+      Y: '121',
+      Z: '122',
+      A: '123',
+      B: '124',
+      C: '125',
+    }),
+    []
+  )
+
+  const getGrblAxisRate = useCallback(
+    (axisName: AxisName): number | undefined => {
+      const setting = axisRateSettingByName[axisName]
+      if (!setting) return undefined
+      const value = config.driverConfig?.grblSettings?.[setting]
+      return typeof value === 'number' ? value : undefined
+    },
+    [axisRateSettingByName, config.driverConfig?.grblSettings]
+  )
+
+  const setGrblAxisRate = useCallback(
+    (axisName: AxisName, rate: number) => {
+      const setting = axisRateSettingByName[axisName]
+      if (!setting) return
+      setConfig((prev) => ({
+        ...prev,
+        driverConfig: {
+          ...prev.driverConfig,
+          grblSettings: {
+            ...(prev.driverConfig?.grblSettings ?? {}),
+            [setting]: Math.max(1, rate),
+          },
+        },
+      }))
+    },
+    [axisRateSettingByName]
+  )
+
+  const getGrblAxisAcceleration = useCallback(
+    (axisName: AxisName): number | undefined => {
+      const setting = axisAccelerationSettingByName[axisName]
+      if (!setting) return undefined
+      const value = config.driverConfig?.grblSettings?.[setting]
+      return typeof value === 'number' ? value : undefined
+    },
+    [axisAccelerationSettingByName, config.driverConfig?.grblSettings]
+  )
+
+  const setGrblAxisAcceleration = useCallback(
+    (axisName: AxisName, acceleration: number) => {
+      const setting = axisAccelerationSettingByName[axisName]
+      if (!setting) return
+      setConfig((prev) => ({
+        ...prev,
+        driverConfig: {
+          ...prev.driverConfig,
+          grblSettings: {
+            ...(prev.driverConfig?.grblSettings ?? {}),
+            [setting]: Math.max(1, acceleration),
+          },
+        },
+      }))
+    },
+    [axisAccelerationSettingByName]
+  )
+
+  const getGrblSettingValue = useCallback(
+    (settingKey: string): number | undefined => {
+      const value = config.driverConfig?.grblSettings?.[settingKey]
+      return typeof value === 'number' ? value : undefined
+    },
+    [config.driverConfig?.grblSettings]
+  )
+
+  const setGrblSettingValue = useCallback((settingKey: string, nextValue: number) => {
+    setConfig((prev) => ({
+      ...prev,
+      driverConfig: {
+        ...prev.driverConfig,
+        grblSettings: {
+          ...(prev.driverConfig?.grblSettings ?? {}),
+          [settingKey]: nextValue,
+        },
+      },
+    }))
+  }, [])
 
   const handleCameraChange = useCallback((state: CameraState) => {
     setLiveCamera(state)
@@ -659,6 +801,18 @@ export default function MachineConfigTab({
                       key={axis.name}
                       axis={axis}
                       allAxes={config.axes}
+                      grblRate={getGrblAxisRate(axis.name)}
+                      grblAcceleration={getGrblAxisAcceleration(axis.name)}
+                      onGrblRateChange={
+                        config.driverConfig?.protocol === 'grbl'
+                          ? (rate) => setGrblAxisRate(axis.name, rate)
+                          : undefined
+                      }
+                      onGrblAccelerationChange={
+                        config.driverConfig?.protocol === 'grbl'
+                          ? (acceleration) => setGrblAxisAcceleration(axis.name, acceleration)
+                          : undefined
+                      }
                       onChange={(updated) => handleUpdateAxis(index, updated)}
                       onDelete={() => handleDeleteAxis(index)}
                     />
@@ -699,6 +853,47 @@ export default function MachineConfigTab({
                     min={1}
                   />
                 </div>
+
+                {/* Hold / Enable behavior for GRBL */}
+                {config.driverConfig?.protocol === 'grbl' && (
+                  <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">
+                    <div className="text-steel-400 text-xs font-medium">Motor tartás (GRBL)</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-steel-500 mb-1">
+                          Step idle delay - $1 (255 = mindig tart)
+                        </label>
+                        <input
+                          type="number"
+                          value={getGrblSettingValue('1') ?? 255}
+                          onChange={(e) => {
+                            const next = Math.max(0, Math.min(255, parseFloat(e.target.value) || 0))
+                            setGrblSettingValue('1', next)
+                          }}
+                          className="input w-full text-xs py-1"
+                          min={0}
+                          max={255}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-steel-500 mb-1">
+                          Enable invert - $4 (0/1)
+                        </label>
+                        <select
+                          value={String(getGrblSettingValue('4') ?? 0)}
+                          onChange={(e) => setGrblSettingValue('4', parseInt(e.target.value, 10) || 0)}
+                          className="input w-full text-xs py-1"
+                        >
+                          <option value="0">0 - normal polarity</option>
+                          <option value="1">1 - inverted polarity</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-steel-500">
+                      Ha a motor nem tartja a pozíciót jog után, állítsd a $1 értéket 255-re.
+                    </div>
+                  </div>
+                )}
 
                 {/* Home Position */}
                 <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">

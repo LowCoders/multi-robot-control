@@ -12,8 +12,8 @@ const DEFAULT_CONFIGS: Record<string, MachineConfig> = {
     name: 'Default Lathe',
     type: 'cnc_lathe',
     axes: [
-      { name: 'X', type: 'linear', min: 0, max: 150, homePosition: 0, color: '#ef4444' },
-      { name: 'Z', type: 'linear', min: -200, max: 0, homePosition: 0, color: '#3b82f6', parent: 'X' },
+      { name: 'X', type: 'linear', min: 0, max: 150, color: '#ef4444' },
+      { name: 'Z', type: 'linear', min: -200, max: 0, color: '#3b82f6', parent: 'X' },
     ],
     workEnvelope: { x: 150, y: 0, z: 200 },
   },
@@ -23,8 +23,8 @@ const DEFAULT_CONFIGS: Record<string, MachineConfig> = {
     name: 'Default Laser',
     type: 'laser_cutter',
     axes: [
-      { name: 'X', type: 'linear', min: 0, max: 400, homePosition: 0, color: '#ef4444' },
-      { name: 'Y', type: 'linear', min: 0, max: 300, homePosition: 0, color: '#22c55e', parent: 'X' },
+      { name: 'X', type: 'linear', min: 0, max: 400, color: '#ef4444' },
+      { name: 'Y', type: 'linear', min: 0, max: 300, color: '#22c55e', parent: 'X' },
     ],
     workEnvelope: { x: 400, y: 300, z: 0 },
     spindle: undefined,

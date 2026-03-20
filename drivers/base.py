@@ -20,6 +20,7 @@ class DeviceType(Enum):
     ROBOT_ARM = "robot_arm"
     CONVEYOR = "conveyor"
     ROTARY_TABLE = "rotary_table"
+    TUBE_BENDER = "tube_bender"
     CUSTOM = "custom"
 
 
@@ -83,6 +84,9 @@ class DeviceCapabilities:
     has_vacuum_pump: bool = False
     supports_motion_test: bool = True
     supports_firmware_probe: bool = True
+    supports_soft_limits: bool = False
+    supports_streaming_jog: bool = False
+    supports_hard_jog_stop: bool = False
     max_feed_rate: float = 1000.0  # mm/min
     max_spindle_speed: float = 0.0  # RPM
     max_laser_power: float = 0.0  # %
@@ -108,6 +112,9 @@ class DeviceCapabilities:
             "has_vacuum_pump": self.has_vacuum_pump,
             "supports_motion_test": self.supports_motion_test,
             "supports_firmware_probe": self.supports_firmware_probe,
+            "supports_soft_limits": self.supports_soft_limits,
+            "supports_streaming_jog": self.supports_streaming_jog,
+            "supports_hard_jog_stop": self.supports_hard_jog_stop,
             "max_feed_rate": self.max_feed_rate,
             "max_spindle_speed": self.max_spindle_speed,
             "max_laser_power": self.max_laser_power,
@@ -458,6 +465,46 @@ class DeviceDriver(ABC):
             position: Új pozíció (None = aktuális pozíció)
         """
         return False
+
+    async def start_jog_session(
+        self,
+        axis: str,
+        direction: float,
+        feed_rate: float,
+        heartbeat_timeout: float = 0.5,
+        tick_ms: int = 40,
+        mode: Optional[str] = None,
+    ) -> bool:
+        """
+        Opcionális folyamatos jog session indítása.
+        """
+        return False
+
+    async def update_jog_session(
+        self,
+        axis: Optional[str] = None,
+        direction: Optional[float] = None,
+        feed_rate: Optional[float] = None,
+        mode: Optional[str] = None,
+    ) -> bool:
+        """
+        Opcionális folyamatos jog session heartbeat/frissítés.
+        """
+        return False
+
+    async def stop_jog_session(self, hard_stop: bool = False) -> bool:
+        """
+        Opcionális folyamatos jog session leállítás.
+        """
+        if hard_stop:
+            return await self.hard_jog_stop()
+        return await self.jog_stop()
+
+    async def hard_jog_stop(self) -> bool:
+        """
+        Opcionális agresszív jog stop (feed hold + reset jelleg).
+        """
+        return await self.jog_stop()
     
     # =========================================
     # ROBOT ARM SPECIFIC - OPCIONÁLIS

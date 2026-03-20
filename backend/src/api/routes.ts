@@ -754,6 +754,67 @@ export function createApiRoutes(
     res.json(capabilities);
   });
 
+  // Soft limits state (robot arm)
+  router.get('/devices/:id/soft-limits', asyncHandler(async (req: Request, res: Response) => {
+    const data = await deviceManager.getSoftLimits(req.params.id);
+    if (!data) {
+      res.status(404).json({ error: 'Eszköz nem található vagy soft limits nem támogatott' });
+      return;
+    }
+    res.json(data);
+  }));
+
+  router.post('/devices/:id/soft-limits', asyncHandler(async (req: Request, res: Response) => {
+    const enabledRaw = req.query.enabled;
+    if (enabledRaw === undefined) {
+      res.status(400).json({ error: 'Hiányzó enabled query paraméter (true/false)' });
+      return;
+    }
+
+    const enabled = String(enabledRaw).toLowerCase() === 'true';
+    const success = await deviceManager.setSoftLimits(req.params.id, enabled);
+    if (!success) {
+      res.status(500).json({ success: false, error: 'Soft limits állítás sikertelen' });
+      return;
+    }
+    res.json({ success: true, soft_limits_enabled: enabled });
+  }));
+
+  router.get('/devices/:id/grbl-settings', asyncHandler(async (req: Request, res: Response) => {
+    const settings = await deviceManager.getGrblSettings(req.params.id);
+    if (!settings) {
+      res.status(404).json({ error: 'Eszköz nem található vagy GRBL settings nem elérhető' });
+      return;
+    }
+    res.json({ settings });
+  }));
+
+  router.post('/devices/:id/grbl-settings/batch', asyncHandler(async (req: Request, res: Response) => {
+    const settings = req.body?.settings;
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      res.status(400).json({ error: 'Érvénytelen settings payload' });
+      return;
+    }
+
+    for (const [key, value] of Object.entries(settings as Record<string, unknown>)) {
+      if (!/^\d+$/.test(key) || !validateNumber(value)) {
+        res.status(400).json({ error: `Érvénytelen GRBL setting: ${key}` });
+        return;
+      }
+    }
+
+    const success = await deviceManager.setGrblSettingsBatch(
+      req.params.id,
+      settings as Record<string, number>
+    );
+    if (!success) {
+      res.status(500).json({ success: false, error: 'GRBL settings mentés sikertelen' });
+      return;
+    }
+
+    res.json({ success: true });
+  }));
+
   // =========================================
   // MACHINE CONFIGURATION
   // =========================================

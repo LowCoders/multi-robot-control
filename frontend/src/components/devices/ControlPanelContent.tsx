@@ -68,10 +68,12 @@ export default function ControlPanelContent({
     return defaultRate
   })
   const [useSoftLimits, setUseSoftLimits] = useState(true)
+  const supportsSoftLimits = capabilities?.supports_soft_limits === true
 
   // Soft limits állapot betöltése és szinkronizálása a backenddel
   useEffect(() => {
     const loadSoftLimitsState = async () => {
+      if (!supportsSoftLimits) return
       try {
         const response = await fetch(`/api/devices/${device.id}/soft-limits`)
         if (response.ok) {
@@ -83,14 +85,22 @@ export default function ControlPanelContent({
       }
     }
     loadSoftLimitsState()
-  }, [device.id])
+  }, [device.id, supportsSoftLimits])
 
   const handleSoftLimitsChange = async (enabled: boolean) => {
+    if (!supportsSoftLimits) return
     setUseSoftLimits(enabled)
     try {
-      await fetch(`/api/devices/${device.id}/soft-limits?enabled=${enabled}`, {
+      const response = await fetch(`/api/devices/${device.id}/soft-limits?enabled=${enabled}`, {
         method: 'POST',
       })
+      if (!response.ok) {
+        throw new Error('Soft limits update failed')
+      }
+      const data = await response.json()
+      if (typeof data.soft_limits_enabled === 'boolean') {
+        setUseSoftLimits(data.soft_limits_enabled)
+      }
     } catch {
       // Hiba esetén visszaállítjuk az előző állapotot
       setUseSoftLimits(!enabled)
@@ -186,15 +196,17 @@ export default function ControlPanelContent({
           <div className="card">
             <div className="card-header flex items-center justify-between">
               <span className="font-medium">Állapot</span>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useSoftLimits}
-                  onChange={(e) => handleSoftLimitsChange(e.target.checked)}
-                  className="w-3 h-3 accent-machine-500"
-                />
-                <span className="text-xs text-steel-500">Limit</span>
-              </label>
+              {supportsSoftLimits && (
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useSoftLimits}
+                    onChange={(e) => handleSoftLimitsChange(e.target.checked)}
+                    className="w-3 h-3 accent-machine-500"
+                  />
+                  <span className="text-xs text-steel-500">Limit</span>
+                </label>
+              )}
             </div>
             <div className="card-body space-y-4">
               {device.status && (
@@ -263,12 +275,6 @@ export default function ControlPanelContent({
                     )}
                   </div>
 
-                  {/* Error */}
-                  {isAlarm && device.status.error_message && (
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3">
-                      <p className="text-sm text-red-400">{device.status.error_message}</p>
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -370,6 +376,7 @@ export default function ControlPanelContent({
               deviceType={device.type} 
               status={device.status} 
               capabilities={capabilities}
+              useSoftLimits={useSoftLimits}
               jogMode={jogMode}
               onJogModeChange={setJogMode}
               feedRate={feedRate}

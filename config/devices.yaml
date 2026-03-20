@@ -37,7 +37,7 @@ devices:
     name: "CNC Maró"
     driver: linuxcnc
     type: cnc_mill
-    enabled: true
+    enabled: false
     simulated: true
     config:
       ini_file: /home/user/linuxcnc/configs/jp3163b/jp3163b.ini
@@ -52,7 +52,7 @@ devices:
     enabled: false
     simulated: false
     config:
-      port: /dev/ttyUSB1
+      port: /dev/ttyUSB0
       baudrate: 115200
       
   # =====================================================
@@ -62,8 +62,8 @@ devices:
     name: "Robotkar v1 (Open Loop)"
     driver: robot_arm
     type: robot_arm
-    enabled: true
-    simulated: true
+    enabled: false
+    simulated: false
     config:
       usb:
         vid: "1a86"
@@ -79,7 +79,7 @@ devices:
     name: "Robotkar v2 (Closed Loop)"
     driver: robot_arm
     type: robot_arm
-    enabled: true
+    enabled: false
     simulated: false
     config:
       usb:
@@ -87,4 +87,22 @@ devices:
         pid: "7523"
         location: "3-3"
       port: /dev/ttyUSB0
+      baudrate: 115200
+
+  # =====================================================
+  # Csőhajlító - ESP32 Standalone
+  # =====================================================
+  - id: tube_bender_1
+    name: "Csőhajlító"
+    driver: tube_bender
+    type: tube_bender
+    enabled: true
+    simulated: false
+    config:
+      protocol: grbl
+      usb:
+        vid: "1a86"
+        pid: "55d3"
+        serial_number: "5B8E071772"
+      port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5B8E071772-if00
       baudrate: 115200

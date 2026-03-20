@@ -131,6 +131,8 @@ def extract_driver_config(machine_config: Dict[str, Any]) -> Dict[str, Any]:
         'closed_loop': closed_loop,
         'robot_config': robot_config,
         'max_feed_rate': driver_cfg.get('maxFeedRate'),
+        'protocol': driver_cfg.get('protocol'),
+        'grbl_settings': driver_cfg.get('grblSettings'),
     }
 
 
@@ -155,6 +157,26 @@ class JogRequest(BaseModel):
     distance: float
     feed_rate: float
     mode: Optional[str] = None  # 'jog', 'joint', 'cartesian' (robot arm only)
+
+
+class JogSessionStartRequest(BaseModel):
+    axis: str
+    direction: float
+    feed_rate: float
+    mode: Optional[str] = None
+    heartbeat_timeout: float = 0.5
+    tick_ms: int = 40
+
+
+class JogSessionBeatRequest(BaseModel):
+    axis: Optional[str] = None
+    direction: Optional[float] = None
+    feed_rate: Optional[float] = None
+    mode: Optional[str] = None
+
+
+class JogSessionStopRequest(BaseModel):
+    hard_stop: bool = False
 
 
 class GCodeRequest(BaseModel):
@@ -316,6 +338,39 @@ class DeviceManager:
                 closed_loop_info = " [Closed Loop]" if (closed_loop or {}).get('enabled') else ""
                 home_info = f" [Home: {(home_position or {}).get('mode', 'absolute')}]" if home_position else ""
                 print(f"🤖 Valós robotkar eszköz: {config.name} ({port}){closed_loop_info}{home_info}")
+            elif driver == "tube_bender":
+                port = self._resolve_device_port(config)
+                if port is None:
+                    print(f"⚠️ Port nem található: {config.name}")
+                    return False
+
+                machine_config = load_machine_config(config.id)
+                driver_cfg = {}
+                if machine_config:
+                    driver_cfg = extract_driver_config(machine_config)
+                    print(f"   📋 Machine config betöltve: {config.id}")
+                else:
+                    print(f"   ⚠️ Machine config nem található, devices.yaml használata: {config.id}")
+
+                from tube_bender_driver import TubeBenderDriver
+                startup_grbl_settings = driver_cfg.get('grbl_settings') or config.config.get('grbl_settings') or {}
+                if isinstance(startup_grbl_settings, dict):
+                    s1 = startup_grbl_settings.get('1', startup_grbl_settings.get(1))
+                    s4 = startup_grbl_settings.get('4', startup_grbl_settings.get(4))
+                    if s1 is not None or s4 is not None:
+                        print(f"   ⚙️ TubeBender startup hold settings: $1={s1}, $4={s4}")
+                device = TubeBenderDriver(
+                    device_id=config.id,
+                    device_name=config.name,
+                    port=port,
+                    baudrate=config.config.get('baudrate', 115200),
+                    max_feed_rate=driver_cfg.get('max_feed_rate') or config.config.get('max_feed_rate', 1000.0),
+                    axis_limits=driver_cfg.get('axis_limits') or config.config.get('axis_limits'),
+                    protocol=driver_cfg.get('protocol') or config.config.get('protocol', 'grbl'),
+                    grbl_settings=startup_grbl_settings,
+                )
+                connection_info = port
+                print(f"🔧 Csőhajlító eszköz: {config.name} ({port}) [GRBL adapter]")
             else:
                 print(f"Ismeretlen driver: {driver}")
                 return False
@@ -713,6 +768,131 @@ async def jog_stop_device(device_id: str):
     
     result = await device.jog_stop()
     return {"success": result}
+
+
+@app.post("/devices/{device_id}/jog/session/start")
+async def jog_session_start(device_id: str, request: JogSessionStartRequest):
+    """Folyamatos jog session indítása."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
+    if hasattr(device, "start_jog_session"):
+        result = await device.start_jog_session(
+            axis=request.axis,
+            direction=request.direction,
+            feed_rate=request.feed_rate,
+            heartbeat_timeout=request.heartbeat_timeout,
+            tick_ms=request.tick_ms,
+            mode=request.mode,
+        )
+        return {"success": result}
+
+    # Fallback: egyszeri jog, ha nincs session támogatás.
+    distance = (request.feed_rate / 60.0) * (max(20, min(200, request.tick_ms)) / 1000.0)
+    distance = distance if request.direction >= 0 else -distance
+    result = await device.jog(request.axis, distance, request.feed_rate)
+    return {"success": result, "fallback": True}
+
+
+@app.post("/devices/{device_id}/jog/session/beat")
+async def jog_session_beat(device_id: str, request: JogSessionBeatRequest):
+    """Folyamatos jog session heartbeat/frissítés."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
+    if hasattr(device, "update_jog_session"):
+        result = await device.update_jog_session(
+            axis=request.axis,
+            direction=request.direction,
+            feed_rate=request.feed_rate,
+            mode=request.mode,
+        )
+        return {"success": result}
+
+    return {"success": False, "fallback": True}
+
+
+@app.post("/devices/{device_id}/jog/session/stop")
+async def jog_session_stop(device_id: str, request: JogSessionStopRequest):
+    """Folyamatos jog session leállítás (opcionális hard stop)."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
+    try:
+        if hasattr(device, "stop_jog_session"):
+            result = await device.stop_jog_session(hard_stop=request.hard_stop)
+            try:
+                await device.get_status()
+            except Exception:
+                pass
+            return {"success": result}
+
+        if request.hard_stop and hasattr(device, "hard_jog_stop"):
+            result = await device.hard_jog_stop()
+            try:
+                await device.get_status()
+            except Exception:
+                pass
+            return {"success": result, "fallback": True}
+
+        result = await device.jog_stop()
+        try:
+            await device.get_status()
+        except Exception:
+            pass
+        return {"success": result, "fallback": True}
+    except asyncio.CancelledError:
+        # Session task cancellation esetén se dobjunk 500-at.
+        try:
+            if request.hard_stop and hasattr(device, "hard_jog_stop"):
+                result = await device.hard_jog_stop()
+                try:
+                    await device.get_status()
+                except Exception:
+                    pass
+                return {"success": result, "fallback": True, "cancelled": True}
+            result = await device.jog_stop()
+            try:
+                await device.get_status()
+            except Exception:
+                pass
+            return {"success": result, "fallback": True, "cancelled": True}
+        except Exception:
+            return {"success": False, "fallback": True, "cancelled": True}
+    except Exception:
+        # Last-resort safety fallback: explicit jog stop.
+        try:
+            if request.hard_stop and hasattr(device, "hard_jog_stop"):
+                result = await device.hard_jog_stop()
+                try:
+                    await device.get_status()
+                except Exception:
+                    pass
+                return {"success": result, "fallback": True}
+            result = await device.jog_stop()
+            try:
+                await device.get_status()
+            except Exception:
+                pass
+            return {"success": result, "fallback": True}
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Jog session stop hiba: {exc}")
+
+
+@app.get("/devices/{device_id}/jog/diagnostics")
+async def get_jog_diagnostics(device_id: str):
+    """Utolsó jog művelet nyers diagnosztikai adatai."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
+    if not hasattr(device, "get_jog_diagnostics"):
+        raise HTTPException(status_code=400, detail="Az eszköz nem támogat jog diagnosztikát")
+
+    return device.get_jog_diagnostics()
 
 
 @app.post("/devices/{device_id}/gcode")
@@ -1270,8 +1450,14 @@ async def run_diagnostics(device_id: str, move_test: bool = False):
     
     metadata = device_manager.device_metadata.get(device_id)
     
-    # Szimulált eszköz esetén szimulált diagnosztikai riportot adunk
-    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(
+            status_code=400,
+            detail="A diagnosztika jelenleg csak robotkar eszközökhöz érhető el."
+        )
+
+    # Szimulált robotkar esetén szimulált diagnosztikai riportot adunk
+    if metadata and metadata.simulated:
         from board_diagnostics import DiagnosticsReport, TestResult
         from datetime import datetime
         report = DiagnosticsReport(
@@ -1350,7 +1536,13 @@ async def run_firmware_probe(device_id: str):
     
     metadata = device_manager.device_metadata.get(device_id)
     
-    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(
+            status_code=400,
+            detail="A firmware felderítés jelenleg csak robotkar eszközökhöz érhető el."
+        )
+
+    if metadata and metadata.simulated:
         return {
             "timestamp": "",
             "port": "simulated",
@@ -1419,7 +1611,13 @@ async def run_endstop_test(
     
     metadata = device_manager.device_metadata.get(device_id)
     
-    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(
+            status_code=400,
+            detail="A végállás teszt jelenleg csak robotkar eszközökhöz érhető el."
+        )
+
+    if metadata and metadata.simulated:
         return {
             "timestamp": "",
             "port": "simulated",
@@ -1484,7 +1682,13 @@ async def get_endstop_states(device_id: str):
     
     metadata = device_manager.device_metadata.get(device_id)
     
-    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(
+            status_code=400,
+            detail="A végállás állapot jelenleg csak robotkar eszközökhöz érhető el."
+        )
+
+    if metadata and metadata.simulated:
         return {"endstops": {"X": False, "Y": False, "Z": False}}
     
     if not device._connected:
@@ -1513,7 +1717,13 @@ async def run_motion_test(
     
     metadata = device_manager.device_metadata.get(device_id)
     
-    if not isinstance(device, RobotArmDevice) or (metadata and metadata.simulated):
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(
+            status_code=400,
+            detail="A mozgásteszt jelenleg csak robotkar eszközökhöz érhető el."
+        )
+
+    if metadata and metadata.simulated:
         return {
             "timestamp": "",
             "port": "simulated",

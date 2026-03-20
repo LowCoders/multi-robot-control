@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Play,
   Square,
@@ -12,17 +12,6 @@ import {
   Save,
   Power,
 } from 'lucide-react'
-
-interface CalibrationStatus {
-  running: boolean
-  current_step: number
-  total_steps: number
-  current_joint: string | null
-  current_direction: string | null
-  progress: number
-  message: string
-  results?: CalibrationResults
-}
 
 interface CalibrationResults {
   completed: boolean
@@ -40,7 +29,6 @@ interface CalibrationPanelProps {
 
 export default function CalibrationPanel({ deviceId, onApplyResults }: CalibrationPanelProps) {
   const [isCalibrating, setIsCalibrating] = useState(false)
-  const [status, setStatus] = useState<CalibrationStatus | null>(null)
   const [results, setResults] = useState<CalibrationResults | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -61,31 +49,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
     Z: true,   // Könyök - van fizikai végállás
   })
   
-  const pollingRef = useRef<NodeJS.Timeout | null>(null)
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/devices/${deviceId}/calibration-status`)
-      if (response.ok) {
-        const data: CalibrationStatus = await response.json()
-        setStatus(data)
-        
-        if (data.results) {
-          setResults(data.results)
-        }
-        
-        if (!data.running && isCalibrating) {
-          setIsCalibrating(false)
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current)
-            pollingRef.current = null
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch calibration status:', err)
-    }
-  }, [deviceId, isCalibrating])
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     return () => {
@@ -341,22 +305,10 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
         </div>
       )}
 
-      {isCalibrating && status && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-steel-300">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            {status.message}
-          </div>
-          <div className="w-full bg-steel-700 rounded-full h-2">
-            <div
-              className="bg-machine-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${status.progress}%` }}
-            />
-          </div>
-          <div className="text-xs text-steel-500">
-            Lépés: {status.current_step} / {status.total_steps}
-            {status.current_joint && ` | ${status.current_joint} ${status.current_direction === 'positive' ? '+' : '-'}`}
-          </div>
+      {isCalibrating && (
+        <div className="flex items-center gap-2 text-sm text-steel-300">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Kalibráció fut...
         </div>
       )}
 

@@ -96,7 +96,6 @@ except ImportError:
     
     print("⚠️ kinematics modul nem elérhető - csak Joint mód használható")
 
-
 class ControlMode(Enum):
     """Vezérlési módok"""
     JOINT = "joint"
@@ -267,6 +266,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             has_vacuum_pump=True,
             supports_motion_test=True,
             supports_firmware_probe=True,
+            supports_soft_limits=True,
             max_feed_rate=self._config_max_feed_rate,
             max_spindle_speed=0.0,
             max_laser_power=0.0,
@@ -583,6 +583,17 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             clamped['Z'] = True
         
         return (x, y, z, clamped)
+
+    def _clamp_feed_rate(self, speed: float) -> float:
+        """Visszaad egy biztonságos feed-rate értéket (fok/perc)."""
+        try:
+            requested = float(speed)
+        except (TypeError, ValueError):
+            requested = self._config_max_feed_rate
+        requested = abs(requested)
+        if requested < 1.0:
+            requested = 1.0
+        return min(requested, float(self._config_max_feed_rate))
     
     # =========================================
     # SZOFTVERES LIMIT KAPCSOLÓ
@@ -654,6 +665,9 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                     status['wpos'] = Position(x=x, y=y, z=z)
                     if mpos:
                         status['mpos'] = self._status.position
+                    # Backward-compatible aliases used by legacy tools/scripts
+                    status['grbl'] = {'x': x, 'y': y, 'z': z}
+                    status['joints'] = {'j1': x, 'j2': y, 'j3': z}
                     if KINEMATICS_AVAILABLE and self._cartesian_position:
                         status['cartesian'] = {
                             'x': self._cartesian_position.x,
@@ -905,15 +919,19 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             speed_percent = max(1, min(100, int(feed_rate)))
             actual_feed_rate = (speed_percent / 100.0) * self._config_max_feed_rate
             
-            # Szoftveres limit ellenőrzés
+            # Szoftveres limit ellenőrzés (ha engedélyezett)
             current = self._status.position
             target_x = current.x + (distance if axis == "X" else 0)
             target_y = current.y + (distance if axis == "Y" else 0)
             target_z = current.z + (distance if axis == "Z" else 0)
-            
-            clamped_x, clamped_y, clamped_z, clamped = self._clamp_to_limits(
-                target_x, target_y, target_z
-            )
+
+            if self._use_soft_limits:
+                clamped_x, clamped_y, clamped_z, clamped = self._clamp_to_limits(
+                    target_x, target_y, target_z
+                )
+            else:
+                clamped_x, clamped_y, clamped_z = target_x, target_y, target_z
+                clamped = {}
             
             # Tényleges távolság a limit után
             if axis == "X":
@@ -983,15 +1001,19 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         Az invertált tengelyeket negálva küldjük a GRBL-nek.
         """
         try:
-            # Limitek alkalmazása (logikai koordinátákban)
-            clamped_x, clamped_y, clamped_z, _ = self._clamp_to_limits(x, y, z)
+            # Limitek alkalmazása (logikai koordinátákban) csak ha engedélyezett
+            if self._use_soft_limits:
+                clamped_x, clamped_y, clamped_z, _ = self._clamp_to_limits(x, y, z)
+            else:
+                clamped_x, clamped_y, clamped_z = x, y, z
             
             # GRBL koordináták (invertálva ha szükséges)
             grbl_x = -clamped_x if self._axis_invert.get('X', False) else clamped_x
             grbl_y = -clamped_y if self._axis_invert.get('Y', False) else clamped_y
             grbl_z = -clamped_z if self._axis_invert.get('Z', False) else clamped_z
             
-            cmd = f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{speed:.0f}"
+            feed_rate = self._clamp_feed_rate(speed)
+            cmd = f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{feed_rate:.0f}"
             response = await self._send_command(cmd)
             
             if self.ERROR_PATTERN.search(response):
@@ -1038,7 +1060,8 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             grbl_y = -y if self._axis_invert.get('Y', False) else y
             grbl_z = -z if self._axis_invert.get('Z', False) else z
             
-            cmd = f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{speed:.0f}"
+            feed_rate = self._clamp_feed_rate(speed)
+            cmd = f"G1 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f} F{feed_rate:.0f}"
             response = await self._send_command(cmd)
             
             if self._use_grbl:
@@ -1086,6 +1109,12 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         A limit ellenőrzés logikai pozíciókon és logikai irányon alapul.
         """
         axis = axis.upper()
+        axis_alias = {
+            'J1': 'X',
+            'J2': 'Y',
+            'J3': 'Z',
+        }
+        axis = axis_alias.get(axis, axis)
         if axis not in ['X', 'Y', 'Z']:
             return False
 
@@ -1131,7 +1160,8 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                     return False
 
         async with self._jog_lock:
-            cmd = f"$J=G91 {axis}{actual_distance:.2f} F{speed:.0f}"
+            feed_rate = self._clamp_feed_rate(speed)
+            cmd = f"$J=G91 {axis}{actual_distance:.2f} F{feed_rate:.0f}"
             response = await self._send_command(cmd)
 
             if self.GRBL_ERROR_PATTERN.search(response):

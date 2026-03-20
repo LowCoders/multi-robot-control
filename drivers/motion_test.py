@@ -79,6 +79,7 @@ class MotionTest:
         r"INFO:\s*LINEAR\s*MOVE:\s*X(-?\d+\.?\d*)\s*Y(-?\d+\.?\d*)\s*Z(-?\d+\.?\d*)"
     )
     ERROR_PATTERN = re.compile(r"ERROR|COMMAND NOT RECOGNIZED", re.IGNORECASE)
+    STATUS_PATTERN = re.compile(r"<([^,>]+)")
 
     # Tesztelt sebességek
     DEFAULT_SPEEDS = [5, 10, 20, 30, 50, 70, 100]
@@ -165,7 +166,15 @@ class MotionTest:
                     line = line_bytes.decode(errors='replace').strip()
                     if line:
                         lines.append(line)
+                        # Legacy firmware: INFO/ERROR
+                        # GRBL: ok / error:n / <Idle,...> státusz
                         if re.match(r"^(INFO|ERROR):", line, re.IGNORECASE):
+                            break
+                        if re.match(r"^ok$", line, re.IGNORECASE):
+                            break
+                        if re.match(r"^error", line, re.IGNORECASE):
+                            break
+                        if line.startswith("<") and line.endswith(">"):
                             break
                 except Exception:
                     break
@@ -173,6 +182,28 @@ class MotionTest:
                 time.sleep(0.02)
 
         return "\n".join(lines)
+
+    def _wait_grbl_idle(self, timeout: float = 15.0, poll_interval: float = 0.1) -> Tuple[bool, float]:
+        """GRBL státusz pollinggal megvárja az Idle állapotot."""
+        start = time.perf_counter()
+        deadline = start + timeout
+
+        while time.perf_counter() < deadline:
+            if self._stop_event.is_set():
+                break
+
+            status, _ = self._send_timed("?", wait=0.6)
+            state_match = self.STATUS_PATTERN.search(status)
+            if state_match:
+                state = state_match.group(1).strip().lower()
+                if state.startswith("idle"):
+                    return True, (time.perf_counter() - start) * 1000.0
+                if state.startswith("alarm") or state.startswith("door"):
+                    return False, (time.perf_counter() - start) * 1000.0
+
+            time.sleep(poll_interval)
+
+        return False, (time.perf_counter() - start) * 1000.0
 
     # ----------------------------------------------------------
     # Teszt futtatás
@@ -310,14 +341,29 @@ class MotionTest:
 
         # Oda
         resp_fwd, time_fwd = self._send_timed(cmd, wait=15.0)
-        ok_fwd = bool(self.MOVE_PATTERN.search(resp_fwd))
+        is_legacy_move = bool(self.MOVE_PATTERN.search(resp_fwd))
+        is_grbl_ok = ("ok" in resp_fwd.lower()) and not bool(self.ERROR_PATTERN.search(resp_fwd))
+        ok_fwd = is_legacy_move or is_grbl_ok
+
+        # GRBL esetben az "ok" csak parancs-ack, mozgás végét Idle státusz jelzi
+        if is_grbl_ok and not is_legacy_move:
+            idle_ok, idle_ms = self._wait_grbl_idle(timeout=20.0)
+            time_fwd += idle_ms
+            ok_fwd = ok_fwd and idle_ok
 
         time.sleep(0.2)
 
         # Vissza
         cmd_back = f"G1 X0.00 Y0.00 Z0.00 F{speed}"
         resp_back, time_back = self._send_timed(cmd_back, wait=15.0)
-        ok_back = bool(self.MOVE_PATTERN.search(resp_back))
+        is_legacy_back = bool(self.MOVE_PATTERN.search(resp_back))
+        is_grbl_back_ok = ("ok" in resp_back.lower()) and not bool(self.ERROR_PATTERN.search(resp_back))
+        ok_back = is_legacy_back or is_grbl_back_ok
+
+        if is_grbl_back_ok and not is_legacy_back:
+            idle_ok, idle_ms = self._wait_grbl_idle(timeout=20.0)
+            time_back += idle_ms
+            ok_back = ok_back and idle_ok
 
         avg = (time_fwd + time_back) / 2.0
 

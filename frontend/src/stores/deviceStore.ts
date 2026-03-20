@@ -9,6 +9,7 @@ interface Notification {
   message: string
   severity: 'info' | 'warning' | 'error'
   timestamp: number
+  count?: number
 }
 
 interface DeviceStore {
@@ -34,7 +35,23 @@ interface DeviceStore {
   // Commands
   sendCommand: (deviceId: string, command: string, params?: Record<string, unknown>) => void
   jog: (deviceId: string, axis: string, distance: number, feedRate: number, mode?: string) => void
-  jogStop: (deviceId: string) => void
+  jogStart: (
+    deviceId: string,
+    axis: string,
+    direction: number,
+    feedRate: number,
+    mode?: string,
+    heartbeatTimeout?: number,
+    tickMs?: number
+  ) => void
+  jogBeat: (
+    deviceId: string,
+    axis?: string,
+    direction?: number,
+    feedRate?: number,
+    mode?: string
+  ) => void
+  jogStop: (deviceId: string, hardStop?: boolean) => void
   sendMDI: (deviceId: string, gcode: string) => void
 }
 
@@ -156,14 +173,31 @@ export const useDeviceStore = create<DeviceStore>()(
     },
     
     addNotification: (deviceId, message, severity = 'info') => {
+      const normalizedMessage = message.includes('transient state window')
+        ? 'Átmeneti firmware állapotablak (error:8). A rendszer automatikus újrapróbálkozást végez.'
+        : message
       const notification: Notification = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         deviceId,
-        message,
+        message: normalizedMessage,
         severity,
         timestamp: Date.now(),
+        count: 1,
       }
       set((state) => {
+        const now = Date.now()
+        const existing = state.notifications.find(
+          n =>
+            n.deviceId === deviceId &&
+            n.severity === severity &&
+            n.message === normalizedMessage &&
+            now - n.timestamp < 2000
+        )
+        if (existing) {
+          existing.timestamp = now
+          existing.count = (existing.count ?? 1) + 1
+          return
+        }
         state.notifications.push(notification)
         // Keep last 50 notifications
         if (state.notifications.length > 50) {
@@ -256,11 +290,39 @@ export const useDeviceStore = create<DeviceStore>()(
         socket.emit('device:jog', { deviceId, axis, distance, feedRate, mode })
       }
     },
-    
-    jogStop: (deviceId) => {
+
+    jogStart: (deviceId, axis, direction, feedRate, mode, heartbeatTimeout = 0.5, tickMs = 40) => {
       const { socket } = get()
       if (socket) {
-        socket.emit('device:jog:stop', { deviceId })
+        socket.emit('device:jog:start', {
+          deviceId,
+          axis,
+          direction,
+          feedRate,
+          mode,
+          heartbeatTimeout,
+          tickMs,
+        })
+      }
+    },
+
+    jogBeat: (deviceId, axis, direction, feedRate, mode) => {
+      const { socket } = get()
+      if (socket) {
+        socket.emit('device:jog:beat', {
+          deviceId,
+          axis,
+          direction,
+          feedRate,
+          mode,
+        })
+      }
+    },
+    
+    jogStop: (deviceId, hardStop = false) => {
+      const { socket } = get()
+      if (socket) {
+        socket.emit('device:jog:stop', { deviceId, hardStop })
       }
     },
     
