@@ -29,6 +29,10 @@ from usb_port_resolver import UsbIdentifier, resolve_port, list_usb_devices
 
 # Machine config path
 MACHINE_CONFIG_DIR = Path(__file__).parent.parent / "config" / "machines"
+CONNECT_TIMEOUT_SECONDS = float(os.environ.get("DEVICE_CONNECT_TIMEOUT_SECONDS", "8.0"))
+STARTUP_CONNECT_TIMEOUT_SECONDS = float(
+    os.environ.get("DEVICE_STARTUP_CONNECT_TIMEOUT_SECONDS", "15.0")
+)
 
 # Szimulációs mód már csak eszközönként (devices.yaml simulated mezője)
 
@@ -439,7 +443,19 @@ class DeviceManager:
         results = {}
         for device_id, device in self.devices.items():
             try:
-                results[device_id] = await device.connect()
+                results[device_id] = await asyncio.wait_for(
+                    device.connect(),
+                    timeout=STARTUP_CONNECT_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                print(
+                    f"Csatlakozási timeout ({device_id}): {STARTUP_CONNECT_TIMEOUT_SECONDS:.1f}s"
+                )
+                try:
+                    await device.disconnect()
+                except Exception:
+                    pass
+                results[device_id] = False
             except Exception as e:
                 print(f"Csatlakozási hiba ({device_id}): {str(e)}")
                 results[device_id] = False
@@ -687,8 +703,22 @@ async def connect_device(device_id: str):
     device = device_manager.get_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
-    
-    result = await device.connect()
+
+    try:
+        # Guard against serial/handshake stalls so callers get a clear HTTP error
+        # instead of hanging until upstream client-side timeout.
+        result = await asyncio.wait_for(
+            device.connect(),
+            timeout=CONNECT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"Eszköz csatlakozási timeout: {device_id} "
+                f"({CONNECT_TIMEOUT_SECONDS:.1f}s)"
+            ),
+        ) from exc
     return {"success": result}
 
 
@@ -715,7 +745,19 @@ async def reconnect_device(device_id: str):
     else:
         # Más eszközök: disconnect + connect
         await device.disconnect()
-        result = await device.connect()
+        try:
+            result = await asyncio.wait_for(
+                device.connect(),
+                timeout=CONNECT_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"Eszköz újracsatlakozási timeout: {device_id} "
+                    f"({CONNECT_TIMEOUT_SECONDS:.1f}s)"
+                ),
+            ) from exc
     
     return {"success": result}
 
@@ -1314,15 +1356,35 @@ async def set_soft_limits(device_id: str, enabled: bool):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
-    if not isinstance(device, RobotArmDevice):
-        raise HTTPException(status_code=400, detail="Csak robotkar eszközök támogatják a szoftveres limiteket")
-    
-    device.set_soft_limits_enabled(enabled)
-    
-    return {
-        "success": True,
-        "soft_limits_enabled": enabled,
-    }
+    if isinstance(device, RobotArmDevice):
+        device.set_soft_limits_enabled(enabled)
+        return {
+            "success": True,
+            "soft_limits_enabled": enabled,
+        }
+
+    if isinstance(device, GrblDevice):
+        settings = await device.get_grbl_settings()
+        if enabled and int(round(settings.get(22, 0))) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Soft limits csak homing engedélyezése után kapcsolható be ($22=1 szükséges).",
+            )
+
+        # GRBL/grblHAL soft limits: $20 (0/1)
+        ok = await device.set_grbl_setting(20, 1 if enabled else 0)
+        if not ok:
+            raise HTTPException(status_code=500, detail="GRBL $20 beállítás sikertelen (ellenőrizd Alarm/E-Stop állapotot)")
+
+        # Verify effective state from controller settings if available.
+        settings = await device.get_grbl_settings()
+        value = settings.get(20, 1 if enabled else 0)
+        return {
+            "success": True,
+            "soft_limits_enabled": bool(int(round(value))),
+        }
+
+    raise HTTPException(status_code=400, detail="Az eszköz nem támogatja a szoftveres limiteket")
 
 
 @app.get("/devices/{device_id}/soft-limits")
@@ -1332,12 +1394,27 @@ async def get_soft_limits(device_id: str):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
-    if not isinstance(device, RobotArmDevice):
-        raise HTTPException(status_code=400, detail="Csak robotkar eszközök támogatják a szoftveres limiteket")
-    
-    return {
-        "soft_limits_enabled": device.get_soft_limits_enabled(),
-    }
+    if isinstance(device, RobotArmDevice):
+        return {
+            "soft_limits_enabled": device.get_soft_limits_enabled(),
+        }
+
+    if isinstance(device, GrblDevice):
+        # Read GRBL settings and expose $20 as generic soft-limits state.
+        settings = await device.get_grbl_settings()
+        value = settings.get(20)
+        if value is None:
+            # Fallback to cached settings when controller readback is unavailable.
+            cached = getattr(device, "_grbl_settings", None)
+            if cached is not None:
+                value = 1.0 if cached.soft_limits else 0.0
+        if value is None:
+            value = 0.0
+        return {
+            "soft_limits_enabled": bool(int(round(value))),
+        }
+
+    raise HTTPException(status_code=400, detail="Az eszköz nem támogatja a szoftveres limiteket")
 
 
 @app.post("/devices/{device_id}/reload-config")

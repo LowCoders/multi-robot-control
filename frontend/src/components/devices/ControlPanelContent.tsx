@@ -211,6 +211,12 @@ export default function ControlPanelContent({
             <div className="card-body space-y-4">
               {device.status && (
                 <>
+                  {isAlarm && (
+                    <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                      {device.status.error_message || 'Alarm aktív, részletek nem érhetők el.'}
+                    </div>
+                  )}
+
                   <PositionDisplay 
                     position={device.status.work_position} 
                     machineConfig={machineConfig}

@@ -111,6 +111,17 @@ class GrblDevice(GrblDeviceBase):
         self._capabilities.supports_streaming_jog = self._protocol.supports_streaming_jog
         self._capabilities.supports_hard_jog_stop = True
 
+    def _looks_like_grbl_identity(self, response: str) -> bool:
+        """Best-effort GRBL/grblHAL identity check from startup or $I response."""
+        if not response:
+            return False
+        lowered = response.lower()
+        return (
+            "grbl" in response
+            or "[ver:" in lowered
+            or "[firmware:grblhal]" in lowered
+        )
+
     # =========================================
     # KAPCSOLAT KEZELÉS
     # =========================================
@@ -133,14 +144,28 @@ class GrblDevice(GrblDeviceBase):
             
             # Üdvözlő üzenet olvasása
             response = await self._read_response()
-            if "Grbl" not in response:
+            if not self._looks_like_grbl_identity(response):
+                # grblHAL boards often provide identity reliably via $I
+                # even if reset banner was not captured on connect.
+                try:
+                    info_response = await self._send_command("$I")
+                    response = "\n".join(
+                        part for part in (response, info_response) if part
+                    ).strip()
+                except Exception:
+                    pass
+            if not self._looks_like_grbl_identity(response):
                 raise ConnectionError(f"Nem GRBL eszköz: {response}")
             
             # GRBL verzió kinyerése
             match = self.GRBL_WELCOME_PATTERN.search(response)
             if match:
                 self._grbl_version = match.group(1)
-            elif "grblhal" in response.lower():
+            else:
+                ver_match = re.search(r"\[VER:(\d+\.\d+\w*)", response, re.IGNORECASE)
+                if ver_match:
+                    self._grbl_version = ver_match.group(1)
+            if not self._grbl_version and "grblhal" in response.lower():
                 # grblHAL fallback: protocol feature set is GRBL 1.1+.
                 self._grbl_version = "1.1h"
             self._protocol = resolve_grbl_protocol(self._grbl_version)

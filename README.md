@@ -1,5 +1,9 @@
 # Multi-Robot Control System
 
+> [!WARNING]
+> Ez a projekt jelenleg development (fejlesztési) állapotban van.
+> Production környezetben történő használata nem támogatott és nem ajánlott.
+
 Bővíthető, moduláris robotvezérlő rendszer LinuxCNC és GRBL eszközökhöz, webes felülettel, 3D vizualizációval és eseményvezérelt automatizálással.
 
 ## Főbb Funkciók
@@ -61,6 +65,7 @@ Web interface: http://localhost:5173
 - [API Referencia](docs/api-reference.md)
 - [Új Eszköz Hozzáadása](docs/adding-devices.md)
 - [Automatizálási Szabályok](docs/automation-rules.md)
+- [Tube Bender grblHAL Wiring](docs/tube-bender-grblhal-wiring.md)
 
 ## Licenc
 

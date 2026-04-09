@@ -129,6 +129,7 @@ GRBL_ERROR_CODES = {
     22: "Homing fail - axis not moving",
     23: "Homing fail - limits engaged",
     24: "Homing fail - cycle failed",
+    79: "Not allowed while critical event is active (E-stop or motor fault)",
 }
 
 # GRBL alarm kódok
@@ -177,6 +178,7 @@ class GrblDeviceBase(SerialDeviceBase):
     GRBL_MPOS_PATTERN = re.compile(
         r"MPos:(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
     )
+    GRBL_PN_PATTERN = re.compile(r"\|Pn:([A-Z]+)")
     
     # Full status pattern for compatibility
     GRBL_STATUS_PATTERN = re.compile(
@@ -377,6 +379,7 @@ class GrblDeviceBase(SerialDeviceBase):
             state_match = self.GRBL_STATE_PATTERN.search(response)
             mpos_match = self.GRBL_MPOS_PATTERN.search(response)
             wpos_match = self.GRBL_WPOS_PATTERN.search(response)
+            pn_match = self.GRBL_PN_PATTERN.search(response)
             
             if state_match:
                 raw_state = state_match.group(1)
@@ -406,6 +409,7 @@ class GrblDeviceBase(SerialDeviceBase):
                 # Update internal state
                 self._status.position = mpos
                 self._status.work_position = wpos
+                pin_flags = pn_match.group(1) if pn_match else ""
                 
                 # Update device state
                 try:
@@ -415,6 +419,40 @@ class GrblDeviceBase(SerialDeviceBase):
                         self._set_state(new_state)
                 except ValueError:
                     pass
+
+                # Keep a human-readable reason on alarm-like states so frontend can show root cause.
+                if base_state in ("Alarm", "Door", "EStop"):
+                    details = []
+                    if ":" in raw_state:
+                        subcode = raw_state.split(":", 1)[1]
+                        if subcode.isdigit():
+                            alarm_desc = GRBL_ALARM_CODES.get(int(subcode))
+                            if alarm_desc:
+                                details.append(f"Alarm:{subcode} ({alarm_desc})")
+                            else:
+                                details.append(f"Alarm:{subcode}")
+                    if "E" in pin_flags:
+                        details.append("E-STOP bemenet aktív (Pn:E)")
+                    if "D" in pin_flags:
+                        details.append("Safety door bemenet aktív (Pn:D)")
+                    if "P" in pin_flags:
+                        details.append("Probe bemenet aktív (Pn:P)")
+                    if "O" in pin_flags:
+                        details.append("Probe disconnect jel aktív (Pn:O)")
+                    if "Q" in pin_flags:
+                        details.append("Single block aktív (Pn:Q)")
+
+                    self._status.error_message = (
+                        " | ".join(details)
+                        if details
+                        else (
+                            f"{base_state} állapot aktív "
+                            "(a vezérlő nem adott részletes Pn/Alarm kódot)"
+                        )
+                    )
+                elif self._status.state != DeviceState.ALARM:
+                    # Avoid stale alarm reasons after recovery.
+                    self._status.error_message = None
                 
                 # Position callback
                 if self.on_position_update:

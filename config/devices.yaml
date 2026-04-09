@@ -90,7 +90,7 @@ devices:
       baudrate: 115200
 
   # =====================================================
-  # Csőhajlító - ESP32 Standalone
+  # Csőhajlító - grblHAL (ESP32-S3)
   # =====================================================
   - id: tube_bender_1
     name: "Csőhajlító"
