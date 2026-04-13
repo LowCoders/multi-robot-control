@@ -111,16 +111,51 @@ class GrblDevice(GrblDeviceBase):
         self._capabilities.supports_streaming_jog = self._protocol.supports_streaming_jog
         self._capabilities.supports_hard_jog_stop = True
 
+    def _connect_diag(self, phase: str, **fields: Any) -> None:
+        """Emit concise connection diagnostics for recurring handshake issues."""
+        details = ", ".join(f"{k}={v!r}" for k, v in fields.items())
+        if details:
+            print(f"[GRBL_CONNECT:{self.device_id}] {phase} | {details}")
+        else:
+            print(f"[GRBL_CONNECT:{self.device_id}] {phase}")
+
     def _looks_like_grbl_identity(self, response: str) -> bool:
         """Best-effort GRBL/grblHAL identity check from startup or $I response."""
         if not response:
             return False
         lowered = response.lower()
         return (
-            "grbl" in response
+            bool(re.search(r"\bgrbl(?:hal)?\s+\d+\.\d+\w*", response, re.IGNORECASE))
             or "[ver:" in lowered
             or "[firmware:grblhal]" in lowered
         )
+
+    def _looks_like_grbl_status_signature(self, response: str) -> bool:
+        """
+        Detect status-only GRBL streams (e.g. '<Idle|MPos:...|OWN:panel|...>').
+        This is used as a controlled fallback when banner/$I is not visible.
+        """
+        if not response:
+            return False
+
+        lines = [line.strip() for line in response.splitlines() if line.strip()]
+        if not lines:
+            return False
+
+        frames = [line for line in lines if line.startswith("<") and line.endswith(">")]
+        if len(frames) != len(lines):
+            return False
+
+        state_prefix = re.compile(r"^<[A-Za-z]+(?:[:][0-9]+)?[,|]")
+        for frame in frames:
+            if not state_prefix.match(frame):
+                return False
+            if "MPos:" not in frame:
+                return False
+            if not any(marker in frame for marker in ("|Bf:", "|F:", "|WCO:", "|Ov:", "|OWN:", "|Pn:")):
+                return False
+
+        return True
 
     # =========================================
     # KAPCSOLAT KEZELÉS
@@ -129,6 +164,14 @@ class GrblDevice(GrblDeviceBase):
     async def connect(self) -> bool:
         """GRBL eszközhöz csatlakozás"""
         try:
+            if self._connected and self.is_serial_open:
+                self._connect_diag("connect_skip_already_connected", port=self.port)
+                return True
+            if self.is_serial_open and not self._connected:
+                self._connect_diag("connect_close_stale_handle", port=self.port)
+                await self._close_serial()
+
+            self._connect_diag("connect_begin", port=self.port, baudrate=self.baudrate)
             self._set_state(DeviceState.CONNECTING)
             
             # Serial port megnyitása
@@ -144,7 +187,11 @@ class GrblDevice(GrblDeviceBase):
             
             # Üdvözlő üzenet olvasása
             response = await self._read_response()
-            if not self._looks_like_grbl_identity(response):
+            self._connect_diag("reset_read", response_sample=response[:240], response_len=len(response))
+            identity_detected = self._looks_like_grbl_identity(response)
+            status_detected = self._looks_like_grbl_status_signature(response)
+
+            if not identity_detected and not status_detected:
                 # grblHAL boards often provide identity reliably via $I
                 # even if reset banner was not captured on connect.
                 try:
@@ -152,9 +199,20 @@ class GrblDevice(GrblDeviceBase):
                     response = "\n".join(
                         part for part in (response, info_response) if part
                     ).strip()
-                except Exception:
-                    pass
-            if not self._looks_like_grbl_identity(response):
+                    self._connect_diag("id_probe_response", response_sample=info_response[:240], response_len=len(info_response))
+                    identity_detected = self._looks_like_grbl_identity(response)
+                    status_detected = self._looks_like_grbl_status_signature(response)
+                except Exception as exc:
+                    self._connect_diag("id_probe_failed", error=str(exc))
+
+            self._connect_diag(
+                "identity_decision",
+                identity_detected=identity_detected,
+                status_detected=status_detected,
+                combined_sample=response[:240],
+            )
+
+            if not identity_detected and not status_detected:
                 raise ConnectionError(f"Nem GRBL eszköz: {response}")
             
             # GRBL verzió kinyerése
@@ -165,9 +223,10 @@ class GrblDevice(GrblDeviceBase):
                 ver_match = re.search(r"\[VER:(\d+\.\d+\w*)", response, re.IGNORECASE)
                 if ver_match:
                     self._grbl_version = ver_match.group(1)
-            if not self._grbl_version and "grblhal" in response.lower():
+            if not self._grbl_version and ("grblhal" in response.lower() or status_detected):
                 # grblHAL fallback: protocol feature set is GRBL 1.1+.
                 self._grbl_version = "1.1h"
+            self._connect_diag("version_selected", grbl_version=self._grbl_version)
             self._protocol = resolve_grbl_protocol(self._grbl_version)
             self._apply_jog_capabilities()
             
@@ -184,10 +243,12 @@ class GrblDevice(GrblDeviceBase):
             
             # Állapot polling indítása
             self._start_status_polling(interval=0.25)
+            self._connect_diag("connect_success", state=self._status.state.value)
             
             return True
             
         except Exception as e:
+            self._connect_diag("connect_failed", error=str(e))
             self._set_error(f"Csatlakozási hiba: {str(e)}")
             await self.disconnect()
             return False

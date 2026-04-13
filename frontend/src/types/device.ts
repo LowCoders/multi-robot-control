@@ -55,6 +55,7 @@ export interface DeviceCapabilities {
   supports_soft_limits?: boolean
   supports_streaming_jog?: boolean
   supports_hard_jog_stop?: boolean
+  supports_panel_controller?: boolean
   max_feed_rate: number
   max_spindle_speed: number
   max_laser_power: number
@@ -65,6 +66,16 @@ export interface DeviceCapabilities {
   }
   // Per-axis software limits
   axis_limits?: Record<string, AxisLimit>
+}
+
+export interface DeviceControlState {
+  owner: 'host' | 'panel' | 'none'
+  lock_state: 'granted' | 'requested' | 'denied'
+  reason?: string | null
+  version: number
+  last_changed_by?: string
+  requested_owner?: string | null
+  can_take_control?: boolean
 }
 
 export type DeviceState = 
@@ -99,4 +110,5 @@ export interface Device {
   lastError?: string | null
   status?: DeviceStatus
   capabilities?: DeviceCapabilities
+  control?: DeviceControlState
 }

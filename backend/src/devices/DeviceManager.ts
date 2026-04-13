@@ -58,6 +58,7 @@ export interface DeviceCapabilities {
   supports_soft_limits?: boolean;
   supports_streaming_jog?: boolean;
   supports_hard_jog_stop?: boolean;
+  supports_panel_controller?: boolean;
   max_feed_rate: number;
   max_spindle_speed: number;
   max_laser_power: number;
@@ -68,6 +69,16 @@ export interface DeviceCapabilities {
   };
   // Per-axis software limits
   axis_limits?: Record<string, AxisLimit>;
+}
+
+export interface DeviceControlState {
+  owner: 'host' | 'panel' | 'none';
+  lock_state: 'granted' | 'requested' | 'denied';
+  reason?: string | null;
+  version: number;
+  last_changed_by?: string;
+  requested_owner?: string | null;
+  can_take_control?: boolean;
 }
 
 export interface Device {
@@ -82,6 +93,7 @@ export interface Device {
   lastError?: string | null;
   status?: DeviceStatus;
   capabilities?: DeviceCapabilities;
+  control?: DeviceControlState;
 }
 
 export class DeviceManager {
@@ -92,9 +104,11 @@ export class DeviceManager {
   private stateManager: StateManager;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private statusPollTimer: NodeJS.Timeout | null = null;
+  private autoClaimAttemptAt: Map<string, number> = new Map();
   
   // Poll status every 500ms for active jobs
   private static readonly STATUS_POLL_INTERVAL = 500;
+  private static readonly AUTO_CLAIM_THROTTLE_MS = 2500;
   
   constructor(bridgeUrl: string, stateManager: StateManager) {
     this.bridgeUrl = bridgeUrl;
@@ -156,15 +170,49 @@ export class DeviceManager {
       // Only poll status for connected devices
       if (device.connected) {
         try {
-          const status = await this.getDeviceStatus(device.id);
-          if (status) {
-            // Status is already broadcast in updateDeviceStatus
+          await this.getDeviceStatus(device.id);
+          // Ownership can change outside host flow (e.g. panel button takeover),
+          // so poll and broadcast control state as part of periodic refresh too.
+          const control = await this.getDeviceControlState(device.id);
+          if (control) {
+            await this.tryAutoClaimHost(device.id, 'poll');
           }
         } catch (error) {
           // Ignore polling errors, device might be busy
         }
       }
     }
+  }
+
+  private async tryAutoClaimHost(
+    deviceId: string,
+    trigger: 'startup' | 'connect' | 'poll' = 'poll'
+  ): Promise<void> {
+    const device = this.devices.get(deviceId);
+    if (!device || !device.connected) return;
+    if (!device.capabilities?.supports_panel_controller) return;
+    if (!device.control) return;
+    if (device.control.owner !== 'none') return;
+    if (['running', 'paused', 'homing', 'probing', 'jog'].includes(device.state)) return;
+
+    const now = Date.now();
+    const last = this.autoClaimAttemptAt.get(deviceId) || 0;
+    if (trigger === 'poll' && now - last < DeviceManager.AUTO_CLAIM_THROTTLE_MS) {
+      return;
+    }
+    this.autoClaimAttemptAt.set(deviceId, now);
+
+    const result = await this.requestControl(deviceId, 'host', `backend_autoclaim_${trigger}`);
+    if (!result?.state) return;
+    if (result.granted) {
+      this.stateManager.broadcastControlState(deviceId, result.state);
+      return;
+    }
+    this.stateManager.broadcastControlDenied(
+      deviceId,
+      result.reason || 'denied',
+      result.state
+    );
   }
   
   private async connectToBridge(): Promise<void> {
@@ -316,6 +364,25 @@ export class DeviceManager {
           );
         }
         break;
+
+      case 'control_state':
+        if (device_id) {
+          this.handleControlState(
+            device_id,
+            message.control as DeviceControlState
+          );
+        }
+        break;
+
+      case 'control_denied':
+        if (device_id) {
+          this.handleControlDenied(
+            device_id,
+            message.reason as string,
+            message.control as DeviceControlState
+          );
+        }
+        break;
     }
   }
   
@@ -381,6 +448,22 @@ export class DeviceManager {
     
     this.stateManager.broadcastJobProgress(deviceId, progress, currentLine, totalLines);
   }
+
+  private handleControlState(deviceId: string, control: DeviceControlState): void {
+    const device = this.devices.get(deviceId);
+    if (device) {
+      device.control = control;
+    }
+    this.stateManager.broadcastControlState(deviceId, control);
+  }
+
+  private handleControlDenied(deviceId: string, reason: string, control: DeviceControlState): void {
+    const device = this.devices.get(deviceId);
+    if (device) {
+      device.control = control;
+    }
+    this.stateManager.broadcastControlDenied(deviceId, reason, control);
+  }
   
   // =========================================
   // PUBLIC API
@@ -398,6 +481,7 @@ export class DeviceManager {
         simulated?: boolean;
         connectionInfo?: string;
         lastError?: string | null;
+        control?: DeviceControlState;
       }>;
       
       for (const bd of bridgeDevices) {
@@ -408,12 +492,15 @@ export class DeviceManager {
           device.simulated = bd.simulated;
           device.connectionInfo = bd.connectionInfo;
           device.lastError = bd.lastError;
+          device.control = bd.control;
         }
       }
       
       // Capabilities lekérdezése minden eszközhöz (nem csak csatlakozottakhoz)
       for (const bd of bridgeDevices) {
         await this.getDeviceCapabilities(bd.id);
+        await this.getDeviceControlState(bd.id);
+        await this.tryAutoClaimHost(bd.id, 'startup');
       }
     } catch (error) {
       console.error('Eszközök frissítési hiba:', error);
@@ -493,11 +580,84 @@ export class DeviceManager {
       return null;
     }
   }
+
+  async getDeviceControlState(deviceId: string): Promise<DeviceControlState | null> {
+    try {
+      const response = await this.http.get(`/devices/${deviceId}/control/state`);
+      const control = response.data as DeviceControlState;
+      const device = this.devices.get(deviceId);
+      const prev = device?.control ? JSON.stringify(device.control) : null;
+      const next = JSON.stringify(control);
+      if (device) {
+        device.control = control;
+      }
+      if (prev !== next) {
+        this.stateManager.broadcastControlState(deviceId, control);
+      }
+      return control;
+    } catch {
+      return null;
+    }
+  }
+
+  async requestControl(
+    deviceId: string,
+    owner: 'host' | 'panel',
+    requestedBy: string = 'backend_request'
+  ): Promise<{ granted: boolean; reason?: string; state?: DeviceControlState } | null> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/control/request`, {
+        requested_owner: owner,
+        requested_by: requestedBy,
+      });
+      const result = response.data as { granted: boolean; reason?: string; state?: DeviceControlState };
+      if (result.state) {
+        const device = this.devices.get(deviceId);
+        if (device) {
+          device.control = result.state;
+        }
+      }
+      return result;
+    } catch (error) {
+      console.error(`Control request hiba (${deviceId}):`, error);
+      return null;
+    }
+  }
+
+  async releaseControl(
+    deviceId: string,
+    requestedBy: string = 'backend_release'
+  ): Promise<{ granted: boolean; reason?: string; state?: DeviceControlState } | null> {
+    try {
+      const response = await this.http.post(`/devices/${deviceId}/control/release`, {
+        requested_by: requestedBy,
+      });
+      const result = response.data as { granted: boolean; reason?: string; state?: DeviceControlState };
+      if (result.state) {
+        const device = this.devices.get(deviceId);
+        if (device) {
+          device.control = result.state;
+        }
+      }
+      return result;
+    } catch (error) {
+      console.error(`Control release hiba (${deviceId}):`, error);
+      return null;
+    }
+  }
   
   async connectDevice(deviceId: string): Promise<boolean> {
     try {
       const response = await this.http.post(`/devices/${deviceId}/connect`);
-      return response.data.success;
+      const success = Boolean(response.data.success);
+      if (!success) {
+        return false;
+      }
+
+      await this.getDeviceCapabilities(deviceId);
+      await this.getDeviceControlState(deviceId);
+      await this.tryAutoClaimHost(deviceId, 'connect');
+      return true;
     } catch (error) {
       console.error(`Csatlakozási hiba (${deviceId}):`, error);
       return false;

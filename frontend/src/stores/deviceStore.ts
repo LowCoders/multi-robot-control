@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { io, Socket } from 'socket.io-client'
-import type { Device, DeviceStatus, Position, DeviceCapabilities } from '../types/device'
+import type { Device, DeviceStatus, Position, DeviceCapabilities, DeviceControlState } from '../types/device'
 
 interface Notification {
   id: string
@@ -28,6 +28,7 @@ interface DeviceStore {
   updateDevicePosition: (deviceId: string, position: Position) => void
   updateDeviceState: (deviceId: string, state: string) => void
   updateDeviceCapabilities: (deviceId: string, capabilities: DeviceCapabilities) => void
+  updateDeviceControlState: (deviceId: string, control: DeviceControlState) => void
   selectDevice: (deviceId: string | null) => void
   addNotification: (deviceId: string, message: string, severity?: 'info' | 'warning' | 'error') => void
   clearNotification: (id: string) => void
@@ -64,10 +65,20 @@ const SOCKET_EVENTS = [
   'device:position',
   'device:state_change',
   'device:capabilities',
+  'device:control_state',
+  'device:control_denied',
   'device:error',
   'job:progress',
   'job:complete',
 ] as const
+
+function computeCanTakeControl(device: Device, control: DeviceControlState): boolean {
+  if (!device.capabilities?.supports_panel_controller) return false
+  if (control.owner === 'host') return false
+  if (control.lock_state === 'denied') return false
+  if (['running', 'paused', 'homing', 'probing', 'jog'].includes(device.state)) return false
+  return true
+}
 
 export const useDeviceStore = create<DeviceStore>()(
   immer((set, get) => ({
@@ -127,6 +138,21 @@ export const useDeviceStore = create<DeviceStore>()(
 
       socket.on('device:capabilities', (data: { deviceId: string; capabilities: DeviceCapabilities }) => {
         get().updateDeviceCapabilities(data.deviceId, data.capabilities)
+      })
+
+      socket.on('device:control_state', (data: { deviceId: string; control: DeviceControlState }) => {
+        get().updateDeviceControlState(data.deviceId, data.control)
+      })
+
+      socket.on('device:control_denied', (data: { deviceId: string; reason: string; control: DeviceControlState }) => {
+        get().updateDeviceControlState(data.deviceId, data.control)
+        const reasonMap: Record<string, string> = {
+          command_running: 'Vezérlés átvétele elutasítva: futó parancs/program miatt. Próbáld újra a futás vége után vagy reconnect után.',
+          estop: 'Vezérlés átvétele elutasítva: E-STOP aktív.',
+          alarm: 'Vezérlés átvétele elutasítva: alarm állapot.',
+        }
+        const text = reasonMap[data.reason] || `Vezérlés átvétele elutasítva: ${data.reason}`
+        get().addNotification(data.deviceId, text, 'warning')
       })
       
       socket.on('device:error', (data: { deviceId: string; message: string }) => {
@@ -224,6 +250,9 @@ export const useDeviceStore = create<DeviceStore>()(
           device.status = status
           device.state = status.state
           device.connected = status.state !== 'disconnected'
+          if (device.control) {
+            device.control.can_take_control = computeCanTakeControl(device, device.control)
+          }
         }
       })
     },
@@ -262,6 +291,9 @@ export const useDeviceStore = create<DeviceStore>()(
         if (device) {
           device.state = newState as Device['state']
           device.connected = newState !== 'disconnected'
+          if (device.control) {
+            device.control.can_take_control = computeCanTakeControl(device, device.control)
+          }
         }
       })
     },
@@ -271,6 +303,21 @@ export const useDeviceStore = create<DeviceStore>()(
         const device = state.devices.find(d => d.id === deviceId)
         if (device) {
           device.capabilities = capabilities
+          if (device.control) {
+            device.control.can_take_control = computeCanTakeControl(device, device.control)
+          }
+        }
+      })
+    },
+
+    updateDeviceControlState: (deviceId, control) => {
+      set((state) => {
+        const device = state.devices.find(d => d.id === deviceId)
+        if (device) {
+          device.control = {
+            ...control,
+            can_take_control: computeCanTakeControl(device, control),
+          }
         }
       })
     },

@@ -16,9 +16,44 @@ void GrblParser::ingestLine(const String &line) {
 }
 
 void GrblParser::parseStatus(const String &line) {
+  // Use explicit fallback values on each status frame to avoid stale ownership.
+  _status.owner = "none";
+  _status.ownerReason = "";
+  _status.ownerVersion = 0;
+
   int firstPipe = line.indexOf('|');
   if (firstPipe > 1) {
     _status.state = line.substring(1, firstPipe);
+  }
+
+  int ownAt = line.indexOf("|OWN:");
+  if (ownAt >= 0) {
+    int ownStart = ownAt + 5;
+    int ownEnd = line.indexOf('|', ownStart);
+    if (ownEnd < 0) {
+      ownEnd = line.length() - 1;
+    }
+    _status.owner = line.substring(ownStart, ownEnd);
+  }
+
+  int ownReasonAt = line.indexOf("|OWNR:");
+  if (ownReasonAt >= 0) {
+    int reasonStart = ownReasonAt + 6;
+    int reasonEnd = line.indexOf('|', reasonStart);
+    if (reasonEnd < 0) {
+      reasonEnd = line.length() - 1;
+    }
+    _status.ownerReason = line.substring(reasonStart, reasonEnd);
+  }
+
+  int ownVersionAt = line.indexOf("|OWNV:");
+  if (ownVersionAt >= 0) {
+    int versionStart = ownVersionAt + 6;
+    int versionEnd = line.indexOf('|', versionStart);
+    if (versionEnd < 0) {
+      versionEnd = line.length() - 1;
+    }
+    _status.ownerVersion = static_cast<uint32_t>(line.substring(versionStart, versionEnd).toInt());
   }
 
   int mposAt = line.indexOf("MPos:");

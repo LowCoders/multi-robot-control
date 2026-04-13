@@ -66,6 +66,7 @@ export interface DriverConfig {
   grblSettings?: Record<string, number>
   homePosition?: HomePositionConfig
   closedLoop?: ClosedLoopConfig
+  supportsPanelController?: boolean
 }
 
 export interface SpindleConfig {

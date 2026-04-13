@@ -83,10 +83,45 @@ export function setupWebSocket(
               if (capabilities) {
                 stateManager.broadcastCapabilities(deviceId, capabilities);
               }
+              const control = await deviceManager.getDeviceControlState(deviceId);
+              if (control) {
+                stateManager.broadcastControlState(deviceId, control);
+              }
             }
             break;
           case 'disconnect':
             success = await deviceManager.disconnectDevice(deviceId);
+            break;
+          case 'take_control':
+            {
+              const requestedOwner = (params?.owner as 'host' | 'panel') || 'host';
+              const result = await deviceManager.requestControl(
+                deviceId,
+                requestedOwner,
+                'host_takeback'
+              );
+              success = result?.granted === true;
+              if (result?.state) {
+                if (success) {
+                  stateManager.broadcastControlState(deviceId, result.state);
+                } else {
+                  stateManager.broadcastControlDenied(
+                    deviceId,
+                    result.reason || 'denied',
+                    result.state
+                  );
+                }
+              }
+            }
+            break;
+          case 'release_control':
+            {
+              const result = await deviceManager.releaseControl(deviceId, 'host_release');
+              success = result?.granted === true;
+              if (result?.state) {
+                stateManager.broadcastControlState(deviceId, result.state);
+              }
+            }
             break;
         }
       } catch (error) {

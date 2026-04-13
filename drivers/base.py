@@ -87,6 +87,7 @@ class DeviceCapabilities:
     supports_soft_limits: bool = False
     supports_streaming_jog: bool = False
     supports_hard_jog_stop: bool = False
+    supports_panel_controller: bool = False
     max_feed_rate: float = 1000.0  # mm/min
     max_spindle_speed: float = 0.0  # RPM
     max_laser_power: float = 0.0  # %
@@ -115,6 +116,7 @@ class DeviceCapabilities:
             "supports_soft_limits": self.supports_soft_limits,
             "supports_streaming_jog": self.supports_streaming_jog,
             "supports_hard_jog_stop": self.supports_hard_jog_stop,
+            "supports_panel_controller": self.supports_panel_controller,
             "max_feed_rate": self.max_feed_rate,
             "max_spindle_speed": self.max_spindle_speed,
             "max_laser_power": self.max_laser_power,
@@ -505,6 +507,12 @@ class DeviceDriver(ABC):
         Opcionális agresszív jog stop (feed hold + reset jelleg).
         """
         return await self.jog_stop()
+
+    async def send_realtime_command(self, command: int) -> bool:
+        """
+        Opcionális egybájtos GRBL realtime parancs küldése.
+        """
+        return False
     
     # =========================================
     # ROBOT ARM SPECIFIC - OPCIONÁLIS

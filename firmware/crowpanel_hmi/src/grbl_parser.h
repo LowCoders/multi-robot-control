@@ -6,6 +6,9 @@
 struct GrblStatus {
   String state = "Unknown";
   std::vector<float> axes;
+  String owner = "none";
+  String ownerReason = "";
+  uint32_t ownerVersion = 0;
   bool valid = false;
 };
 

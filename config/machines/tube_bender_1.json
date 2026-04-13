@@ -66,6 +66,7 @@
   "driverConfig": {
     "protocol": "grbl",
     "maxFeedRate": 50000,
+    "supportsPanelController": true,
     "stepsPerMmPush": 80,
     "stepsPerDegBend": 17.78,
     "stepsPerDegRotate": 8.89,

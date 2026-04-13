@@ -3,7 +3,7 @@
  */
 
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { DeviceStatus } from '../devices/DeviceManager.js';
+import { DeviceStatus, DeviceControlState } from '../devices/DeviceManager.js';
 
 export interface ClientInfo {
   id: string;
@@ -159,6 +159,23 @@ export class StateManager {
     this.broadcastToAll('device:capabilities', {
       deviceId,
       capabilities,
+    });
+  }
+
+  broadcastControlState(deviceId: string, control: DeviceControlState): void {
+    this.broadcastToAll('device:control_state', {
+      deviceId,
+      control,
+      timestamp: Date.now(),
+    });
+  }
+
+  broadcastControlDenied(deviceId: string, reason: string, control: DeviceControlState): void {
+    this.broadcastToAll('device:control_denied', {
+      deviceId,
+      reason,
+      control,
+      timestamp: Date.now(),
     });
   }
   

@@ -754,6 +754,59 @@ export function createApiRoutes(
     res.json(capabilities);
   });
 
+  router.get('/devices/:id/control/state', asyncHandler(async (req: Request, res: Response) => {
+    const control = await deviceManager.getDeviceControlState(req.params.id);
+    if (!control) {
+      res.status(404).json({ error: 'Control state nem érhető el' });
+      return;
+    }
+    res.json(control);
+  }));
+
+  router.post('/devices/:id/control/request', asyncHandler(async (req: Request, res: Response) => {
+    const requestedOwnerRaw = req.body?.requested_owner;
+    if (requestedOwnerRaw !== 'host' && requestedOwnerRaw !== 'panel') {
+      res.status(400).json({ error: 'requested_owner csak host vagy panel lehet' });
+      return;
+    }
+    const result = await deviceManager.requestControl(
+      req.params.id,
+      requestedOwnerRaw,
+      req.body?.requested_by || 'api_request'
+    );
+    if (!result) {
+      res.status(500).json({ error: 'Control request sikertelen' });
+      return;
+    }
+    if (result.state) {
+      if (result.granted) {
+        stateManager.broadcastControlState(req.params.id, result.state);
+      } else {
+        stateManager.broadcastControlDenied(
+          req.params.id,
+          result.reason || 'denied',
+          result.state
+        );
+      }
+    }
+    res.json(result);
+  }));
+
+  router.post('/devices/:id/control/release', asyncHandler(async (req: Request, res: Response) => {
+    const result = await deviceManager.releaseControl(
+      req.params.id,
+      req.body?.requested_by || 'api_release'
+    );
+    if (!result) {
+      res.status(500).json({ error: 'Control release sikertelen' });
+      return;
+    }
+    if (result.state) {
+      stateManager.broadcastControlState(req.params.id, result.state);
+    }
+    res.json(result);
+  }));
+
   // Soft limits state (robot arm)
   router.get('/devices/:id/soft-limits', asyncHandler(async (req: Request, res: Response) => {
     const data = await deviceManager.getSoftLimits(req.params.id);

@@ -854,6 +854,31 @@ export default function MachineConfigTab({
                   />
                 </div>
 
+                <div className="flex items-center justify-between rounded bg-steel-800/40 px-3 py-2">
+                  <div>
+                    <div className="text-xs text-steel-300">Panel controller támogatás</div>
+                    <div className="text-[11px] text-steel-500">
+                      Engedélyezve esetén ownership lock kezelhető host/panel között.
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.driverConfig?.supportsPanelController ?? false}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          driverConfig: {
+                            ...config.driverConfig,
+                            supportsPanelController: e.target.checked,
+                          },
+                        })
+                      }
+                      className="w-4 h-4 rounded bg-steel-700 border-steel-600"
+                    />
+                  </label>
+                </div>
+
                 {/* Hold / Enable behavior for GRBL */}
                 {config.driverConfig?.protocol === 'grbl' && (
                   <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">

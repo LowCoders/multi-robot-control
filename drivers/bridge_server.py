@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import threading
+import time
 from typing import Dict, Optional, Any, List
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -25,6 +26,7 @@ from grbl_driver import GrblDevice
 from linuxcnc_driver import LinuxCNCDevice
 from robot_arm_driver import RobotArmDevice
 from simulated_device import SimulatedDevice, SimulationMode
+from control_lock_decorator import ControlLockDecorator
 from usb_port_resolver import UsbIdentifier, resolve_port, list_usb_devices
 
 # Machine config path
@@ -33,6 +35,11 @@ CONNECT_TIMEOUT_SECONDS = float(os.environ.get("DEVICE_CONNECT_TIMEOUT_SECONDS",
 STARTUP_CONNECT_TIMEOUT_SECONDS = float(
     os.environ.get("DEVICE_STARTUP_CONNECT_TIMEOUT_SECONDS", "15.0")
 )
+RT_OWN_CLAIM_HOST = 0x8D
+RT_OWN_REQUEST_PANEL = 0x8E
+RT_OWN_RELEASE = 0x8F
+RT_OWN_QUERY = 0xA5
+DEBUG_LOG_PATH = "/web/multi-robot-control/.cursor/debug-e190d9.log"
 
 # Szimulációs mód már csak eszközönként (devices.yaml simulated mezője)
 
@@ -135,6 +142,7 @@ def extract_driver_config(machine_config: Dict[str, Any]) -> Dict[str, Any]:
         'closed_loop': closed_loop,
         'robot_config': robot_config,
         'max_feed_rate': driver_cfg.get('maxFeedRate'),
+        'supports_panel_controller': bool(driver_cfg.get('supportsPanelController', False)),
         'protocol': driver_cfg.get('protocol'),
         'grbl_settings': driver_cfg.get('grblSettings'),
     }
@@ -196,6 +204,17 @@ class FileRequest(BaseModel):
 class OverrideRequest(BaseModel):
     """Override kérés"""
     percent: float
+
+
+class ControlRequest(BaseModel):
+    """Ownership váltási kérés"""
+    requested_owner: str
+    requested_by: Optional[str] = None
+
+
+class ControlReleaseRequest(BaseModel):
+    """Ownership elengedés"""
+    requested_by: Optional[str] = None
 
 
 # =========================================
@@ -373,6 +392,15 @@ class DeviceManager:
                     protocol=driver_cfg.get('protocol') or config.config.get('protocol', 'grbl'),
                     grbl_settings=startup_grbl_settings,
                 )
+                supports_panel_controller = bool(
+                    driver_cfg.get('supports_panel_controller')
+                    if driver_cfg.get('supports_panel_controller') is not None
+                    else config.config.get('supports_panel_controller', False)
+                )
+                device = ControlLockDecorator(
+                    device,
+                    supports_panel_controller=supports_panel_controller,
+                )
                 connection_info = port
                 print(f"🔧 Csőhajlító eszköz: {config.name} ({port}) [GRBL adapter]")
             else:
@@ -430,9 +458,16 @@ class DeviceManager:
                 pid=usb_config.get('pid'),
                 location=usb_config.get('location'),
             )
-            return resolve_port(usb=usb_id, fallback_port=fallback_port)
+            resolved = resolve_port(usb=usb_id, fallback_port=fallback_port)
+            print(
+                f"[CONNECT_PORT:{config.id}] resolved={resolved}, fallback={fallback_port}, "
+                f"usb_serial={usb_id.serial_number}, usb_vid={usb_id.vid}, usb_pid={usb_id.pid}, usb_location={usb_id.location}"
+            )
+            return resolved
         
-        return fallback_port or '/dev/ttyUSB0'
+        resolved = fallback_port or '/dev/ttyUSB0'
+        print(f"[CONNECT_PORT:{config.id}] resolved={resolved}, fallback_only=true")
+        return resolved
     
     def get_device(self, device_id: str) -> Optional[DeviceDriver]:
         """Eszköz lekérdezése ID alapján"""
@@ -443,10 +478,41 @@ class DeviceManager:
         results = {}
         for device_id, device in self.devices.items():
             try:
-                results[device_id] = await asyncio.wait_for(
+                device_port = getattr(device, "port", "n/a")
+                print(f"[CONNECT_ALL:{device_id}] begin port={device_port}")
+                connected = await asyncio.wait_for(
                     device.connect(),
                     timeout=STARTUP_CONNECT_TIMEOUT_SECONDS,
                 )
+                results[device_id] = connected
+                print(f"[CONNECT_ALL:{device_id}] result connected={connected}")
+
+                if connected:
+                    try:
+                        claim = await _auto_claim_host_if_supported(
+                            device_id=device_id,
+                            device=device,
+                            changed_by="bridge_startup_connect_claim",
+                            retries=1,
+                        )
+                        if claim.get("attempted"):
+                            control = claim.get("state") or {}
+                            if control:
+                                if claim.get("granted"):
+                                    await self._broadcast_control_state(device_id, control)
+                                else:
+                                    await self._broadcast_control_denied(
+                                        device_id,
+                                        str(claim.get("reason") or "denied"),
+                                        control,
+                                    )
+                            print(
+                                f"🔐 Startup ownership sync ({device_id}): "
+                                f"sent={claim.get('sent')}, granted={claim.get('granted')}, "
+                                f"owner={(control or {}).get('owner')}, reason={(control or {}).get('reason')}"
+                            )
+                    except Exception as e:
+                        print(f"⚠️ Startup ownership claim hiba ({device_id}): {e}")
             except asyncio.TimeoutError:
                 print(
                     f"Csatlakozási timeout ({device_id}): {STARTUP_CONNECT_TIMEOUT_SECONDS:.1f}s"
@@ -547,6 +613,30 @@ class DeviceManager:
             "total_lines": total_lines,
         })
 
+    def get_control_state(self, device_id: str) -> Optional[Dict[str, Any]]:
+        device = self.get_device(device_id)
+        if not device or not hasattr(device, "get_control_state"):
+            return None
+        try:
+            return device.get_control_state()
+        except Exception:
+            return None
+
+    async def _broadcast_control_state(self, device_id: str, control: Dict[str, Any]) -> None:
+        await self._broadcast({
+            "type": "control_state",
+            "device_id": device_id,
+            "control": control,
+        })
+
+    async def _broadcast_control_denied(self, device_id: str, reason: str, control: Dict[str, Any]) -> None:
+        await self._broadcast({
+            "type": "control_denied",
+            "device_id": device_id,
+            "reason": reason,
+            "control": control,
+        })
+
 
 # =========================================
 # GLOBAL DEVICE MANAGER
@@ -559,6 +649,158 @@ _active_test_events: Dict[str, threading.Event] = {}
 
 # Aktív tesztek napló bejegyzései (device_id -> list[dict]) - a teszt objektum _log_entries listája
 _active_test_progress: Dict[str, list] = {}
+_debug_last_status_snapshot: Dict[str, Any] = {}
+
+
+def _debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: Dict[str, Any]) -> None:
+    # region agent log
+    payload = {
+        "sessionId": "e190d9",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # endregion
+
+
+def _debug_log_status_if_changed(device_id: str, status: DeviceStatus, control: Optional[Dict[str, Any]]) -> None:
+    if device_id != "tube_bender_1":
+        return
+    owner = str((control or {}).get("owner", "none"))
+    snapshot = (
+        status.state.value,
+        owner,
+        round(status.position.x, 3),
+        round(status.position.y, 3),
+        round(status.position.z, 3),
+        status.error_message or "",
+    )
+    if _debug_last_status_snapshot.get(device_id) == snapshot:
+        return
+    _debug_last_status_snapshot[device_id] = snapshot
+    _debug_log(
+        run_id="panel-step-debug-1",
+        hypothesis_id="H2_H3_H4",
+        location="bridge_server.py:get_device_status",
+        message="Status/control snapshot changed",
+        data={
+            "device_id": device_id,
+            "state": status.state.value,
+            "owner": owner,
+            "position": {
+                "x": round(status.position.x, 3),
+                "y": round(status.position.y, 3),
+                "z": round(status.position.z, 3),
+            },
+            "error_message": status.error_message,
+        },
+    )
+
+
+async def _sync_control_from_firmware(device: Any, changed_by: str) -> Optional[Dict[str, Any]]:
+    """
+    Refresh decorator control state from firmware ownership fields.
+    Returns control dict if sync is possible, otherwise None.
+    """
+    if not hasattr(device, "sync_firmware_owner"):
+        return None
+
+    # Pull a fresh status first so ownership getters are up to date.
+    try:
+        await device.get_status()
+    except Exception:
+        pass
+
+    # Prefer explicit owner getters when available.
+    owner_getter = getattr(device, "get_control_owner", None)
+    reason_getter = getattr(device, "get_control_owner_reason", None)
+    version_getter = getattr(device, "get_control_owner_version", None)
+    if callable(owner_getter):
+        owner = owner_getter() or "none"
+        reason = reason_getter() if callable(reason_getter) else None
+        version = version_getter() if callable(version_getter) else None
+        return device.sync_firmware_owner(
+            owner=owner,
+            reason=reason,
+            version=version,
+            changed_by=changed_by,
+        )
+
+    # Fallback for wrappers exposing already-synced control state.
+    state_getter = getattr(device, "get_control_state", None)
+    if callable(state_getter):
+        try:
+            control = state_getter() or {}
+            if control:
+                return control
+        except Exception:
+            pass
+
+    return None
+
+
+async def _auto_claim_host_if_supported(
+    device_id: str,
+    device: Any,
+    changed_by: str,
+    retries: int = 1,
+) -> Dict[str, Any]:
+    """Attempt host ownership claim with a small retry budget."""
+    result: Dict[str, Any] = {
+        "attempted": False,
+        "supported": False,
+        "sent": False,
+        "granted": False,
+        "reason": None,
+        "state": {},
+    }
+
+    if not hasattr(device, "send_realtime_command"):
+        return result
+
+    capabilities = await device.get_capabilities()
+    supports_panel_controller = bool(
+        getattr(capabilities, "supports_panel_controller", False)
+    )
+    result["supported"] = supports_panel_controller
+    if not supports_panel_controller:
+        return result
+
+    result["attempted"] = True
+    for _ in range(max(0, retries) + 1):
+        sent = bool(await device.send_realtime_command(RT_OWN_CLAIM_HOST))
+        await device.send_realtime_command(RT_OWN_QUERY)
+        control = await _sync_control_from_firmware(
+            device,
+            changed_by=changed_by,
+        ) or {}
+        owner = str(control.get("owner", "none")).lower()
+        lock_state = str(control.get("lock_state", "")).lower()
+        reason = str(control.get("reason") or "") or None
+        granted = bool(sent and owner == "host" and lock_state == "granted")
+        result.update({
+            "sent": sent,
+            "granted": granted,
+            "reason": reason,
+            "state": control,
+        })
+        if sent and not granted and not reason:
+            # Command path appears alive at transport level, but firmware state did not
+            # acknowledge ownership change (owner/reason unchanged).
+            result["reason"] = "firmware_no_ownership_ack"
+        if granted or reason == "command_running":
+            break
+        await asyncio.sleep(0.15)
+
+    return result
 
 
 # =========================================
@@ -631,6 +873,7 @@ async def list_devices():
     devices = []
     for device_id, device in device_manager.devices.items():
         metadata = device_manager.device_metadata.get(device_id)
+        control = device_manager.get_control_state(device_id)
         devices.append({
             "id": device_id,
             "name": device.device_name,
@@ -640,6 +883,7 @@ async def list_devices():
             "simulated": metadata.simulated if metadata else True,
             "connectionInfo": metadata.connection_info if metadata else "",
             "lastError": metadata.last_error if metadata else None,
+            "control": control,
         })
     return {"devices": devices}
 
@@ -683,6 +927,11 @@ async def get_device_status(device_id: str):
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
     status = await device.get_status()
+    _debug_log_status_if_changed(
+        device_id=device_id,
+        status=status,
+        control=device_manager.get_control_state(device_id),
+    )
     return status.to_dict()
 
 
@@ -697,6 +946,158 @@ async def get_device_capabilities(device_id: str):
     return capabilities.to_dict()
 
 
+@app.get("/devices/{device_id}/control/state")
+async def get_device_control_state(device_id: str):
+    """Ownership lock állapot lekérdezése"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    if not hasattr(device, "get_control_state"):
+        raise HTTPException(status_code=400, detail="Az eszköz nem támogat ownership lockot")
+
+    return device.get_control_state()
+
+
+@app.post("/devices/{device_id}/control/request")
+async def request_device_control(device_id: str, request: ControlRequest):
+    """Ownership kérés (host|panel)"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    if not hasattr(device, "request_control"):
+        raise HTTPException(status_code=400, detail="Az eszköz nem támogat ownership lockot")
+
+    requested_owner = (request.requested_owner or "").strip().lower()
+
+    # Firmware is the source of truth for panel-enabled devices:
+    # use realtime ownership commands, then sync decorator state from status.
+    if hasattr(device, "send_realtime_command"):
+        try:
+            capabilities = await device.get_capabilities()
+            supports_panel_controller = bool(
+                getattr(capabilities, "supports_panel_controller", False)
+            )
+            if supports_panel_controller:
+                cmd = None
+                if requested_owner == "host":
+                    cmd = RT_OWN_CLAIM_HOST
+                elif requested_owner == "panel":
+                    cmd = RT_OWN_REQUEST_PANEL
+                else:
+                    raise HTTPException(status_code=400, detail="Érvénytelen ownership kérés")
+
+                sent = await device.send_realtime_command(cmd)
+                await device.send_realtime_command(RT_OWN_QUERY)
+                control = await _sync_control_from_firmware(
+                    device,
+                    changed_by=request.requested_by or "api_request_rt",
+                )
+                if control is None and hasattr(device, "get_control_state"):
+                    control = device.get_control_state()
+                if control is None:
+                    control = {}
+
+                owner_ok = str(control.get("owner", "")).lower() == requested_owner
+                lock_ok = str(control.get("lock_state", "")).lower() == "granted"
+                granted = bool(sent and owner_ok and lock_ok)
+                reason = str(control.get("reason") or "denied")
+                if reason == "denied" and sent and str(control.get("owner", "none")).lower() == "none":
+                    reason = "firmware_no_ownership_ack"
+                result = {
+                    "granted": granted,
+                    "reason": None if granted else reason,
+                    "state": control,
+                }
+                if granted:
+                    await device_manager._broadcast_control_state(device_id, control)
+                else:
+                    await device_manager._broadcast_control_denied(
+                        device_id,
+                        reason,
+                        control,
+                    )
+                _debug_log(
+                    run_id="panel-step-debug-1",
+                    hypothesis_id="H1_H2",
+                    location="bridge_server.py:request_device_control",
+                    message="Ownership request processed",
+                    data={
+                        "device_id": device_id,
+                        "requested_owner": requested_owner,
+                        "granted": granted,
+                        "reason": result.get("reason"),
+                        "state_owner": control.get("owner"),
+                        "state_reason": control.get("reason"),
+                    },
+                )
+                return result
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"⚠️ Firmware ownership request hiba ({device_id}): {e}")
+
+    # Fallback for non-panel devices or drivers without realtime ownership.
+    result = device.request_control(
+        requested_owner=request.requested_owner,
+        requested_by=request.requested_by or "api_request",
+    )
+    control = result.get("state", {})
+    if result.get("granted"):
+        await device_manager._broadcast_control_state(device_id, control)
+    else:
+        await device_manager._broadcast_control_denied(
+            device_id,
+            str(result.get("reason") or "denied"),
+            control,
+        )
+    return result
+
+
+@app.post("/devices/{device_id}/control/release")
+async def release_device_control(device_id: str, request: Optional[ControlReleaseRequest] = None):
+    """Ownership elengedése"""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    if not hasattr(device, "release_control"):
+        raise HTTPException(status_code=400, detail="Az eszköz nem támogat ownership lockot")
+
+    if hasattr(device, "send_realtime_command"):
+        try:
+            capabilities = await device.get_capabilities()
+            supports_panel_controller = bool(
+                getattr(capabilities, "supports_panel_controller", False)
+            )
+            if supports_panel_controller:
+                sent = await device.send_realtime_command(RT_OWN_RELEASE)
+                await device.send_realtime_command(RT_OWN_QUERY)
+                control = await _sync_control_from_firmware(
+                    device,
+                    changed_by=(request.requested_by if request else None) or "api_release_rt",
+                )
+                if control is None and hasattr(device, "get_control_state"):
+                    control = device.get_control_state()
+                if control is None:
+                    control = {}
+                granted = bool(sent and str(control.get("owner", "none")).lower() == "none")
+                result = {
+                    "granted": granted,
+                    "reason": None if granted else str(control.get("reason") or "denied"),
+                    "state": control,
+                }
+                await device_manager._broadcast_control_state(device_id, control)
+                return result
+        except Exception as e:
+            print(f"⚠️ Firmware ownership release hiba ({device_id}): {e}")
+
+    result = device.release_control(
+        requested_by=(request.requested_by if request else None) or "api_release"
+    )
+    control = result.get("state", {})
+    await device_manager._broadcast_control_state(device_id, control)
+    return result
+
+
 @app.post("/devices/{device_id}/connect")
 async def connect_device(device_id: str):
     """Csatlakozás az eszközhöz"""
@@ -705,12 +1106,15 @@ async def connect_device(device_id: str):
         raise HTTPException(status_code=404, detail="Eszköz nem található")
 
     try:
+        device_port = getattr(device, "port", "n/a")
+        print(f"[CONNECT_API:{device_id}] begin port={device_port}")
         # Guard against serial/handshake stalls so callers get a clear HTTP error
         # instead of hanging until upstream client-side timeout.
         result = await asyncio.wait_for(
             device.connect(),
             timeout=CONNECT_TIMEOUT_SECONDS,
         )
+        print(f"[CONNECT_API:{device_id}] result connected={result}")
     except asyncio.TimeoutError as exc:
         raise HTTPException(
             status_code=504,
@@ -719,7 +1123,38 @@ async def connect_device(device_id: str):
                 f"({CONNECT_TIMEOUT_SECONDS:.1f}s)"
             ),
         ) from exc
-    return {"success": result}
+    claim_sent = False
+    claim_granted = False
+    claim_reason = None
+    if result and hasattr(device, "send_realtime_command"):
+        try:
+            claim = await _auto_claim_host_if_supported(
+                device_id=device_id,
+                device=device,
+                changed_by="bridge_connect_claim",
+                retries=1,
+            )
+            claim_sent = bool(claim.get("sent"))
+            claim_granted = bool(claim.get("granted"))
+            claim_reason = claim.get("reason")
+            control = claim.get("state") or {}
+            if claim.get("attempted") and control:
+                if claim_granted:
+                    await device_manager._broadcast_control_state(device_id, control)
+                else:
+                    await device_manager._broadcast_control_denied(
+                        device_id,
+                        str(claim_reason or "denied"),
+                        control,
+                    )
+        except Exception as e:
+            print(f"⚠️ Ownership claim küldési hiba ({device_id}): {e}")
+    return {
+        "success": result,
+        "ownership_claim_sent": claim_sent,
+        "ownership_claim_granted": claim_granted,
+        "ownership_claim_reason": claim_reason,
+    }
 
 
 @app.post("/devices/{device_id}/disconnect")
@@ -758,8 +1193,39 @@ async def reconnect_device(device_id: str):
                     f"({CONNECT_TIMEOUT_SECONDS:.1f}s)"
                 ),
             ) from exc
-    
-    return {"success": result}
+    claim_sent = False
+    claim_granted = False
+    claim_reason = None
+    if result:
+        try:
+            claim = await _auto_claim_host_if_supported(
+                device_id=device_id,
+                device=device,
+                changed_by="bridge_reconnect_claim",
+                retries=1,
+            )
+            claim_sent = bool(claim.get("sent"))
+            claim_granted = bool(claim.get("granted"))
+            claim_reason = claim.get("reason")
+            control = claim.get("state") or {}
+            if claim.get("attempted") and control:
+                if claim_granted:
+                    await device_manager._broadcast_control_state(device_id, control)
+                else:
+                    await device_manager._broadcast_control_denied(
+                        device_id,
+                        str(claim_reason or "denied"),
+                        control,
+                    )
+        except Exception as e:
+            print(f"⚠️ Reconnect ownership claim hiba ({device_id}): {e}")
+
+    return {
+        "success": result,
+        "ownership_claim_sent": claim_sent,
+        "ownership_claim_granted": claim_granted,
+        "ownership_claim_reason": claim_reason,
+    }
 
 
 class HomeRequest(BaseModel):
@@ -786,8 +1252,14 @@ async def jog_device(device_id: str, request: JogRequest):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
+    # ControlLockDecorator wraps robot-arm jog methods and keeps lock checks active.
+    if isinstance(device, ControlLockDecorator):
+        if request.mode == 'cartesian':
+            result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
+        else:
+            result = await device.jog_joint(request.axis, request.distance, request.feed_rate)
     # Robot arm: jog_joint és jog_cartesian metódusok elérhetők
-    if hasattr(device, 'jog_joint') and hasattr(device, 'jog_cartesian'):
+    elif hasattr(device, 'jog_joint') and hasattr(device, 'jog_cartesian'):
         if request.mode == 'cartesian':
             # Cartesian mód: X/Y/Z mm-ben, IK számítással
             result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
@@ -1345,6 +1817,13 @@ async def set_home_position(device_id: str, request: SetHomePositionRequest):
         raise HTTPException(status_code=500, detail=f"Mentés hiba: {str(e)}")
 
 
+def _device_core(device: Any) -> Any:
+    """Return inner driver for wrappers when type checks are needed."""
+    if isinstance(device, ControlLockDecorator):
+        return device._inner
+    return device
+
+
 @app.post("/devices/{device_id}/soft-limits")
 async def set_soft_limits(device_id: str, enabled: bool):
     """
@@ -1356,14 +1835,16 @@ async def set_soft_limits(device_id: str, enabled: bool):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
-    if isinstance(device, RobotArmDevice):
-        device.set_soft_limits_enabled(enabled)
+    core = _device_core(device)
+
+    if hasattr(core, "set_soft_limits_enabled") and hasattr(core, "get_soft_limits_enabled"):
+        core.set_soft_limits_enabled(enabled)
         return {
             "success": True,
             "soft_limits_enabled": enabled,
         }
 
-    if isinstance(device, GrblDevice):
+    if hasattr(device, "get_grbl_settings") and hasattr(device, "set_grbl_setting"):
         settings = await device.get_grbl_settings()
         if enabled and int(round(settings.get(22, 0))) == 0:
             raise HTTPException(
@@ -1394,18 +1875,20 @@ async def get_soft_limits(device_id: str):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
-    if isinstance(device, RobotArmDevice):
+    core = _device_core(device)
+
+    if hasattr(core, "get_soft_limits_enabled"):
         return {
-            "soft_limits_enabled": device.get_soft_limits_enabled(),
+            "soft_limits_enabled": core.get_soft_limits_enabled(),
         }
 
-    if isinstance(device, GrblDevice):
+    if hasattr(device, "get_grbl_settings"):
         # Read GRBL settings and expose $20 as generic soft-limits state.
         settings = await device.get_grbl_settings()
         value = settings.get(20)
         if value is None:
             # Fallback to cached settings when controller readback is unavailable.
-            cached = getattr(device, "_grbl_settings", None)
+            cached = getattr(core, "_grbl_settings", None)
             if cached is not None:
                 value = 1.0 if cached.soft_limits else 0.0
         if value is None:
@@ -1428,12 +1911,6 @@ async def reload_device_config(device_id: str):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
-    if not isinstance(device, RobotArmDevice):
-        raise HTTPException(
-            status_code=400,
-            detail="Csak robotkar eszközök támogatják a config reload-ot"
-        )
-    
     machine_config = load_machine_config(device_id)
     if not machine_config:
         raise HTTPException(
@@ -1443,13 +1920,22 @@ async def reload_device_config(device_id: str):
     
     driver_cfg = extract_driver_config(machine_config)
 
-    device.update_driver_config(
-        axis_invert=driver_cfg.get('axis_invert'),
-        axis_scale=driver_cfg.get('axis_scale'),
-        axis_limits=driver_cfg.get('axis_limits'),
-        max_feed_rate=driver_cfg.get('max_feed_rate'),
-        dynamic_limits=driver_cfg.get('dynamic_limits'),
-    )
+    reload_info: Dict[str, Any] = {}
+    if isinstance(device, RobotArmDevice):
+        device.update_driver_config(
+            axis_invert=driver_cfg.get('axis_invert'),
+            axis_scale=driver_cfg.get('axis_scale'),
+            axis_limits=driver_cfg.get('axis_limits'),
+            max_feed_rate=driver_cfg.get('max_feed_rate'),
+            dynamic_limits=driver_cfg.get('dynamic_limits'),
+        )
+    elif hasattr(device, "reload_machine_config"):
+        reload_info = device.reload_machine_config(driver_cfg)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Ez az eszköz nem támogatja a config reload-ot"
+        )
 
     print(f"🔄 Konfiguráció újratöltve: {device_id}")
 
@@ -1462,6 +1948,8 @@ async def reload_device_config(device_id: str):
             "axis_limits": driver_cfg.get('axis_limits'),
             "max_feed_rate": driver_cfg.get('max_feed_rate'),
             "dynamic_limits": driver_cfg.get('dynamic_limits'),
+            "supports_panel_controller": driver_cfg.get('supports_panel_controller'),
+            "reload_info": reload_info,
         }
     }
 
@@ -1975,6 +2463,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 "device_id": device_id,
                 "status": status.to_dict(),
             })
+            control = device_manager.get_control_state(device_id)
+            if control is not None:
+                await websocket.send_json({
+                    "type": "control_state",
+                    "device_id": device_id,
+                    "control": control,
+                })
         
         # Üzenetek fogadása
         while True:

@@ -23,10 +23,10 @@
 // grblHAL UART link pins on the CrowPanel side.
 // Update these if your cable/board variant uses different UART pins.
 #ifndef GRBL_UART_RX_PIN
-#define GRBL_UART_RX_PIN 16
+#define GRBL_UART_RX_PIN 44
 #endif
 #ifndef GRBL_UART_TX_PIN
-#define GRBL_UART_TX_PIN 15
+#define GRBL_UART_TX_PIN 43
 #endif
 
 #define GRBL_UART_BAUD 115200

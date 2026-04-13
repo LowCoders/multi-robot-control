@@ -69,10 +69,9 @@ enum class ButtonEvent { None, ShortPress, LongPress };
 static Screen screen = Screen::Home;
 static uint32_t lastStatusMs = 0;
 static uint32_t lastUiMs = 0;
-static uint32_t lastEncoderDiagMs = 0;
 
 static int homeIndex = 0;
-static const char *homeItems[] = {"Setup", "Step", "Pos", "Teach", "Program"};
+static const char *homeItems[] = {"Status", "Setup", "Step", "Pos", "Teach", "Program"};
 static const int homeCount = sizeof(homeItems) / sizeof(homeItems[0]);
 static int savedHomeIndex = -1;
 
@@ -83,7 +82,7 @@ static int setupAction = 0;
 static bool setupEditing = false;
 static const char *setupFields[] = {"min", "max", "invert", "scale", "step", "feed"};
 static const int setupFieldCount = sizeof(setupFields) / sizeof(setupFields[0]);
-static const char *setupActions[] = {"SaveCfg", "MPGToggle"};
+static const char *setupActions[] = {"SaveCfg"};
 static const int setupActionCount = sizeof(setupActions) / sizeof(setupActions[0]);
 
 static int stepAxis = 0;
@@ -103,10 +102,12 @@ static int programIndex = 0;
 static std::vector<String> programNames;
 static String infoLine;
 static bool hostControlActive = false;
-static uint32_t lastPanelMotionQueueMs = 0;
-static uint32_t lastHostActivityMs = 0;
-static constexpr uint32_t kPanelMotionGraceMs = 1800;
-static constexpr uint32_t kHostIdleReleaseMs = 5000;
+static String lastOwner = "none";
+static String lastOwnerReason = "";
+static bool panelMpgModeAssumed = false;
+static constexpr uint8_t kOwnRequestPanelRt = 0x8E;
+static constexpr uint8_t kOwnQueryRt = 0xA5;
+static constexpr uint8_t kMpgToggleRt = 0x8B;
 static bool suppressArcEvent = false;
 static uint32_t lastEncoderChangeMs = 0;
 static bool uiDirty = true;
@@ -162,11 +163,12 @@ static const char *screenIcon(Screen s) {
 
 static const char *homeItemSymbol(int idx) {
   switch (idx) {
-    case 0: return LV_SYMBOL_SETTINGS;  // Setup
-    case 1: return LV_SYMBOL_SHUFFLE;   // Step (footprint-like motion icon)
-    case 2: return LV_SYMBOL_GPS;       // Pos (target/crosshair style)
-    case 3: return LV_SYMBOL_EDIT;      // Teach
-    case 4: return LV_SYMBOL_PLAY;      // Program
+    case 0: return LV_SYMBOL_LIST;      // Status
+    case 1: return LV_SYMBOL_SETTINGS;  // Setup
+    case 2: return LV_SYMBOL_SHUFFLE;   // Step (footprint-like motion icon)
+    case 3: return LV_SYMBOL_GPS;       // Pos (target/crosshair style)
+    case 4: return LV_SYMBOL_EDIT;      // Teach
+    case 5: return LV_SYMBOL_PLAY;      // Program
     default: return LV_SYMBOL_HOME;
   }
 }
@@ -671,34 +673,64 @@ static String baseGrblState() {
   return raw;
 }
 
-static bool isMotionState(const String &state) {
-  return state == "Run" || state == "Jog" || state == "Hold" || state == "Home";
+static void updateOwnershipFromStatus() {
+  const bool prevHostControl = hostControlActive;
+  String owner = grblParser.status().owner;
+  String ownerReason = grblParser.status().ownerReason;
+  owner.trim();
+  ownerReason.trim();
+  if (owner.isEmpty()) {
+    owner = "none";
+  }
+  const bool ownerIsPanel = owner.equalsIgnoreCase("panel");
+  hostControlActive = owner.equalsIgnoreCase("host");
+  grblClient.setMotionAllowed(!hostControlActive);
+
+  if (ownerIsPanel != panelMpgModeAssumed) {
+    grblClient.sendRealtime(kMpgToggleRt);
+    panelMpgModeAssumed = ownerIsPanel;
+  }
+
+  if (!prevHostControl && hostControlActive && screen != Screen::Status) {
+    screen = Screen::Status;
+    infoLine = "Host active: monitor mode";
+    uiDirty = true;
+  }
+  if (!owner.equalsIgnoreCase(lastOwner)) {
+    if (owner.equalsIgnoreCase("panel")) {
+      infoLine = "Panel control granted";
+      if (screen == Screen::Status || screen == Screen::Home) {
+        screen = Screen::Step;
+      }
+      uiDirty = true;
+    } else if (owner.equalsIgnoreCase("host")) {
+      infoLine = "Host active: monitor mode";
+      screen = Screen::Status;
+      uiDirty = true;
+    } else if (lastOwner.equalsIgnoreCase("panel")) {
+      infoLine = "Control released";
+      uiDirty = true;
+    }
+    lastOwner = owner;
+  }
+  if (owner.equalsIgnoreCase("host") && !ownerReason.isEmpty() &&
+      !ownerReason.equalsIgnoreCase(lastOwnerReason)) {
+    infoLine = "Takeover denied: " + ownerReason;
+    uiDirty = true;
+  }
+  lastOwnerReason = ownerReason;
 }
 
-static void updateHostControlState(uint32_t now_ms) {
-  const String state = baseGrblState();
-  const bool panelBusy = grblClient.hasPending() || programEngine.state() != ProgramEngine::State::Stopped;
-  const bool panelRecent = (now_ms - lastPanelMotionQueueMs) < kPanelMotionGraceMs;
-
-  if (isMotionState(state)) {
-    if (!panelBusy && !panelRecent) {
-      hostControlActive = true;
-      lastHostActivityMs = now_ms;
-    } else if (hostControlActive) {
-      lastHostActivityMs = now_ms;
-    }
-  }
-
-  if (hostControlActive && state == "Idle" && !panelBusy && !panelRecent) {
-    if (now_ms - lastHostActivityMs > kHostIdleReleaseMs) {
-      hostControlActive = false;
-    }
-  }
-
-  grblClient.setMotionAllowed(!hostControlActive);
+static bool panelCommandsAllowed() {
+  String owner = grblParser.status().owner;
+  owner.trim();
+  return !owner.equalsIgnoreCase("host");
 }
 
 static bool queueStepMove(size_t axis_idx, float value, String *queuedLine = nullptr) {
+  if (!panelCommandsAllowed()) {
+    return false;
+  }
   if (axis_idx >= machineCfg.axes.size()) {
     return false;
   }
@@ -712,7 +744,6 @@ static bool queueStepMove(size_t axis_idx, float value, String *queuedLine = nul
   if (!ok) {
     return false;
   }
-  lastPanelMotionQueueMs = millis();
   if (queuedLine) {
     *queuedLine = line;
   }
@@ -722,6 +753,9 @@ static bool queueStepMove(size_t axis_idx, float value, String *queuedLine = nul
 }
 
 static bool queuePosMove(const std::vector<float> &values) {
+  if (!panelCommandsAllowed()) {
+    return false;
+  }
   String line = "G1";
   for (size_t i = 0; i < machineCfg.axes.size(); i++) {
     float v = i < values.size() ? values[i] : 0.0f;
@@ -732,9 +766,6 @@ static bool queuePosMove(const std::vector<float> &values) {
   line += " F";
   line += String(machineCfg.max_feed_rate, 1);
   const bool ok = grblClient.queueLine("G90") && grblClient.queueLine(line);
-  if (ok) {
-    lastPanelMotionQueueMs = millis();
-  }
   return ok;
 }
 
@@ -943,12 +974,12 @@ void DemoStyleUiAdapter::render() {
       title = hostControlActive ? "Monitor" : "Status";
       l1 = String("State: ") + grblParser.status().state;
       l2 = axisValueLine(currentAxes);
-      if (!grblParser.lastErrorLine().isEmpty()) {
-        l3 = grblParser.lastErrorLine();
-      } else {
-        l3 = hostControlActive ? "Host control active" : "No alarm";
-      }
-      if (hostControlActive) {
+      l3 = String("Owner: ") + grblParser.status().owner;
+      if (!grblParser.status().ownerReason.isEmpty()) {
+        l4 = String("OWNR: ") + grblParser.status().ownerReason;
+      } else if (grblParser.status().ownerVersion > 0) {
+        l4 = String("OWNV: ") + String(grblParser.status().ownerVersion);
+      } else if (hostControlActive) {
         l4 = "Monitor-only mode";
       }
       break;
@@ -1338,6 +1369,9 @@ static void onShortPress() {
       return;
     }
     if (screen == Screen::Status) {
+      grblClient.sendRealtime(kOwnRequestPanelRt);
+      grblClient.sendRealtime(kOwnQueryRt);
+      infoLine = "Takeover requested";
       return;
     }
     infoLine = "Blocked: host monitor mode";
@@ -1346,11 +1380,12 @@ static void onShortPress() {
 
   if (screen == Screen::Home) {
     switch (homeIndex) {
-      case 0: screen = Screen::Setup; break;
-      case 1: screen = Screen::Step; break;
-      case 2: screen = Screen::Pos; break;
-      case 3: screen = Screen::TeachMenu; break;
-      case 4:
+      case 0: screen = Screen::Status; break;
+      case 1: screen = Screen::Setup; break;
+      case 2: screen = Screen::Step; break;
+      case 3: screen = Screen::Pos; break;
+      case 4: screen = Screen::TeachMenu; break;
+      case 5:
         programStore.listPrograms(programNames);
         programIndex = 0;
         screen = Screen::ProgramList;
@@ -1374,15 +1409,10 @@ static void onShortPress() {
       }
       return;
     }
-    if (setupAction == 0) {
-      if (configStore.save(machineCfg)) {
-        infoLine = "Config saved";
-      } else {
-        infoLine = "Save err";
-      }
+    if (configStore.save(machineCfg)) {
+      infoLine = "Config saved";
     } else {
-      grblClient.sendRealtime(0x8B);
-      infoLine = "MPG toggled";
+      infoLine = "Save err";
     }
     setupCursor = 0;
     setupEditing = false;
@@ -1390,6 +1420,14 @@ static void onShortPress() {
   }
 
   if (screen == Screen::Step) {
+    if (!panelCommandsAllowed()) {
+      infoLine = "Blocked: host monitor mode";
+      return;
+    }
+    if (fabsf(stepValue) < 0.0005f) {
+      infoLine = "Step value is 0";
+      return;
+    }
     String queued;
     const bool sent = queueStepMove(stepAxis, stepValue, &queued);
     infoLine = sent ? ("Sent " + machineCfg.axes[stepAxis].name + " " + signedValue(stepValue, decimalsForStep(machineCfg.axes[stepAxis].step)))
@@ -1397,12 +1435,10 @@ static void onShortPress() {
     if (!grblClient.lastError().isEmpty()) {
       infoLine = "GRBL " + grblClient.lastError();
     }
-    Serial.print("STEP state=");
-    Serial.print(grblParser.status().state);
-    Serial.print(" pending=");
-    Serial.print(grblClient.queuedCount());
-    Serial.print(" awaiting_ok=");
-    Serial.println(grblClient.awaitingOk() ? "1" : "0");
+    if (!sent) {
+      // Keep axis/value as-is on failure so the operator can retry.
+      return;
+    }
     ProgramStep s;
     s.mode = "step";
     s.axes.assign(machineCfg.axes.size(), 0.0f);
@@ -1414,11 +1450,19 @@ static void onShortPress() {
   }
 
   if (screen == Screen::Pos) {
+    if (!panelCommandsAllowed()) {
+      infoLine = "Blocked: host monitor mode";
+      return;
+    }
     if (posAxis < static_cast<int>(machineCfg.axes.size()) - 1) {
       posAxis++;
     } else {
       const bool queued = queuePosMove(posValues);
       infoLine = queued ? "Pos move queued" : ("GRBL " + grblClient.lastError());
+      if (!queued) {
+        // Keep edited position values for retry after transient failures.
+        return;
+      }
       posAxis = 0;
     }
     return;
@@ -1459,6 +1503,14 @@ static void onShortPress() {
   }
 
   if (screen == Screen::TeachStep) {
+    if (!panelCommandsAllowed()) {
+      infoLine = "Blocked: host monitor mode";
+      return;
+    }
+    if (fabsf(stepValue) < 0.0005f) {
+      infoLine = "Step value is 0";
+      return;
+    }
     const bool queued = queueStepMove(stepAxis, stepValue);
     if (!queued) {
       infoLine = "GRBL " + grblClient.lastError();
@@ -1477,6 +1529,10 @@ static void onShortPress() {
   }
 
   if (screen == Screen::TeachPos) {
+    if (!panelCommandsAllowed()) {
+      infoLine = "Blocked: host monitor mode";
+      return;
+    }
     if (teachPosAxis < static_cast<int>(machineCfg.axes.size()) - 1) {
       teachPosAxis++;
     } else {
@@ -1576,9 +1632,13 @@ static void lvglFlush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *co
 
 static void touchRead(lv_indev_drv_t *driver, lv_indev_data_t *data) {
   (void)driver;
+  static uint16_t lastTouchX = 0;
+  static uint16_t lastTouchY = 0;
+  static bool lastTouchPressed = false;
   uint16_t x = 0;
   uint16_t y = 0;
   if (!touch.readTouch(x, y)) {
+    lastTouchPressed = false;
     data->state = LV_INDEV_STATE_REL;
     return;
   }
@@ -1589,6 +1649,11 @@ static void touchRead(lv_indev_drv_t *driver, lv_indev_data_t *data) {
   data->state = LV_INDEV_STATE_PR;
   data->point.x = x;
   data->point.y = y;
+  if (!lastTouchPressed || x != lastTouchX || y != lastTouchY) {
+    lastTouchPressed = true;
+    lastTouchX = x;
+    lastTouchY = y;
+  }
 }
 
 static void displaySelfTest() {
@@ -1684,15 +1749,15 @@ void setup() {
   GrblSerial.begin(GRBL_UART_BAUD, SERIAL_8N1, GRBL_UART_RX_PIN, GRBL_UART_TX_PIN);
   grblClient.begin(&GrblSerial, &grblParser);
   grblClient.setMotionAllowed(true);
-  grblClient.queueLine("$I");
+  grblClient.sendRealtime(kOwnQueryRt);
 }
 
 void loop() {
-  handleInput();
   grblClient.update();
+  updateOwnershipFromStatus();
+  handleInput();
 
   uint32_t now = millis();
-  updateHostControlState(now);
   if (hostControlActive) {
     if (programEngine.state() != ProgramEngine::State::Stopped) {
       programEngine.stop(grblClient);
@@ -1708,30 +1773,6 @@ void loop() {
   if (now - lastStatusMs > 200) {
     grblClient.requestStatus();
     lastStatusMs = now;
-  }
-
-  if (now - lastEncoderDiagMs > 1000) {
-    static uint32_t prevQuarter = 0;
-    static uint32_t prevSteps = 0;
-    uint32_t quarterNow = 0;
-    uint32_t stepNow = 0;
-    noInterrupts();
-    quarterNow = encoderQuarterStepCount;
-    stepNow = encoderStepEventCount;
-    interrupts();
-    uint32_t dq = quarterNow - prevQuarter;
-    uint32_t ds = stepNow - prevSteps;
-    if (dq > 0 || ds > 0) {
-      Serial.print("ENC diag q/s=");
-      Serial.print(dq);
-      Serial.print("/");
-      Serial.print(ds);
-      Serial.print(" ratio=");
-      Serial.println(ds > 0 ? static_cast<float>(dq) / static_cast<float>(ds) : 0.0f, 2);
-    }
-    prevQuarter = quarterNow;
-    prevSteps = stepNow;
-    lastEncoderDiagMs = now;
   }
 
   if (uiDirty || (now - lastUiMs > 33)) {

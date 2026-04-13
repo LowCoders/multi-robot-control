@@ -48,7 +48,7 @@ void GrblClient::requestStatus() {
   if (!_serial) {
     return;
   }
-  _serial->println("?");
+  _serial->write('?');
 }
 
 bool GrblClient::isIdle() const {

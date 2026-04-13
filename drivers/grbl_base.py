@@ -179,6 +179,9 @@ class GrblDeviceBase(SerialDeviceBase):
         r"MPos:(-?\d+\.?\d*),(-?\d+\.?\d*),(-?\d+\.?\d*)"
     )
     GRBL_PN_PATTERN = re.compile(r"\|Pn:([A-Z]+)")
+    GRBL_OWN_PATTERN = re.compile(r"\|OWN:([^|>]+)")
+    GRBL_OWNR_PATTERN = re.compile(r"\|OWNR:([^|>]+)")
+    GRBL_OWNV_PATTERN = re.compile(r"\|OWNV:(\d+)")
     
     # Full status pattern for compatibility
     GRBL_STATUS_PATTERN = re.compile(
@@ -215,6 +218,9 @@ class GrblDeviceBase(SerialDeviceBase):
         self._grbl_version: Optional[str] = None
         self._grbl_state: GrblState = GrblState.IDLE
         self._grbl_settings: Optional[GrblSettings] = None
+        self._control_owner: str = "none"
+        self._control_owner_reason: str = ""
+        self._control_owner_version: int = 0
         
         # Status polling
         self._status_polling = False
@@ -358,6 +364,24 @@ class GrblDeviceBase(SerialDeviceBase):
         if not self.is_serial_open:
             return
         await self._write_bytes(b"~")
+
+    async def send_realtime_command(self, command: int) -> bool:
+        """Egybájtos realtime parancs küldése a vezérlőnek."""
+        if not self.is_serial_open:
+            return False
+        if command < 0 or command > 255:
+            return False
+        await self._write_bytes(bytes([command]))
+        return True
+
+    def get_control_owner(self) -> str:
+        return self._control_owner
+
+    def get_control_owner_reason(self) -> str:
+        return self._control_owner_reason
+
+    def get_control_owner_version(self) -> int:
+        return self._control_owner_version
     
     # =========================================
     # GRBL STÁTUSZ ÉS BEÁLLÍTÁSOK
@@ -380,6 +404,9 @@ class GrblDeviceBase(SerialDeviceBase):
             mpos_match = self.GRBL_MPOS_PATTERN.search(response)
             wpos_match = self.GRBL_WPOS_PATTERN.search(response)
             pn_match = self.GRBL_PN_PATTERN.search(response)
+            own_match = self.GRBL_OWN_PATTERN.search(response)
+            ownr_match = self.GRBL_OWNR_PATTERN.search(response)
+            ownv_match = self.GRBL_OWNV_PATTERN.search(response)
             
             if state_match:
                 raw_state = state_match.group(1)
@@ -410,6 +437,9 @@ class GrblDeviceBase(SerialDeviceBase):
                 self._status.position = mpos
                 self._status.work_position = wpos
                 pin_flags = pn_match.group(1) if pn_match else ""
+                self._control_owner = (own_match.group(1).strip().lower() if own_match else "none")
+                self._control_owner_reason = ownr_match.group(1).strip().lower() if ownr_match else ""
+                self._control_owner_version = int(ownv_match.group(1)) if ownv_match else 0
                 
                 # Update device state
                 try:
@@ -462,6 +492,9 @@ class GrblDeviceBase(SerialDeviceBase):
                     'state': raw_state,
                     'mpos': mpos,
                     'wpos': wpos,
+                    'owner': self._control_owner,
+                    'owner_reason': self._control_owner_reason,
+                    'owner_version': self._control_owner_version,
                 }
             
             return {}

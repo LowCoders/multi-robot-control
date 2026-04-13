@@ -177,6 +177,8 @@ export default function ControlPanelContent({
   const isIdle = device.state === 'idle'
   const isAlarm = device.state === 'alarm'
   const isJog = device.state === 'jog'
+  const supportsPanelController = capabilities?.supports_panel_controller === true
+  const hostLockedByPanel = supportsPanelController && device.control?.owner === 'panel'
 
   const handleStop = () => {
     const hasActiveProgram = device.status?.current_file && (device.status?.progress ?? 0) > 0
@@ -292,10 +294,50 @@ export default function ControlPanelContent({
               <span className="font-medium">Vezérlés</span>
             </div>
             <div className="card-body">
+              {supportsPanelController && (
+                <div className="mb-3 rounded border border-steel-700 bg-steel-800/40 p-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-steel-400">Tulajdonos:</span>
+                    <span className="text-steel-200 uppercase">{device.control?.owner ?? 'none'}</span>
+                  </div>
+                  {!!device.control?.reason && (
+                    <div className="mt-1 text-steel-300">Ok: {device.control.reason}</div>
+                  )}
+                  {device.control?.owner === 'host' && (
+                    <div className="mt-2 text-emerald-300">Host aktív (monitor mód a panelen)</div>
+                  )}
+                  {device.control?.owner === 'none' && (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-steel-300">Nincs aktív owner</span>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={!device.control?.can_take_control}
+                        onClick={() => sendCommand(device.id, 'take_control', { owner: 'host' })}
+                        title={!device.control?.can_take_control ? 'Futó program közben nem vehető át' : 'Host vezérlés átvétele'}
+                      >
+                        Host aktiválás
+                      </button>
+                    </div>
+                  )}
+                  {hostLockedByPanel && (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-amber-300">Panel vezérlés aktív</span>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={!device.control?.can_take_control}
+                        onClick={() => sendCommand(device.id, 'take_control', { owner: 'host' })}
+                        title={!device.control?.can_take_control ? 'Futó program közben nem vehető át' : 'Host vezérlés átvétele'}
+                      >
+                        Visszavétel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-5 gap-2">
                 <button
                   onClick={() => handleCommand('home')}
-                  disabled={!isIdle}
+                  disabled={!isIdle || hostLockedByPanel}
                   className="btn btn-secondary flex flex-col items-center gap-1 py-3"
                   title="Home"
                 >
@@ -305,7 +347,7 @@ export default function ControlPanelContent({
 
                 <button
                   onClick={() => handleCommand(isPaused ? 'resume' : 'run')}
-                  disabled={isRunning || (!isIdle && !isPaused) || !device.status?.current_file}
+                  disabled={isRunning || (!isIdle && !isPaused) || !device.status?.current_file || hostLockedByPanel}
                   className="btn btn-primary flex flex-col items-center gap-1 py-3"
                   title={isPaused ? 'Resume' : 'Run'}
                 >
@@ -315,7 +357,7 @@ export default function ControlPanelContent({
 
                 <button
                   onClick={() => handleCommand('pause')}
-                  disabled={!isRunning}
+                  disabled={!isRunning || hostLockedByPanel}
                   className="btn btn-warning flex flex-col items-center gap-1 py-3"
                   title="Pause"
                 >
