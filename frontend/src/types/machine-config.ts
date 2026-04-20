@@ -18,8 +18,9 @@ export interface DynamicLimitsConfig {
 export interface AxisConfig {
   name: AxisName
   type: AxisType
-  min: number
-  max: number
+  // null = nincs limit (a tengely szabadon mozoghat ezen az oldalon)
+  min: number | null
+  max: number | null
   color: string
   // Kinematic chain - which axis moves this one
   parent?: AxisName
@@ -74,6 +75,43 @@ export interface SpindleConfig {
   minRpm?: number
   diameter?: number
   length?: number
+}
+
+// Lézer modul beállítások (laser_cutter / laser_engraver)
+export interface LaserConfig {
+  // Maximum power (W vagy spindle S érték a firmware-től függően)
+  maxPower: number
+  // PWM frekvencia (Hz), opcionális
+  pwmFreq?: number
+  // Default power amikor csak "on"-t küldünk a UI-ból
+  defaultPower?: number
+}
+
+// Hűtés / coolant módok
+export type CoolantMode = 'flood' | 'mist' | 'air'
+
+export interface CoolantConfig {
+  mode?: CoolantMode
+  // Egyedi M-kód override-ok (alapértelmezetten M7/M8/M9)
+  mGcodeOn?: string
+  mGcodeOff?: string
+}
+
+// A felhasználó által manuálisan deklarált eszköz-képességek
+// (a runtime DeviceCapabilities mellett független, párhuzamos forrás).
+// Az effective capabilities ezek + a runtime flagek uniója.
+export interface DeclaredCapabilities {
+  hasGripper?: boolean
+  hasSucker?: boolean
+  hasLaser?: boolean
+  hasSpindle?: boolean
+  hasCoolant?: boolean
+  hasProbe?: boolean
+  hasToolChanger?: boolean
+  hasVacuum?: boolean
+  // Numerikus felső határok - runtime fallback ha a backend nem adja meg
+  maxLaserPower?: number
+  maxSpindleSpeed?: number
 }
 
 export interface ToolConfig {
@@ -175,6 +213,12 @@ export interface MachineConfig {
   }
   spindle?: SpindleConfig
   tool?: ToolConfig
+  // Lézer modul (csak ha az eszköznek van lézere)
+  laser?: LaserConfig
+  // Hűtés (coolant) konfiguráció
+  coolant?: CoolantConfig
+  // Manuálisan deklarált képességek (UI-ról szerkesztve, runtime-mal uniózva)
+  declaredCapabilities?: DeclaredCapabilities
   // Robot arm specific config
   robotArm?: RobotArmConfig
   // Tube bender specific config
@@ -231,6 +275,11 @@ export const DEFAULT_3AXIS_CNC: MachineConfig = {
     length: 30,
     type: 'endmill',
   },
+  declaredCapabilities: {
+    hasSpindle: true,
+    hasCoolant: false,
+    maxSpindleSpeed: 24000,
+  },
   base: {
     width: 400,
     height: 50,
@@ -264,6 +313,11 @@ export const DEFAULT_5AXIS_CNC: MachineConfig = {
     length: 40,
     type: 'endmill',
   },
+  declaredCapabilities: {
+    hasSpindle: true,
+    hasCoolant: false,
+    maxSpindleSpeed: 20000,
+  },
   base: {
     width: 450,
     height: 80,
@@ -294,6 +348,11 @@ export const DEFAULT_CNC_LATHE: MachineConfig = {
     length: 25,
     type: 'custom',
   },
+  declaredCapabilities: {
+    hasSpindle: true,
+    hasCoolant: true,
+    maxSpindleSpeed: 4000,
+  },
   base: {
     width: 300,
     height: 60,
@@ -319,6 +378,15 @@ export const DEFAULT_LASER_CUTTER: MachineConfig = {
     diameter: 0.1,
     length: 20,
     type: 'laser',
+  },
+  laser: {
+    maxPower: 1000,
+    pwmFreq: 1000,
+    defaultPower: 500,
+  },
+  declaredCapabilities: {
+    hasLaser: true,
+    maxLaserPower: 1000,
   },
   base: {
     width: 700,
@@ -376,6 +444,10 @@ export const DEFAULT_ROBOT_ARM: MachineConfig = {
       gripperFingerCount: 2,
     },
     jointAngleScale: { x: 1.0, y: 1.0, z: 1.0 },
+  },
+  declaredCapabilities: {
+    hasGripper: true,
+    hasSucker: false,
   },
   base: {
     width: 150,

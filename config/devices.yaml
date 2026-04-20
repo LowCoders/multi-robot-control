@@ -37,11 +37,11 @@ devices:
     name: "CNC Maró"
     driver: linuxcnc
     type: cnc_mill
-    enabled: false
+    enabled: true
     simulated: true
     config:
       ini_file: /home/user/linuxcnc/configs/jp3163b/jp3163b.ini
-      
+
   # =====================================================
   # Lézervágó - EleksMana W5.2 + GRBL
   # =====================================================
@@ -54,7 +54,7 @@ devices:
     config:
       port: /dev/ttyUSB0
       baudrate: 115200
-      
+
   # =====================================================
   # Robotkar v1 - Open Loop (régi board, 3 tengelyes)
   # =====================================================

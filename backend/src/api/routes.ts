@@ -6,11 +6,15 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { promises as fs } from 'fs';
 import { existsSync, mkdirSync } from 'fs';
 import path from 'path';
+import { parseDocument, isMap, isSeq } from 'yaml';
 import { DeviceManager } from '../devices/DeviceManager.js';
 import { StateManager } from '../state/StateManager.js';
 
 // Machine config directory
 const MACHINE_CONFIG_DIR = path.join(process.cwd(), '..', 'config', 'machines');
+
+// devices.yaml elérési út – a config könyvtárban a backend cwd-jéhez képest
+const DEVICES_YAML_PATH = path.join(process.cwd(), '..', 'config', 'devices.yaml');
 
 // Ensure machine config directory exists
 if (!existsSync(MACHINE_CONFIG_DIR)) {
@@ -225,7 +229,218 @@ export function createApiRoutes(
     
     res.json({ success: true, settings: appSettings });
   }));
-  
+
+  // =========================================
+  // DEVICES.YAML CONFIG (raw nézet + enable/disable persist)
+  // =========================================
+
+  // A devices.yaml jelenlegi tartalmát adja vissza (raw szöveg + parsolt lista),
+  // hogy a Settings oldal és az Add Device modal egyaránt tudja használni.
+  router.get('/config/devices-yaml', asyncHandler(async (_req: Request, res: Response) => {
+    if (!existsSync(DEVICES_YAML_PATH)) {
+      res.status(404).json({ error: 'devices.yaml nem található', path: DEVICES_YAML_PATH });
+      return;
+    }
+    const raw = await fs.readFile(DEVICES_YAML_PATH, 'utf-8');
+    let entries: Array<{
+      id: string;
+      name: string;
+      type: string;
+      driver: string;
+      enabled: boolean;
+      simulated: boolean;
+    }> = [];
+    try {
+      const doc = parseDocument(raw);
+      const seq = doc.get('devices');
+      if (isSeq(seq)) {
+        for (const item of seq.items) {
+          if (!isMap(item)) continue;
+          const js = item.toJS(doc) as Record<string, unknown>;
+          const id = typeof js.id === 'string' ? js.id : '';
+          if (!id) continue;
+          entries.push({
+            id,
+            name: typeof js.name === 'string' ? js.name : id,
+            type: typeof js.type === 'string' ? js.type : 'unknown',
+            driver: typeof js.driver === 'string' ? js.driver : 'unknown',
+            enabled: js.enabled !== false,
+            simulated: js.simulated === true,
+          });
+        }
+      }
+    } catch (err) {
+      // YAML parse hiba esetén csak a raw-ot adjuk vissza, hogy a felhasználó láthassa
+      entries = [];
+      console.error('devices.yaml parse hiba:', err);
+    }
+    res.json({ raw, path: DEVICES_YAML_PATH, devices: entries });
+  }));
+
+  // Egy konkrét eszköz YAML bejegyzésének lekérdezése (a MachineConfigTab
+  // alatti "Devices.yaml beállítások" panelhez).
+  router.get('/config/devices-yaml/:id', asyncHandler(async (req: Request, res: Response) => {
+    if (!existsSync(DEVICES_YAML_PATH)) {
+      res.status(404).json({ error: 'devices.yaml nem található' });
+      return;
+    }
+    const raw = await fs.readFile(DEVICES_YAML_PATH, 'utf-8');
+    const doc = parseDocument(raw);
+    const seq = doc.get('devices');
+    if (!isSeq(seq)) {
+      res.status(500).json({ error: 'Hibás YAML struktúra' });
+      return;
+    }
+    for (const item of seq.items) {
+      if (!isMap(item)) continue;
+      if (item.get('id') !== req.params.id) continue;
+      const js = item.toJS(doc) as Record<string, unknown>;
+      res.json(js);
+      return;
+    }
+    res.status(404).json({ error: `Eszköz nem található a YAML-ben: ${req.params.id}` });
+  }));
+
+  // Egy konkrét eszköz YAML bejegyzésének részleges frissítése.
+  // Az `enabled` mezőt ezen az endpointon szándékosan nem fogadjuk el – arra a
+  // /config/devices-yaml/enable van. A `config` mező teljes cserét végez
+  // (a frontend a teljes objektumot küldi vissza).
+  router.patch('/config/devices-yaml/:id', asyncHandler(async (req: Request, res: Response) => {
+    const id = req.params.id;
+    const patch = (req.body ?? {}) as {
+      name?: unknown;
+      driver?: unknown;
+      type?: unknown;
+      simulated?: unknown;
+      config?: unknown;
+    };
+
+    if (!existsSync(DEVICES_YAML_PATH)) {
+      res.status(404).json({ error: 'devices.yaml nem található' });
+      return;
+    }
+
+    const raw = await fs.readFile(DEVICES_YAML_PATH, 'utf-8');
+    const doc = parseDocument(raw);
+    const seq = doc.get('devices');
+    if (!isSeq(seq)) {
+      res.status(500).json({ error: 'Hibás YAML struktúra' });
+      return;
+    }
+
+    let updated = false;
+    for (const item of seq.items) {
+      if (!isMap(item)) continue;
+      if (item.get('id') !== id) continue;
+
+      if (typeof patch.name === 'string' && patch.name.length > 0) {
+        item.set('name', patch.name);
+      }
+      if (typeof patch.driver === 'string' && patch.driver.length > 0) {
+        item.set('driver', patch.driver);
+      }
+      if (typeof patch.type === 'string' && patch.type.length > 0) {
+        item.set('type', patch.type);
+      }
+      if (typeof patch.simulated === 'boolean') {
+        item.set('simulated', patch.simulated);
+      }
+      if (patch.config !== undefined && patch.config !== null && typeof patch.config === 'object') {
+        // Teljes config csere – yaml v2 a sima JS objektumot YAMLMap-be konvertálja.
+        item.set('config', patch.config);
+      }
+      updated = true;
+      break;
+    }
+
+    if (!updated) {
+      res.status(404).json({ error: `Eszköz nem található a YAML-ben: ${id}` });
+      return;
+    }
+
+    await fs.writeFile(DEVICES_YAML_PATH, doc.toString(), 'utf-8');
+    res.json({ success: true, id });
+  }));
+
+  // A devices.yaml-ben az adott eszköz `enabled` flagjének átállítása.
+  // Komment- és formázásmegőrző írás a yaml v2 Document API-val.
+  // Engedélyezéskor a bridge-be is megpróbáljuk betölteni az eszközt.
+  router.post('/config/devices-yaml/enable', asyncHandler(async (req: Request, res: Response) => {
+    const { id, enabled } = req.body as { id?: string; enabled?: boolean };
+    if (!id || typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'id (string) és enabled (boolean) kötelező' });
+      return;
+    }
+    if (!existsSync(DEVICES_YAML_PATH)) {
+      res.status(404).json({ error: 'devices.yaml nem található' });
+      return;
+    }
+
+    const raw = await fs.readFile(DEVICES_YAML_PATH, 'utf-8');
+    const doc = parseDocument(raw);
+    const seq = doc.get('devices');
+    if (!isSeq(seq)) {
+      res.status(500).json({ error: 'Hibás YAML struktúra: a devices kulcs nem lista' });
+      return;
+    }
+
+    let foundEntry: {
+      id: string;
+      name: string;
+      type: string;
+      driver: string;
+      config: Record<string, unknown>;
+    } | null = null;
+
+    for (const item of seq.items) {
+      if (!isMap(item)) continue;
+      if (item.get('id') !== id) continue;
+      item.set('enabled', enabled);
+      const js = item.toJS(doc) as Record<string, unknown>;
+      foundEntry = {
+        id: String(js.id ?? id),
+        name: String(js.name ?? id),
+        type: String(js.type ?? 'unknown'),
+        driver: String(js.driver ?? 'simulated'),
+        config: (js.config && typeof js.config === 'object') ? (js.config as Record<string, unknown>) : {},
+      };
+      break;
+    }
+
+    if (!foundEntry) {
+      res.status(404).json({ error: `Eszköz nem található a YAML-ben: ${id}` });
+      return;
+    }
+
+    await fs.writeFile(DEVICES_YAML_PATH, doc.toString(), 'utf-8');
+
+    // Engedélyezéskor próbáljuk a bridge-be is bejuttatni az eszközt,
+    // hogy ne kelljen újraindítani a backendet/bridge-et.
+    let bridgeLoaded: boolean | null = null;
+    let bridgeError: string | null = null;
+    if (enabled) {
+      const existing = deviceManager.getDevice(id);
+      if (!existing) {
+        try {
+          bridgeLoaded = await deviceManager.addDevice({
+            id: foundEntry.id,
+            name: foundEntry.name,
+            type: foundEntry.type,
+            driver: foundEntry.driver,
+            enabled: true,
+            config: foundEntry.config,
+          });
+        } catch (err) {
+          bridgeError = err instanceof Error ? err.message : String(err);
+        }
+      } else {
+        bridgeLoaded = true;
+      }
+    }
+
+    res.json({ success: true, id, enabled, bridgeLoaded, bridgeError });
+  }));
+
   // =========================================
   // AUTOMATION RULES
   // =========================================

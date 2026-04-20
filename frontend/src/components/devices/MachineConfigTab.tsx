@@ -9,7 +9,6 @@ import {
   AlertCircle,
   CheckCircle,
   Settings2,
-  Box,
   Move3D,
   Palette,
   Code,
@@ -17,15 +16,41 @@ import {
   Cpu,
   Power,
   Gauge,
+  Sliders,
+  Sparkles,
+  Wrench,
+  Server,
 } from 'lucide-react'
 import { MachineVisualization } from '../visualization'
 import RobotArmVisualization from '../visualization/RobotArmVisualization'
 import TubeBenderVisualization from '../visualization/TubeBenderVisualization'
 import CalibrationPanel from './CalibrationPanel'
+import CapabilityToggles from './capabilities/CapabilityToggles'
+import EndEffectorEditor from './capabilities/EndEffectorEditor'
+import SpindleEditor from './capabilities/SpindleEditor'
+import LaserEditor from './capabilities/LaserEditor'
+import ToolEditor from './capabilities/ToolEditor'
+import CoolantEditor from './capabilities/CoolantEditor'
+import RobotArmGeometryEditor from './capabilities/RobotArmGeometryEditor'
+import DeviceYamlConfigPanel from './DeviceYamlConfigPanel'
 import type { CameraState } from '../visualization'
-import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType } from '../../types/machine-config'
+import type {
+  MachineConfig,
+  AxisConfig,
+  AxisName,
+  AxisType,
+  MachineType,
+  DeclaredCapabilities,
+  EndEffectorConfig,
+  SpindleConfig,
+  LaserConfig,
+  ToolConfig,
+  CoolantConfig,
+  RobotArmConfig,
+} from '../../types/machine-config'
 import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, getDefaultConfigForType } from '../../types/machine-config'
 import type { DeviceCapabilities } from '../../types/device'
+import { effectiveCapabilities } from '../../utils/capabilities'
 
 const AXIS_COLORS: Record<AxisName, string> = {
   X: '#ef4444',
@@ -57,13 +82,34 @@ const DEFAULT_AXIS_CONFIG: Record<AxisName, Partial<AxisConfig>> = {
   J6: { type: 'rotary', min: -360, max: 360 },
 }
 
+// workEnvelope automatikus számítása a tengelyek min/max értékéből.
+// Ha valamelyik tengelynek nincs limitje (null), megtartjuk az aktuális értéket
+// (vagy fallback 100 mm-t használunk).
+function deriveWorkEnvelope(
+  axes: AxisConfig[],
+  current: MachineConfig['workEnvelope']
+): MachineConfig['workEnvelope'] {
+  const range = (n: AxisName, fallback: number) => {
+    const a = axes.find((x) => x.name === n)
+    if (!a || a.min == null || a.max == null) return fallback
+    return Math.max(1, Math.abs(a.max - a.min))
+  }
+  return {
+    x: range('X', current?.x || 100),
+    y: range('Y', current?.y || 100),
+    z: range('Z', current?.z || 100),
+  }
+}
+
 function AxisEditor({
   axis,
   allAxes,
   grblRate,
   grblAcceleration,
+  homePosition,
   onGrblRateChange,
   onGrblAccelerationChange,
+  onHomePositionChange,
   onChange,
   onDelete,
 }: {
@@ -71,12 +117,30 @@ function AxisEditor({
   allAxes: AxisConfig[]
   grblRate?: number
   grblAcceleration?: number
+  homePosition?: number | null
   onGrblRateChange?: (rate: number) => void
   onGrblAccelerationChange?: (acceleration: number) => void
+  onHomePositionChange?: (value: number | null) => void
   onChange: (updated: AxisConfig) => void
   onDelete: () => void
 }) {
   const possibleParents = allAxes.filter(a => a.name !== axis.name)
+
+  // null = nincs limit; üres input mezővel jelezzük
+  const parseLimit = (raw: string): number | null => {
+    if (raw.trim() === '') return null
+    const n = parseFloat(raw)
+    return Number.isFinite(n) ? n : null
+  }
+
+  const parseHome = (raw: string): number | null => {
+    if (raw.trim() === '') return null
+    const n = parseFloat(raw)
+    return Number.isFinite(n) ? n : null
+  }
+
+  // Min >= Max validáció (csak ha mindkettő ki van töltve)
+  const limitsInvalid = axis.min != null && axis.max != null && axis.min >= axis.max
 
   return (
     <div className="bg-steel-800/50 rounded-lg p-3 border border-steel-700">
@@ -94,6 +158,13 @@ function AxisEditor({
               ({axis.type === 'linear' ? 'Lin.' : 'Rot.'})
             </span>
           </span>
+          <input
+            type="color"
+            value={axis.color}
+            onChange={(e) => onChange({ ...axis, color: e.target.value })}
+            className="w-6 h-6 rounded cursor-pointer bg-transparent border border-steel-600 p-0"
+            title="Tengely színe"
+          />
         </div>
         <button
           onClick={onDelete}
@@ -104,24 +175,32 @@ function AxisEditor({
         </button>
       </div>
 
-      {/* Első sor: Min, Max, Scale */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      {/* Első sor: Min, Max, Scale, Home */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Min</label>
+          <label className="block text-xs text-steel-500 mb-1" title="Üres = nincs alsó limit">
+            Min
+          </label>
           <input
             type="number"
-            value={axis.min}
-            onChange={(e) => onChange({ ...axis, min: parseFloat(e.target.value) || 0 })}
+            value={axis.min ?? ''}
+            placeholder="∅"
+            onChange={(e) => onChange({ ...axis, min: parseLimit(e.target.value) })}
             className="input w-full text-xs py-1"
+            title="Üresen hagyva: nincs alsó limit"
           />
         </div>
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Max</label>
+          <label className="block text-xs text-steel-500 mb-1" title="Üres = nincs felső limit">
+            Max
+          </label>
           <input
             type="number"
-            value={axis.max}
-            onChange={(e) => onChange({ ...axis, max: parseFloat(e.target.value) || 0 })}
+            value={axis.max ?? ''}
+            placeholder="∅"
+            onChange={(e) => onChange({ ...axis, max: parseLimit(e.target.value) })}
             className="input w-full text-xs py-1"
+            title="Üresen hagyva: nincs felső limit"
           />
         </div>
         <div>
@@ -135,7 +214,26 @@ function AxisEditor({
             title="Firmware érték → fizikai egység szorzó"
           />
         </div>
+        <div>
+          <label className="block text-xs text-steel-500 mb-1">Home</label>
+          <input
+            type="number"
+            value={homePosition ?? ''}
+            placeholder="∅"
+            onChange={(e) => onHomePositionChange?.(parseHome(e.target.value))}
+            className="input w-full text-xs py-1"
+            disabled={!onHomePositionChange}
+            title="Home pozíció ezen a tengelyen (üres = nincs megadva)"
+            step={0.1}
+          />
+        </div>
       </div>
+
+      {limitsInvalid && (
+        <div className="mt-1 text-[11px] text-amber-400">
+          Figyelem: Min ({axis.min}) ≥ Max ({axis.max}) — érvénytelen tartomány.
+        </div>
+      )}
 
       {/* Második sor: GRBL sebesség és gyorsulás */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
@@ -449,6 +547,15 @@ export default function MachineConfigTab({
     }
   }
 
+  // Tengelyek frissítése + workEnvelope automatikus szinkronizálása
+  const setAxesAndSync = useCallback((newAxes: AxisConfig[]) => {
+    setConfig((prev) => ({
+      ...prev,
+      axes: newAxes,
+      workEnvelope: deriveWorkEnvelope(newAxes, prev.workEnvelope),
+    }))
+  }, [])
+
   const handleAddAxis = () => {
     const existingNames = config.axes.map((a) => a.name)
     const availableNames: AxisName[] = ['X', 'Y', 'Z', 'A', 'B', 'C']
@@ -471,16 +578,13 @@ export default function MachineConfigTab({
       parent: lastAxis?.name,
     }
 
-    setConfig({
-      ...config,
-      axes: [...config.axes, newAxis],
-    })
+    setAxesAndSync([...config.axes, newAxis])
   }
 
   const handleUpdateAxis = (index: number, updated: AxisConfig) => {
     const newAxes = [...config.axes]
     newAxes[index] = updated
-    setConfig({ ...config, axes: newAxes })
+    setAxesAndSync(newAxes)
   }
 
   const handleDeleteAxis = (index: number) => {
@@ -489,8 +593,109 @@ export default function MachineConfigTab({
       .filter((_, i) => i !== index)
       .map((a) => (a.parent === axisName ? { ...a, parent: undefined } : a))
 
-    setConfig({ ...config, axes: newAxes })
+    setAxesAndSync(newAxes)
   }
+
+  // Per-axis home position read/write segédek
+  const getAxisHomePosition = useCallback(
+    (axisName: AxisName): number | null => {
+      const positions = config.driverConfig?.homePosition?.positions
+      const v = positions?.[axisName]
+      return typeof v === 'number' ? v : null
+    },
+    [config.driverConfig?.homePosition?.positions]
+  )
+
+  const setAxisHomePosition = useCallback(
+    (axisName: AxisName, value: number | null) => {
+      setConfig((prev) => {
+        const currentPositions = { ...(prev.driverConfig?.homePosition?.positions ?? {}) }
+        if (value == null) {
+          delete currentPositions[axisName]
+        } else {
+          currentPositions[axisName] = value
+        }
+        return {
+          ...prev,
+          driverConfig: {
+            ...prev.driverConfig,
+            homePosition: {
+              mode: prev.driverConfig?.homePosition?.mode ?? 'absolute',
+              positions: currentPositions,
+            },
+          },
+        }
+      })
+    },
+    []
+  )
+
+  // Effective képességek (declared || runtime) — UI badge-ek és alpanel láthatóság
+  const effective = useMemo(
+    () => effectiveCapabilities(config, capabilities),
+    [config, capabilities]
+  )
+
+  // Dinamikus alpanel láthatósági szabályok
+  // - hasX deklarálva VAGY runtime-ban detektálva VAGY a típus tipikusan használja
+  const isCnc = config.type === 'cnc_mill' || config.type === '5axis' || config.type === 'cnc_lathe'
+  const isLaser = config.type === 'laser_cutter'
+  const isRobot = config.type === 'robot_arm'
+  const showSpindleEditor = effective.hasSpindle || isCnc
+  const showLaserEditor = effective.hasLaser || isLaser
+  const showToolEditor = isCnc || isLaser || effective.hasToolChanger
+  const showCoolantEditor = effective.hasCoolant
+  const showEndEffectorEditor = isRobot || effective.hasGripper
+  const showRobotArmGeometry = isRobot
+  const anyDeviceSpecificVisible =
+    showSpindleEditor ||
+    showLaserEditor ||
+    showToolEditor ||
+    showCoolantEditor ||
+    showEndEffectorEditor ||
+    showRobotArmGeometry
+
+  const updateDeclaredCapabilities = useCallback((next: DeclaredCapabilities) => {
+    setConfig((prev) => ({ ...prev, declaredCapabilities: next }))
+  }, [])
+
+  const updateSpindle = useCallback((next: SpindleConfig) => {
+    setConfig((prev) => ({ ...prev, spindle: next }))
+  }, [])
+
+  const updateLaser = useCallback((next: LaserConfig) => {
+    setConfig((prev) => ({ ...prev, laser: next }))
+  }, [])
+
+  const updateTool = useCallback((next: ToolConfig) => {
+    setConfig((prev) => ({ ...prev, tool: next }))
+  }, [])
+
+  const updateCoolant = useCallback((next: CoolantConfig) => {
+    setConfig((prev) => ({ ...prev, coolant: next }))
+  }, [])
+
+  const updateRobotArm = useCallback((next: RobotArmConfig) => {
+    setConfig((prev) => ({ ...prev, robotArm: next }))
+  }, [])
+
+  // EndEffector típus változáskor szinkronizáljuk a deklarált hasGripper flaget is,
+  // hogy az ExtraControlsPanel a megfelelő gomboknak adjon helyet (gripper vs sucker).
+
+  const updateEndEffector = useCallback((next: EndEffectorConfig) => {
+    setConfig((prev) => {
+      const base: RobotArmConfig = prev.robotArm ?? {
+        baseDiameter: 120,
+        baseHeight: 60,
+        lowerArmLength: 200,
+        lowerArmWidth: 50,
+        upperArmLength: 200,
+        upperArmWidth: 40,
+        endEffector: next,
+      }
+      return { ...prev, robotArm: { ...base, endEffector: next } }
+    })
+  }, [])
 
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })
@@ -522,15 +727,6 @@ export default function MachineConfigTab({
       }
     }
     reader.readAsText(file)
-  }
-
-  const handleLoadPreset = (preset: '3axis' | '5axis') => {
-    const baseConfig = preset === '5axis' ? DEFAULT_5AXIS_CNC : DEFAULT_3AXIS_CNC
-    setConfig({
-      ...baseConfig,
-      id: deviceId,
-      name: config.name,
-    })
   }
 
   if (loading) {
@@ -677,127 +873,210 @@ export default function MachineConfigTab({
           ) : (
             <>
               {/* Basic info */}
-              <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
-                <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
+              <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
+                <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Settings2 className="w-4 h-4" />
                   Alapadatok
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-steel-500 mb-1">Gép neve</label>
-                    <input
-                      type="text"
-                      value={config.name}
-                      onChange={(e) => setConfig({ ...config, name: e.target.value })}
-                      className="input w-full text-sm"
-                      placeholder="CNC Maró"
-                    />
+                  <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+                </summary>
+                <div className="px-3 pb-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-steel-500 mb-1">Gép neve</label>
+                      <input
+                        type="text"
+                        value={config.name}
+                        onChange={(e) => setConfig({ ...config, name: e.target.value })}
+                        className="input w-full text-sm"
+                        placeholder="CNC Maró"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-steel-500 mb-1">Típus</label>
+                      <select
+                        value={config.type}
+                        onChange={(e) => {
+                          const newType = e.target.value as MachineType
+                          if (newType === config.type) return
+                          const confirmed = window.confirm(
+                            'A típus váltása felülírja a tengely- és driver-beállításokat. Folytatod?'
+                          )
+                          if (!confirmed) return
+                          const baseConfig = getDefaultConfigForType(newType)
+                          setConfig({
+                            ...baseConfig,
+                            id: config.id,
+                            name: config.name || baseConfig.name,
+                            type: newType,
+                            workEnvelope: deriveWorkEnvelope(baseConfig.axes, baseConfig.workEnvelope),
+                          })
+                        }}
+                        className="input w-full text-sm"
+                      >
+                        <option value="cnc_mill">CNC Maró</option>
+                        <option value="cnc_lathe">CNC Eszterga</option>
+                        <option value="laser_cutter">Lézervágó</option>
+                        <option value="5axis">5 Tengelyes</option>
+                        <option value="robot_arm">Robotkar</option>
+                        <option value="tube_bender">Csőhajlító</option>
+                        <option value="custom">Egyedi</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs text-steel-500 mb-1">Típus</label>
-                    <select
-                      value={config.type}
-                      onChange={(e) => {
-                        const newType = e.target.value as MachineType
-                        const baseConfig = getDefaultConfigForType(newType)
-                        setConfig({
-                          ...baseConfig,
-                          id: config.id,
-                          name: config.name || baseConfig.name,
-                          type: newType,
-                        })
-                      }}
-                      className="input w-full text-sm"
-                    >
-                      <option value="cnc_mill">CNC Maró</option>
-                      <option value="cnc_lathe">CNC Eszterga</option>
-                      <option value="laser_cutter">Lézervágó</option>
-                      <option value="5axis">5 Tengelyes</option>
-                      <option value="robot_arm">Robotkar</option>
-                      <option value="tube_bender">Csőhajlító</option>
-                      <option value="custom">Egyedi</option>
-                    </select>
-                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => handleLoadPreset('3axis')} className="btn btn-secondary btn-sm text-xs">
-                    3 tengelyes
-                  </button>
-                  <button onClick={() => handleLoadPreset('5axis')} className="btn btn-secondary btn-sm text-xs">
-                    5 tengelyes
-                  </button>
-                </div>
-              </div>
+              </details>
 
-              {/* Work envelope */}
-              <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
-                <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
-                  <Box className="w-4 h-4" />
-                  Munkaterület (mm)
+              {/* Devices.yaml beállítások - eszköz-szintű driver/sim/config (kivéve enabled) */}
+              <details className="bg-steel-900/50 rounded-lg border border-steel-700 group">
+                <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                  <Server className="w-4 h-4" />
+                  Devices.yaml beállítások
+                  <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+                </summary>
+                <div className="px-3 pb-3">
+                  <DeviceYamlConfigPanel deviceId={deviceId} />
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs text-steel-500 mb-1">X</label>
-                    <input
-                      type="number"
-                      value={config.workEnvelope.x}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          workEnvelope: { ...config.workEnvelope, x: parseFloat(e.target.value) || 0 },
-                        })
-                      }
-                      className="input w-full text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-steel-500 mb-1">Y</label>
-                    <input
-                      type="number"
-                      value={config.workEnvelope.y}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          workEnvelope: { ...config.workEnvelope, y: parseFloat(e.target.value) || 0 },
-                        })
-                      }
-                      className="input w-full text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-steel-500 mb-1">Z</label>
-                    <input
-                      type="number"
-                      value={config.workEnvelope.z}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          workEnvelope: { ...config.workEnvelope, z: parseFloat(e.target.value) || 0 },
-                        })
-                      }
-                      className="input w-full text-sm"
-                    />
-                  </div>
-                </div>
-              </div>
+              </details>
 
-              {/* Axes */}
-              <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
-                    <Move3D className="w-4 h-4" />
-                    Tengelyek ({config.axes.length})
+              {/* Vezérlés - Panel controller toggle áthelyezve ide */}
+              <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
+                <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                  <Sliders className="w-4 h-4" />
+                  Vezérlés
+                  <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+                </summary>
+                <div className="px-3 pb-3">
+                  <div className="flex items-center justify-between rounded bg-steel-800/40 px-3 py-2">
+                    <div>
+                      <div className="text-xs text-steel-300">Panel controller támogatás</div>
+                      <div className="text-[11px] text-steel-500">
+                        Engedélyezve esetén ownership lock kezelhető host/panel között.
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.driverConfig?.supportsPanelController ?? false}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            driverConfig: {
+                              ...config.driverConfig,
+                              supportsPanelController: e.target.checked,
+                            },
+                          })
+                        }
+                        className="w-4 h-4 rounded bg-steel-700 border-steel-600"
+                      />
+                    </label>
                   </div>
+                </div>
+              </details>
+
+              {/* Eszköz képességek - manuálisan deklarált flagek */}
+              <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
+                <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                  <Sparkles className="w-4 h-4" />
+                  Eszköz képességek
+                  <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+                </summary>
+                <div className="px-3 pb-3 space-y-2">
+                  <div className="text-[11px] text-steel-500">
+                    Pipáld be, mit tud az eszköz. A kiválasztott képességekhez tartozó beállítópanelek
+                    az alábbi „Eszköz-specifikus beállítások” szekcióban jelennek meg, és az „Extra
+                    vezérlés” paneljéből futás-időben is használhatók.
+                  </div>
+                  <CapabilityToggles
+                    declared={config.declaredCapabilities}
+                    effective={effective}
+                    onChange={updateDeclaredCapabilities}
+                  />
+                  <div className="flex flex-wrap gap-3 text-[10px] text-steel-500 pt-1">
+                    <span>
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-500/60 mr-1" />
+                      manual = csak a konfigban deklarált
+                    </span>
+                    <span>
+                      <span className="inline-block w-2 h-2 rounded-full bg-blue-500/60 mr-1" />
+                      runtime = a driver jelzi
+                    </span>
+                    <span>
+                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500/60 mr-1" />
+                      sync = mindkettő egyezik
+                    </span>
+                  </div>
+                </div>
+              </details>
+
+              {/* Eszköz-specifikus beállítások - dinamikus alpanelek a deklarált + type alapján */}
+              {anyDeviceSpecificVisible && (
+                <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
+                  <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                    <Wrench className="w-4 h-4" />
+                    Eszköz-specifikus beállítások
+                    <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+                  </summary>
+                  <div className="px-3 pb-3 space-y-2">
+                    {showSpindleEditor && (
+                      <SpindleEditor
+                        value={config.spindle}
+                        onChange={(next) => updateSpindle(next)}
+                      />
+                    )}
+                    {showLaserEditor && (
+                      <LaserEditor
+                        value={config.laser}
+                        onChange={(next) => updateLaser(next)}
+                      />
+                    )}
+                    {showToolEditor && (
+                      <ToolEditor
+                        value={config.tool}
+                        onChange={(next) => updateTool(next)}
+                      />
+                    )}
+                    {showCoolantEditor && (
+                      <CoolantEditor
+                        value={config.coolant}
+                        onChange={(next) => updateCoolant(next)}
+                      />
+                    )}
+                    {showEndEffectorEditor && (
+                      <EndEffectorEditor
+                        value={config.robotArm?.endEffector}
+                        onChange={(next) => updateEndEffector(next)}
+                      />
+                    )}
+                    {showRobotArmGeometry && (
+                      <RobotArmGeometryEditor
+                        value={config.robotArm}
+                        onChange={(next) => updateRobotArm(next)}
+                      />
+                    )}
+                  </div>
+                </details>
+              )}
+
+              {/* Axes - összecsukható, workEnvelope automatikusan származtatva */}
+              <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
+                <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                  <Move3D className="w-4 h-4" />
+                  Tengelyek ({config.axes.length})
                   <button
-                    onClick={handleAddAxis}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleAddAxis()
+                    }}
                     disabled={config.axes.length >= 6}
-                    className="btn btn-primary btn-sm flex items-center gap-1 disabled:opacity-50 text-xs"
+                    className="btn btn-primary btn-sm flex items-center gap-1 disabled:opacity-50 text-xs ml-auto"
                   >
                     <Plus className="w-3 h-3" />
                     Új
                   </button>
-                </div>
-                <div className="space-y-2 max-h-[800px] overflow-y-auto">
+                  <span className="text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+                </summary>
+                <div className="px-3 pb-3 space-y-2 max-h-[800px] overflow-y-auto">
                   {config.axes.map((axis, index) => (
                     <AxisEditor
                       key={axis.name}
@@ -805,6 +1084,7 @@ export default function MachineConfigTab({
                       allAxes={config.axes}
                       grblRate={getGrblAxisRate(axis.name)}
                       grblAcceleration={getGrblAxisAcceleration(axis.name)}
+                      homePosition={getAxisHomePosition(axis.name)}
                       onGrblRateChange={
                         config.driverConfig?.protocol === 'grbl'
                           ? (rate) => setGrblAxisRate(axis.name, rate)
@@ -815,6 +1095,7 @@ export default function MachineConfigTab({
                           ? (acceleration) => setGrblAxisAcceleration(axis.name, acceleration)
                           : undefined
                       }
+                      onHomePositionChange={(value) => setAxisHomePosition(axis.name, value)}
                       onChange={(updated) => handleUpdateAxis(index, updated)}
                       onDelete={() => handleDeleteAxis(index)}
                     />
@@ -825,15 +1106,17 @@ export default function MachineConfigTab({
                     </div>
                   )}
                 </div>
-              </div>
+              </details>
 
               {/* Driver Settings */}
-              <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
-                <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
+              <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
+                <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Cpu className="w-4 h-4" />
                   Driver Beállítások
-                </div>
-                
+                  <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+                </summary>
+                <div className="px-3 pb-3 space-y-3">
+
                 {/* Max Feed Rate */}
                 <div>
                   <label className="block text-xs text-steel-500 mb-1">
@@ -854,31 +1137,6 @@ export default function MachineConfigTab({
                     className="input w-full text-sm"
                     min={1}
                   />
-                </div>
-
-                <div className="flex items-center justify-between rounded bg-steel-800/40 px-3 py-2">
-                  <div>
-                    <div className="text-xs text-steel-300">Panel controller támogatás</div>
-                    <div className="text-[11px] text-steel-500">
-                      Engedélyezve esetén ownership lock kezelhető host/panel között.
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={config.driverConfig?.supportsPanelController ?? false}
-                      onChange={(e) =>
-                        setConfig({
-                          ...config,
-                          driverConfig: {
-                            ...config.driverConfig,
-                            supportsPanelController: e.target.checked,
-                          },
-                        })
-                      }
-                      className="w-4 h-4 rounded bg-steel-700 border-steel-600"
-                    />
-                  </label>
                 </div>
 
                 {/* Hold / Enable behavior for GRBL */}
@@ -922,7 +1180,7 @@ export default function MachineConfigTab({
                   </div>
                 )}
 
-                {/* Home Position */}
+                {/* Home Position - csak a globális mód, a per-axis értékek az AxisEditor-be költöztek */}
                 <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">
                   <div className="flex items-center gap-2 text-steel-400 text-xs font-medium">
                     <Power className="w-3 h-3" />
@@ -949,37 +1207,10 @@ export default function MachineConfigTab({
                       <option value="absolute">Megadott pozíció</option>
                       <option value="query">Firmware lekérdezés</option>
                     </select>
-                  </div>
-                  {config.driverConfig?.homePosition?.mode === 'absolute' && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {config.axes.map((axis) => (
-                        <div key={axis.name}>
-                          <label className="block text-xs text-steel-500 mb-1">{axis.name}</label>
-                          <input
-                            type="number"
-                            value={config.driverConfig?.homePosition?.positions?.[axis.name] ?? 0}
-                            onChange={(e) => {
-                              const positions = { ...config.driverConfig?.homePosition?.positions }
-                              positions[axis.name] = parseFloat(e.target.value) || 0
-                              setConfig({
-                                ...config,
-                                driverConfig: {
-                                  ...config.driverConfig,
-                                  homePosition: {
-                                    ...config.driverConfig?.homePosition,
-                                    mode: config.driverConfig?.homePosition?.mode ?? 'absolute',
-                                    positions,
-                                  },
-                                },
-                              })
-                            }}
-                            className="input w-full text-xs py-1"
-                            step={0.1}
-                          />
-                        </div>
-                      ))}
+                    <div className="text-[11px] text-steel-500 mt-1">
+                      A tengelyenkénti home értékeket a Tengelyek szekcióban add meg.
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Closed Loop Settings - robot_arm only */}
@@ -1145,7 +1376,8 @@ export default function MachineConfigTab({
                     )}
                   </div>
                 )}
-              </div>
+                </div>
+              </details>
 
               {/* Calibration Panel - robot_arm only */}
               {config.type === 'robot_arm' && (
@@ -1164,7 +1396,7 @@ export default function MachineConfigTab({
                       }
                       return axis
                     })
-                    setConfig({ ...config, axes: newAxes })
+                    setAxesAndSync(newAxes)
                     setSuccessMessage('Kalibrációs eredmények alkalmazva!')
                     setTimeout(() => setSuccessMessage(null), 3000)
                   }}
@@ -1177,7 +1409,7 @@ export default function MachineConfigTab({
 
         {/* Right: 3D Preview */}
         <div className="space-y-3">
-          <div className="bg-steel-900/50 rounded-lg border border-steel-700 overflow-hidden h-[350px]">
+          <div className="bg-steel-900/50 rounded-lg border border-steel-700 overflow-hidden h-[500px]">
             {config.type === 'robot_arm' ? (
               <RobotArmVisualization
                 config={config}
@@ -1206,13 +1438,18 @@ export default function MachineConfigTab({
               {['X', 'Y', 'Z'].map((axisName) => {
                 const axis = config.axes.find((a) => a.name === axisName)
                 const key = axisName.toLowerCase() as 'x' | 'y' | 'z'
+                // null limit esetén: rotary -> ±360, linear -> ±1000
+                const fallbackMin = axis?.type === 'rotary' ? -360 : -1000
+                const fallbackMax = axis?.type === 'rotary' ? 360 : 1000
+                const sliderMin = axis?.min ?? fallbackMin
+                const sliderMax = axis?.max ?? fallbackMax
                 return (
                   <div key={axisName}>
                     <label className="block text-xs text-steel-500 mb-1">{axisName}</label>
                     <input
                       type="range"
-                      min={axis?.min ?? 0}
-                      max={axis?.max ?? 100}
+                      min={sliderMin}
+                      max={sliderMax}
                       value={previewPosition[key]}
                       onChange={(e) => setPreviewPosition({ ...previewPosition, [key]: parseFloat(e.target.value) })}
                       className="w-full"
@@ -1234,6 +1471,116 @@ export default function MachineConfigTab({
                 className="btn btn-secondary btn-sm text-xs flex-1"
               >
                 Nézőpont rögzítése
+              </button>
+            </div>
+          </div>
+
+          {/* Camera position controls */}
+          <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-2">
+            <div className="text-xs text-steel-400 font-medium">Kamera pozíció</div>
+            {(() => {
+              const camPos = config.visuals?.cameraPosition
+                ?? liveCamera?.position
+                ?? { x: 500, y: -500, z: 350 }
+              const camTarget = config.visuals?.cameraTarget
+                ?? liveCamera?.target
+                ?? { x: 0, y: 0, z: 0 }
+              const setCamPos = (axis: 'x' | 'y' | 'z', value: number) => {
+                setConfig({
+                  ...config,
+                  visuals: {
+                    ...config.visuals,
+                    cameraPosition: { ...camPos, [axis]: value },
+                    cameraTarget: config.visuals?.cameraTarget ?? camTarget,
+                  },
+                })
+              }
+              const setCamTarget = (axis: 'x' | 'y' | 'z', value: number) => {
+                setConfig({
+                  ...config,
+                  visuals: {
+                    ...config.visuals,
+                    cameraPosition: config.visuals?.cameraPosition ?? camPos,
+                    cameraTarget: { ...camTarget, [axis]: value },
+                  },
+                })
+              }
+              return (
+                <>
+                  <div className="text-[10px] text-steel-500 uppercase tracking-wider">Pozíció</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['x', 'y', 'z'] as const).map((axis) => (
+                      <div key={`pos-${axis}`}>
+                        <label className="block text-xs text-steel-500 mb-1">{axis.toUpperCase()}</label>
+                        <input
+                          type="number"
+                          step={10}
+                          value={Math.round(camPos[axis])}
+                          onChange={(e) => setCamPos(axis, parseFloat(e.target.value) || 0)}
+                          className="w-full px-2 py-1 bg-steel-800 border border-steel-700 rounded text-steel-100 text-xs focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-steel-500 uppercase tracking-wider mt-1">Cél (target)</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['x', 'y', 'z'] as const).map((axis) => (
+                      <div key={`tgt-${axis}`}>
+                        <label className="block text-xs text-steel-500 mb-1">{axis.toUpperCase()}</label>
+                        <input
+                          type="number"
+                          step={10}
+                          value={Math.round(camTarget[axis])}
+                          onChange={(e) => setCamTarget(axis, parseFloat(e.target.value) || 0)}
+                          className="w-full px-2 py-1 bg-steel-800 border border-steel-700 rounded text-steel-100 text-xs focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )
+            })()}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => {
+                  if (liveCamera) {
+                    setConfig({
+                      ...config,
+                      visuals: {
+                        ...config.visuals,
+                        cameraPosition: {
+                          x: Math.round(liveCamera.position.x),
+                          y: Math.round(liveCamera.position.y),
+                          z: Math.round(liveCamera.position.z),
+                        },
+                        cameraTarget: {
+                          x: Math.round(liveCamera.target.x),
+                          y: Math.round(liveCamera.target.y),
+                          z: Math.round(liveCamera.target.z),
+                        },
+                      },
+                    })
+                  }
+                }}
+                disabled={!liveCamera}
+                className="btn btn-secondary btn-sm text-xs flex-1 disabled:opacity-50"
+                title="Az aktuális (egérrel beállított) nézőpont számszerű értékeit átveszi"
+              >
+                Aktuális nézet beolvasása
+              </button>
+              <button
+                onClick={() => {
+                  const next = { ...config }
+                  if (next.visuals) {
+                    const { cameraPosition: _cp, cameraTarget: _ct, ...rest } = next.visuals
+                    next.visuals = rest
+                  }
+                  setConfig(next)
+                }}
+                className="btn btn-secondary btn-sm text-xs flex-1"
+                title="Kamera pozíció / cél beállítások törlése (alaphelyzet)"
+              >
+                Reset kamera
               </button>
             </div>
           </div>

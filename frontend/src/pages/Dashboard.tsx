@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Plus, X, Cpu, Zap, Printer } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Plus, X, Cpu, Zap, Printer, Bot, Wrench, Power, Loader2, RefreshCw } from 'lucide-react'
 import { useDeviceStore } from '../stores/deviceStore'
 import DeviceCard from '../components/devices/DeviceCard'
 
@@ -8,7 +8,17 @@ interface AddDeviceModalProps {
   onClose: () => void
 }
 
+interface YamlDeviceEntry {
+  id: string
+  name: string
+  type: string
+  driver: string
+  enabled: boolean
+  simulated: boolean
+}
+
 function AddDeviceModal({ isOpen, onClose }: AddDeviceModalProps) {
+  const { devices } = useDeviceStore()
   const [formData, setFormData] = useState({
     name: '',
     type: 'cnc_mill',
@@ -16,7 +26,70 @@ function AddDeviceModal({ isOpen, onClose }: AddDeviceModalProps) {
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
+
+  // YAML-ből letölthető (de jelenleg disabled) eszközök listája
+  const [yamlEntries, setYamlEntries] = useState<YamlDeviceEntry[]>([])
+  const [yamlLoading, setYamlLoading] = useState(false)
+  const [yamlError, setYamlError] = useState<string | null>(null)
+  const [enablingId, setEnablingId] = useState<string | null>(null)
+
+  const loadYaml = useCallback(async () => {
+    setYamlLoading(true)
+    setYamlError(null)
+    try {
+      const resp = await fetch('/api/config/devices-yaml')
+      if (!resp.ok) throw new Error(`Hiba (${resp.status})`)
+      const data = await resp.json()
+      setYamlEntries(Array.isArray(data.devices) ? data.devices : [])
+    } catch (err) {
+      setYamlError(err instanceof Error ? err.message : 'YAML letöltési hiba')
+    } finally {
+      setYamlLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) {
+      loadYaml()
+    }
+  }, [isOpen, loadYaml])
+
+  // A valóban újra-aktiválható eszközök:
+  //   - a YAML-ben enabled: false-ra van állítva
+  //   - és (még) nincs jelen a runtime device-listában
+  const loadedIds = new Set(devices.map((d) => d.id))
+  const enableableEntries = yamlEntries.filter(
+    (e) => !e.enabled && !loadedIds.has(e.id)
+  )
+
+  const handleEnable = async (id: string) => {
+    setEnablingId(id)
+    setYamlError(null)
+    try {
+      const resp = await fetch('/api/config/devices-yaml/enable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, enabled: true }),
+      })
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}))
+        throw new Error(data.error || `Hiba (${resp.status})`)
+      }
+      const data = await resp.json()
+      if (data.bridgeError) {
+        // A YAML mentése sikerült, de a bridge nem tudta betölteni — figyelmeztetés
+        setYamlError(`YAML frissítve, de a bridge betöltés nem sikerült: ${data.bridgeError}`)
+      }
+      // YAML-listát újra olvasunk + dashboard reloaddal frissítjük a device store-t
+      await loadYaml()
+      window.location.reload()
+    } catch (err) {
+      setYamlError(err instanceof Error ? err.message : 'Engedélyezési hiba')
+    } finally {
+      setEnablingId(null)
+    }
+  }
+
   if (!isOpen) return null
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,19 +131,87 @@ function AddDeviceModal({ isOpen, onClose }: AddDeviceModalProps) {
     { value: 'cnc_mill', label: 'CNC Maró', icon: Cpu },
     { value: 'laser_cutter', label: 'Lézervágó', icon: Zap },
     { value: 'printer_3d', label: '3D Nyomtató', icon: Printer },
+    { value: 'robot_arm', label: 'Robotkar', icon: Bot },
+    { value: 'tube_bender', label: 'Csőhajlító', icon: Wrench },
   ]
   
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-steel-900 rounded-xl shadow-2xl w-full max-w-md mx-4 border border-steel-700">
+      <div className="bg-steel-900 rounded-xl shadow-2xl w-full max-w-md mx-4 border border-steel-700 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-steel-700">
           <h2 className="text-lg font-semibold text-white">Új Eszköz Hozzáadása</h2>
           <button onClick={onClose} className="text-steel-400 hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>
-        
+
+        {/* Letiltott (devices.yaml-ben enabled:false) eszközök gyors visszakapcsolása */}
+        <div className="p-4 border-b border-steel-700 space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-steel-200">Letiltott eszközök engedélyezése</h3>
+            <button
+              type="button"
+              onClick={loadYaml}
+              disabled={yamlLoading}
+              className="text-steel-400 hover:text-white disabled:opacity-50"
+              title="Frissítés"
+            >
+              {yamlLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+
+          {yamlError && (
+            <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-xs">
+              {yamlError}
+            </div>
+          )}
+
+          {!yamlLoading && enableableEntries.length === 0 && !yamlError && (
+            <p className="text-xs text-steel-500">
+              Nincs letiltott eszköz a <code className="bg-steel-800 px-1 rounded">devices.yaml</code>-ben,
+              ami engedélyezhető lenne.
+            </p>
+          )}
+
+          {enableableEntries.length > 0 && (
+            <div className="space-y-1.5">
+              {enableableEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between gap-2 p-2 bg-steel-800/60 border border-steel-700 rounded-lg"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-white truncate">{entry.name}</div>
+                    <div className="text-[10px] text-steel-500 font-mono">
+                      {entry.id} · {entry.type} · {entry.driver}
+                      {entry.simulated && ' · sim'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleEnable(entry.id)}
+                    disabled={enablingId === entry.id}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-machine-600 text-white rounded hover:bg-machine-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {enablingId === entry.id ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Power className="w-3 h-3" />
+                    )}
+                    Engedélyez
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <h3 className="text-sm font-medium text-steel-200 -mt-1">Új eszköz létrehozása</h3>
           {error && (
             <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
               {error}

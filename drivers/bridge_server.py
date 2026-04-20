@@ -79,8 +79,11 @@ def extract_driver_config(machine_config: Dict[str, Any]) -> Dict[str, Any]:
     for axis in axes:
         axis_name = axis.get('name', '').upper()  # X, Y, Z direkt használat
 
-        if 'min' in axis and 'max' in axis:
-            axis_limits[axis_name] = [axis['min'], axis['max']]
+        # null = nincs limit; csak konkrét numerikus értékeknél adjuk át
+        axis_min = axis.get('min')
+        axis_max = axis.get('max')
+        if axis_min is not None and axis_max is not None:
+            axis_limits[axis_name] = [axis_min, axis_max]
 
         if axis.get('invert', False):
             axis_invert[axis_name] = True
@@ -954,12 +957,29 @@ async def get_device_capabilities(device_id: str):
 
 @app.get("/devices/{device_id}/control/state")
 async def get_device_control_state(device_id: str):
-    """Ownership lock állapot lekérdezése"""
+    """Ownership lock állapot lekérdezése.
+
+    Az ownership lock opcionális (csak ControlLockDecorator-ral wrap-elt
+    eszközöknél van valódi állapot). A backend 500 ms-onként lekéri ezt
+    minden csatlakozott eszközre, ezért a nem-lockable eszközöknél nem
+    400-as hibát adunk vissza (ami zajos lenne a logban), hanem egy
+    neutrális default állapotot. A `supports_panel_controller=false`
+    capabilityből úgyis tudja a backend, hogy az auto-claim flow-t át
+    kell ugrania.
+    """
     device = device_manager.get_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     if not hasattr(device, "get_control_state"):
-        raise HTTPException(status_code=400, detail="Az eszköz nem támogat ownership lockot")
+        return {
+            "owner": "host",
+            "lock_state": "granted",
+            "reason": None,
+            "version": 0,
+            "last_changed_by": "default_no_lock_support",
+            "requested_owner": None,
+            "can_take_control": False,
+        }
 
     return device.get_control_state()
 

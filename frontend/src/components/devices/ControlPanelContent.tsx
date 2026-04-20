@@ -17,6 +17,7 @@ import {
 import PositionDisplay from './PositionDisplay'
 import JogControl, { type JogMode } from './JogControl'
 import MdiConsole from './MdiConsole'
+import ExtraControlsPanel from './ExtraControlsPanel'
 import { VisualizationPanel, GcodePanel } from '../visualization'
 import type { Device, DeviceCapabilities } from '../../types/device'
 import type { MachineConfig } from '../../types/machine-config'
@@ -116,6 +117,9 @@ export default function ControlPanelContent({
     if (!machineConfig?.axes) return undefined
     const limits: Record<string, { min: number; max: number }> = {}
     for (const axis of machineConfig.axes) {
+      // Csak akkor adjuk hozzá a limitet, ha mindkét érték konkrétan meg van adva.
+      // null = nincs limit, ezeket kihagyjuk.
+      if (axis.min == null || axis.max == null) continue
       limits[axis.name.toUpperCase()] = { min: axis.min, max: axis.max }
     }
     return limits
@@ -443,6 +447,13 @@ export default function ControlPanelContent({
           </div>
         </div>
       </div>
+
+      {/* Extra vezérlés - eszköz-specifikus runtime gombok (capabilities alapján) */}
+      <ExtraControlsPanel
+        device={device}
+        machineConfig={machineConfig}
+        capabilities={capabilities}
+      />
 
       {/* Visualization Section - 3D and G-code side by side */}
       <div className={`card ${vizExpanded ? 'fixed inset-4 z-50' : ''}`}>

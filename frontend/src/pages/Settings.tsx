@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { 
   Save, 
   RefreshCw, 
@@ -22,6 +22,34 @@ export default function Settings() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
+
+  // Az aktuális devices.yaml tartalma a Settings → Eszközök blokkhoz.
+  const [devicesYaml, setDevicesYaml] = useState<string>('')
+  const [devicesYamlPath, setDevicesYamlPath] = useState<string>('')
+  const [devicesYamlLoading, setDevicesYamlLoading] = useState<boolean>(false)
+  const [devicesYamlError, setDevicesYamlError] = useState<string | null>(null)
+
+  const loadDevicesYaml = useCallback(async () => {
+    setDevicesYamlLoading(true)
+    setDevicesYamlError(null)
+    try {
+      const resp = await fetch('/api/config/devices-yaml')
+      if (!resp.ok) {
+        throw new Error(`Hiba (${resp.status})`)
+      }
+      const data = await resp.json()
+      setDevicesYaml(typeof data.raw === 'string' ? data.raw : '')
+      setDevicesYamlPath(typeof data.path === 'string' ? data.path : '')
+    } catch (err) {
+      setDevicesYamlError(err instanceof Error ? err.message : 'Letöltési hiba')
+    } finally {
+      setDevicesYamlLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadDevicesYaml()
+  }, [loadDevicesYaml])
   
   // Load settings from API
   useEffect(() => {
@@ -223,28 +251,48 @@ export default function Settings() {
       {/* Device Info */}
       <div className="card">
         <div className="card-header">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-steel-400" />
-            <span className="font-medium">Eszközök</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-steel-400" />
+              <span className="font-medium">Eszközök</span>
+            </div>
+            <button
+              type="button"
+              onClick={loadDevicesYaml}
+              disabled={devicesYamlLoading}
+              className="text-steel-400 hover:text-white disabled:opacity-50 flex items-center gap-1 text-xs"
+              title="Frissítés"
+            >
+              {devicesYamlLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              Frissítés
+            </button>
           </div>
         </div>
-        <div className="card-body">
-          <p className="text-sm text-steel-400 mb-4">
-            Az eszközök konfigurációját a <code className="bg-steel-800 px-1 rounded">config/devices.yaml</code> 
-            fájlban módosíthatod.
+        <div className="card-body space-y-3">
+          <p className="text-sm text-steel-400">
+            Az eszközök konfigurációját a{' '}
+            <code className="bg-steel-800 px-1 rounded">
+              {devicesYamlPath || 'config/devices.yaml'}
+            </code>{' '}
+            fájlban módosíthatod. Itt az aktuális tartalom látható élőben.
           </p>
-          
-          <div className="bg-steel-800/50 rounded-lg p-4 font-mono text-sm text-steel-300">
-            <pre>{`devices:
-  - id: cnc_main
-    name: "CNC Maró"
-    driver: linuxcnc
-    type: cnc_mill
-    
-  - id: laser_1
-    name: "Lézervágó"
-    driver: grbl
-    type: laser_cutter`}</pre>
+
+          {devicesYamlError && (
+            <div className="p-2 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-xs">
+              {devicesYamlError}
+            </div>
+          )}
+
+          <div className="bg-steel-800/50 rounded-lg overflow-hidden border border-steel-700">
+            <pre className="font-mono text-xs text-steel-300 p-3 overflow-auto max-h-96 leading-relaxed whitespace-pre">
+              {devicesYamlLoading && !devicesYaml
+                ? 'Betöltés…'
+                : devicesYaml || '(üres devices.yaml)'}
+            </pre>
           </div>
         </div>
       </div>
