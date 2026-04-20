@@ -37,9 +37,14 @@ const ProgramStep *ProgramEngine::activeStep() const {
 
 bool ProgramEngine::queueStep(const ProgramStep &step, GrblClient &client, const std::vector<AxisConfig> &axes_cfg) {
   String line = "G1";
+  const bool incremental = (step.mode == "step");
   for (size_t i = 0; i < axes_cfg.size(); i++) {
     float value = i < step.axes.size() ? step.axes[i] : 0.0f;
-    if (value == 0.0f) {
+    // In incremental (G91 / "step") mode a 0.0 delta means "no movement" on
+    // this axis, so skip it.  In absolute (G90 / "pos") mode the axis word
+    // must always be emitted - X0 means "move to absolute zero", which is a
+    // legitimate target.
+    if (incremental && value == 0.0f) {
       continue;
     }
     line += " ";
@@ -49,7 +54,7 @@ bool ProgramEngine::queueStep(const ProgramStep &step, GrblClient &client, const
   line += " F";
   line += String(step.feed > 0 ? step.feed : 600.0f, 1);
 
-  if (step.mode == "step") {
+  if (incremental) {
     return client.queueLine("G91") && client.queueLine(line) && client.queueLine("G90");
   }
   return client.queueLine("G90") && client.queueLine(line);

@@ -59,6 +59,8 @@ static lv_obj_t *line1Label = nullptr;
 static lv_obj_t *line2Label = nullptr;
 static lv_obj_t *line3Label = nullptr;
 static lv_obj_t *line4Label = nullptr;
+static lv_obj_t *txLogPanel = nullptr;
+static lv_obj_t *txLogLabel = nullptr;
 static lv_obj_t *modeIconLabel = nullptr;
 static lv_obj_t *valueArc = nullptr;
 static lv_obj_t *valueLabel = nullptr;
@@ -192,6 +194,11 @@ static String saveTargetName;
 // Cursor for the StepSaveDelete sub-list.
 static int saveDeleteIndex = 0;
 
+// NVS-mirrored "last selection" memories (loaded at boot, written on commit).
+static String savedSaveTargetName;
+static int    savedSaveModeIndex = -1;
+static String savedProgramSelectedName;
+
 static ProgramData teachBuffer;
 static std::vector<float> teachCombined;
 
@@ -296,24 +303,55 @@ static void persistHomeIndex() {
   savedHomeIndex = wrapped;
 }
 
+static void persistSaveTargetName(const String &name) {
+  if (savedSaveTargetName == name) {
+    return;
+  }
+  uiPrefs.putString("sav_tgt_name", name);
+  savedSaveTargetName = name;
+}
+
+static void persistSaveModeIndex() {
+  if (savedSaveModeIndex == saveModeIndex) {
+    return;
+  }
+  uiPrefs.putInt("sav_mode", saveModeIndex);
+  savedSaveModeIndex = saveModeIndex;
+}
+
+static void persistProgramSelectedName(const String &name) {
+  if (savedProgramSelectedName == name) {
+    return;
+  }
+  uiPrefs.putString("prog_sel_name", name);
+  savedProgramSelectedName = name;
+}
+
 static void refreshHomeCards() {
-  // 4 menu items pinned at the cardinal slots: north/east/south/west.
+  // Layout:
+  //   - Status icon centred at the top of the screen.
+  //   - Program / Step / Setup icons share the middle row of the screen,
+  //     Step in the centre with Program to its left and Setup to its right.
+  //   - Each icon's caption sits directly below it.
+  //   - The yellow `infoLine` (line1Label on Home) is placed by the render
+  //     branch in the band below the Step caption.
   // Slot positions are fixed (no rotation around the active item); the
   // active slot is communicated only through colour (handled by the
-  // render branch).  Render-deg convention: 0=N (top), 90=E (right),
-  // 180=S (bottom), 270=W (left).
-  static const float slotAngleDeg[4] = {0.0f, 90.0f, 180.0f, 270.0f};
-  static const lv_coord_t ringRadius = 84;
+  // render branch).
   static const lv_coord_t cardSize = 64;
-  static const lv_coord_t labelOffset = cardSize / 2 + 14;
+  static const lv_coord_t labelOffset = cardSize / 2 + 10;
+  static const lv_coord_t middleRowSpacing = 80;
+  // index -> (dx, dy) relative to LV_ALIGN_CENTER (screen centre = 0,0).
+  // 0=Status (top), 1=Setup (mid-right), 2=Step (centre), 3=Program (mid-left).
+  static const lv_coord_t slotDx[4] = { 0,  middleRowSpacing, 0, -middleRowSpacing };
+  static const lv_coord_t slotDy[4] = {-84, 0,                0, 0 };
 
   for (int i = 0; i < homeCount; i++) {
     if (!homeCardButtons[i] || !homeCardIcons[i] || !homeCardLabels[i]) {
       continue;
     }
-    const float rad = (slotAngleDeg[i] - 90.0f) * (3.14159265f / 180.0f);
-    const lv_coord_t dx = static_cast<lv_coord_t>(cosf(rad) * static_cast<float>(ringRadius));
-    const lv_coord_t dy = static_cast<lv_coord_t>(sinf(rad) * static_cast<float>(ringRadius));
+    const lv_coord_t dx = slotDx[i];
+    const lv_coord_t dy = slotDy[i];
 
     lv_label_set_text(homeCardIcons[i], homeItemSymbol(i));
     lv_label_set_text(homeCardLabels[i], fitLine(homeItems[i], 10).c_str());
@@ -322,17 +360,12 @@ static void refreshHomeCards() {
     lv_obj_align(homeCardButtons[i], LV_ALIGN_CENTER, dx, dy);
     lv_obj_set_style_text_font(homeCardIcons[i], &lv_font_montserrat_24, LV_PART_MAIN);
 
-    // Caption position relative to the icon: usually directly below, but
-    //  - the bottom (Step) icon's caption goes ABOVE so it doesn't fall off
-    //    the screen edge,
-    //  - the left (Program) icon's caption is nudged a few pixels to the
-    //    right so the descender of the lower-case "p" isn't clipped by the
-    //    screen edge.
+    // Captions sit directly below their icon. The Program icon's caption
+    // is nudged a few pixels to the right so the descender of the
+    // lower-case "p" isn't clipped by the screen edge.
     lv_coord_t labelDx = dx;
     lv_coord_t labelDy = static_cast<lv_coord_t>(dy + labelOffset);
-    if (i == 2) {  // Step (bottom)
-      labelDy = static_cast<lv_coord_t>(dy - labelOffset);
-    } else if (i == 3) {  // Program (left)
+    if (i == 3) {  // Program (mid-left)
       labelDx = static_cast<lv_coord_t>(dx + 6);
     }
     lv_obj_align(homeCardLabels[i], LV_ALIGN_CENTER, labelDx, labelDy);
@@ -1233,17 +1266,18 @@ static void updateOwnershipFromStatus() {
                   ownerReason.isEmpty() ? "-" : ownerReason.c_str());
     if (ownerIsPanel) {
       infoLine = "Panel control granted";
-      if (screen == Screen::Status || screen == Screen::Home) {
-        stepAxis = 0;
-        stepValue = 0.0f;
-        stepValues.assign(machineCfg.axes.size(), 0.0f);
-        stepFeedEdit = false;
-        screen = Screen::Step;
-      }
+      // Reset Step working values so a later entry starts clean, but always
+      // land on Home so the user explicitly chooses the next action (Step,
+      // Status, Program, ...) instead of being dropped into the editor.
+      stepAxis = 0;
+      stepValue = 0.0f;
+      stepValues.assign(machineCfg.axes.size(), 0.0f);
+      stepFeedEdit = false;
+      screen = Screen::Home;
       uiDirty = true;
     } else if (owner.equalsIgnoreCase("host")) {
       infoLine = "Host active: monitor mode";
-      screen = Screen::Status;
+      screen = Screen::Home;
       uiDirty = true;
     } else if (lastOwner.equalsIgnoreCase("panel")) {
       infoLine = "Control released";
@@ -1402,13 +1436,50 @@ static bool queueParallelMove(const std::vector<float> &values) {
   return grblClient.queueLine(line);
 }
 
+// Serial mode helper: each successful single-axis jog on the Step screen
+// pushes its own ProgramStep into the teach buffer, so by the time the
+// user reaches "Save" the buffer already contains one entry per axis with
+// the actual values (the `stepValue` global is reset after each press).
+static void recordSerialAxisStep(int axis_idx, float value) {
+  if (axis_idx < 0 || axis_idx >= static_cast<int>(machineCfg.axes.size())) {
+    return;
+  }
+  if (fabsf(value) < 0.0005f) {
+    return;
+  }
+  ProgramStep s;
+  s.mode = "step";
+  s.axes.assign(machineCfg.axes.size(), 0.0f);
+  s.axes[axis_idx] = value;
+  s.feed = effectiveFeed(machineCfg.axes[axis_idx]);
+  s.comment = "teach";
+  teachBuffer.steps.push_back(s);
+}
+
 static void recordCurrentStep() {
   ProgramStep s;
   if (machineCfg.operation_mode == "serial") {
-    s.mode = "step";
-    s.axes.assign(machineCfg.axes.size(), 0.0f);
-    s.axes[stepAxis] = stepValue;
-    s.feed = effectiveFeed(machineCfg.axes[stepAxis]);
+    // Serial mode steps are recorded incrementally via recordSerialAxisStep
+    // on each successful per-axis jog.  At Save time `stepValue` is already
+    // zero, so doing it here would only ever append a no-op all-zero step.
+    return;
+  } else if (machineCfg.operation_mode == "mpg") {
+    // In MPG mode the user teaches the *current* machine pose by jogging,
+    // so the values to record are the live GRBL axis positions, not the
+    // never-updated `stepValues` (which would always be all zeros and
+    // produce a useless "G90 X0 Y0 Z0" target).
+    s.mode = "pos";
+    s.axes = statusAxes();
+    if (s.axes.size() < machineCfg.axes.size()) {
+      s.axes.resize(machineCfg.axes.size(), 0.0f);
+    }
+    float minRate = INFINITY;
+    for (size_t i = 0; i < machineCfg.axes.size(); i++) {
+      float r = effectiveFeed(machineCfg.axes[i]);
+      if (r < minRate) minRate = r;
+    }
+    if (!isfinite(minRate)) minRate = 1000.0f;
+    s.feed = minRate;
   } else {
     s.mode = "pos";
     s.axes = stepValues;
@@ -1516,6 +1587,31 @@ void DemoStyleUiAdapter::begin() {
   lv_label_set_long_mode(line4Label, LV_LABEL_LONG_CLIP);
   lv_obj_align(line4Label, LV_ALIGN_TOP_MID, 0, 106);
   lv_label_set_text(line4Label, "");
+
+  // ProgramRun TX log: a wide, tall scrollable panel centred on the screen
+  // ending above the bottom Back button.  Auto-scrolls to the latest line on
+  // every refresh, and finger-drag scrolling stays enabled so the user can
+  // browse historical lines.  Hidden everywhere except Screen::ProgramRun.
+  txLogPanel = lv_obj_create(lv_scr_act());
+  lv_obj_set_size(txLogPanel, 200, 124);
+  lv_obj_align(txLogPanel, LV_ALIGN_TOP_MID, 0, 76);
+  lv_obj_set_style_pad_all(txLogPanel, 4, LV_PART_MAIN);
+  lv_obj_set_style_border_width(txLogPanel, 0, LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(txLogPanel, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_radius(txLogPanel, 4, LV_PART_MAIN);
+  lv_obj_set_scroll_dir(txLogPanel, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(txLogPanel, LV_SCROLLBAR_MODE_AUTO);
+  lv_obj_add_flag(txLogPanel, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(txLogPanel, LV_OBJ_FLAG_SCROLLABLE);
+
+  txLogLabel = lv_label_create(txLogPanel);
+  lv_obj_set_width(txLogLabel, 188);
+  lv_label_set_long_mode(txLogLabel, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_text_align(txLogLabel, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+  lv_obj_set_style_text_font(txLogLabel, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_label_set_text(txLogLabel, "");
+
+  lv_obj_add_flag(txLogPanel, LV_OBJ_FLAG_HIDDEN);
 
   valueArc = lv_arc_create(lv_scr_act());
   lv_obj_set_size(valueArc, 241, 241);
@@ -1846,10 +1942,12 @@ void DemoStyleUiAdapter::render() {
       break;
     }
     case Screen::StepSaveMode: {
-      title = String("Save: ") + saveTargetName;
-      l1 = saveTargetName;
-      l2 = "Mode: " + String(saveModes[saveModeIndex]);
-      l3 = "SW=Save  Long=Back";
+      title = "Save";
+      l1 = saveTargetName;            // small caption (montserrat_14)
+      l2 = saveModes[saveModeIndex];  // BIG value (responsiveValueFont)
+      l3 = "";                        // no hint row
+      // l4 left at default (= infoLine) so the yellow status row can still
+      // surface ephemeral messages.
       break;
     }
     case Screen::StepSaveDelete: {
@@ -1864,28 +1962,35 @@ void DemoStyleUiAdapter::render() {
     }
     case Screen::ProgramList:
       title = "Program";
-      if (programIndex == 0) {
-        l1 = "> Return";
-      } else if (programNames.empty()) {
-        l1 = "> Return";
+      if (programIndex == 0 || programNames.empty()) {
+        l1 = "Return";
+        l2 = "";
       } else {
-        l1 = String("> ") + programNames[programIndex - 1];
+        l1 = "";
+        l2 = programNames[programIndex - 1];  // BIG (responsiveValueFont)
       }
-      l2 = "SW=Start selected";
-      l3 = "Programs: " + String(programNames.size());
+      l3 = "";
+      // l4 left at default (= infoLine).
       break;
     case Screen::ProgramRun: {
       title = "Run: " + programEngine.programName();
-      const ProgramStep *s = programEngine.activeStep();
       l1 = "Step " + String(programEngine.currentStep()) + "/" + String(programEngine.totalSteps());
-      l2 = s ? axisValueLine(s->axes) : "Waiting...";
-      l3 = String("State: ") + (programEngine.state() == ProgramEngine::State::Paused ? "Paused" : "Running");
+      // Live axis position is suppressed here: the TX log occupies the centre
+      // of the screen instead.  Step target axes are visible in the G-code
+      // lines themselves.
+      l2 = "";
+      const String grblState = grblParser.status().state;
+      l3 = String("State: ") + (grblState.isEmpty() ? String("?") : grblState);
       break;
     }
   }
 
+  // Background palette driven by the live GRBL state on every screen so the
+  // user always has at-a-glance feedback about the controller's status
+  // (idle/running/hold/alarm).  When the controller hasn't reported a state
+  // yet we fall back to the screen-specific default palette.
   UiPalette palette = paletteForScreen(screen);
-  if (screen == Screen::Home) {
+  {
     const String &state = grblParser.status().state;
     if (state == "Idle") {
       palette = {0x1A3B1F, 0xE9FFE9, 0x59D869};  // command-ready
@@ -1932,10 +2037,13 @@ void DemoStyleUiAdapter::render() {
       lv_obj_add_flag(line1Label, LV_OBJ_FLAG_HIDDEN);
     } else {
       lv_obj_clear_flag(line1Label, LV_OBJ_FLAG_HIDDEN);
-      lv_obj_set_width(line1Label, 180);
+      lv_obj_set_width(line1Label, 200);
       lv_obj_set_height(line1Label, LV_SIZE_CONTENT);
       lv_obj_set_style_text_align(line1Label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-      lv_obj_align(line1Label, LV_ALIGN_CENTER, 0, 0);
+      // Slot the status row in the band below the centre Step icon and its
+      // caption (icon centre y=120, caption centre y~164), leaving a few
+      // pixels of breathing room.
+      lv_obj_align(line1Label, LV_ALIGN_CENTER, 0, 66);
     }
 
     for (int i = 0; i < homeCount; i++) {
@@ -2010,6 +2118,12 @@ void DemoStyleUiAdapter::render() {
         lv_obj_align(line2Label, LV_ALIGN_TOP_MID, 0, 86);
         lv_obj_align(line3Label, LV_ALIGN_TOP_MID, 0, 126);
         lv_obj_clear_flag(line3Label, LV_OBJ_FLAG_HIDDEN);
+      } else if (screen == Screen::ProgramRun) {
+        lv_obj_align(titleLabel, LV_ALIGN_TOP_MID, 0, 8);
+        lv_obj_align(line1Label, LV_ALIGN_TOP_MID, 0, 32);
+        lv_obj_add_flag(line2Label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(line3Label, LV_ALIGN_TOP_MID, 0, 54);
+        lv_obj_clear_flag(line3Label, LV_OBJ_FLAG_HIDDEN);
       } else {
         lv_obj_align(titleLabel, LV_ALIGN_TOP_MID, 0, 8);
         lv_obj_align(line1Label, LV_ALIGN_TOP_MID, 0, 40);
@@ -2052,13 +2166,20 @@ void DemoStyleUiAdapter::render() {
   if (setupMenu) {
     lv_obj_set_style_text_font(line1Label, &lv_font_montserrat_20, LV_PART_MAIN);
   } else if (showCarousel) {
-    lv_obj_set_style_text_font(line1Label, &lv_font_montserrat_20, LV_PART_MAIN);
+    // Home centre row carries `infoLine` (ephemeral status / error). Match
+    // the bottom yellow status row used on every other page: small font and
+    // yellow tint so the user always recognises it as a transient message.
+    lv_obj_set_style_text_font(line1Label, &lv_font_montserrat_14, LV_PART_MAIN);
   } else {
     lv_obj_set_style_text_font(line1Label, (editLayout || actionMenu) ? &lv_font_montserrat_20 : &lv_font_montserrat_14, LV_PART_MAIN);
   }
-  lv_obj_set_style_text_font(line2Label, editLayout ? responsiveValueFont(l2Fit) : (actionMenu ? &lv_font_montserrat_20 : &lv_font_montserrat_14), LV_PART_MAIN);
+  const bool bigValueLine2 = editLayout || screen == Screen::StepSaveMode || screen == Screen::ProgramList;
+  lv_obj_set_style_text_font(line2Label, bigValueLine2 ? responsiveValueFont(l2Fit) : (actionMenu ? &lv_font_montserrat_20 : &lv_font_montserrat_14), LV_PART_MAIN);
   lv_obj_set_style_text_font(line3Label, &lv_font_montserrat_14, LV_PART_MAIN);
-  lv_obj_set_style_text_color(line1Label, editLayout ? axisColor : fg, LV_PART_MAIN);
+  lv_obj_set_style_text_color(line1Label,
+                              showCarousel ? lv_color_hex(0xFFD400)
+                                           : (editLayout ? axisColor : fg),
+                              LV_PART_MAIN);
   lv_obj_set_style_text_color(line2Label, fg, LV_PART_MAIN);
   lv_obj_set_style_text_color(line3Label, editLayout ? axisColor : fg, LV_PART_MAIN);
 
@@ -2086,6 +2207,46 @@ void DemoStyleUiAdapter::render() {
     lv_label_set_text(line4Label, l4Fit.c_str());
   }
 
+  if (txLogPanel && txLogLabel) {
+    if (screen == Screen::ProgramRun) {
+      String log;
+      const auto &recent = grblClient.recentTx();
+      for (const String &l : recent) {
+        log += l;
+        log += "\n";
+      }
+      if (log.length() > 0) {
+        log.remove(log.length() - 1);
+      }
+      // Sticky-bottom auto-scroll: only snap to the latest line if the user
+      // was already at (or very near) the bottom before the new content was
+      // appended.  If they finger-scrolled up to inspect older lines, we
+      // leave the scroll offset alone so their view is preserved.  As soon
+      // as they drag back to the bottom, the auto-follow resumes.
+      static String lastTxLog;
+      const bool textChanged = (log != lastTxLog);
+      bool wasAtBottom = true;
+      if (textChanged) {
+        // Threshold ~ one line of text so a tiny gap still counts as bottom.
+        wasAtBottom = (lv_obj_get_scroll_bottom(txLogPanel) <= 6);
+        lv_label_set_text(txLogLabel, log.c_str());
+        lastTxLog = log;
+      }
+      lv_obj_set_style_text_color(txLogLabel, lv_color_mix(fg, bg, LV_OPA_70), LV_PART_MAIN);
+      lv_obj_set_style_bg_color(txLogPanel, lv_color_mix(bg, fg, LV_OPA_90), LV_PART_MAIN);
+      lv_obj_set_style_bg_opa(txLogPanel, LV_OPA_30, LV_PART_MAIN);
+      lv_obj_clear_flag(txLogPanel, LV_OBJ_FLAG_HIDDEN);
+      if (textChanged && wasAtBottom) {
+        // Force-layout so the freshly set label has its real height before we
+        // scroll, then snap to the bottom so the most recent line is in view.
+        lv_obj_update_layout(txLogPanel);
+        lv_obj_scroll_to_y(txLogPanel, LV_COORD_MAX, LV_ANIM_OFF);
+      }
+    } else {
+      lv_obj_add_flag(txLogPanel, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+
   // ---- Position-stack overlay (shared for Status + Step non-MPG) ----------
   // The spangroup-based per-axis readout is positioned here so it can pick up
   // the final palette colours.  Home suppresses it explicitly above; other
@@ -2093,14 +2254,24 @@ void DemoStyleUiAdapter::render() {
   const bool stepWithStack = (screen == Screen::Step && arcVisible && !stepFeedEdit &&
                               machineCfg.operation_mode != "mpg");
   const bool statusWithStack = (screen == Screen::Status);
-  if (stepWithStack || statusWithStack) {
+  const bool programListWithStack = (screen == Screen::ProgramList);
+  if (stepWithStack || statusWithStack || programListWithStack) {
     const lv_color_t unitColor = lv_color_mix(accent, fg, LV_OPA_60);
     const int decimals = stepWithStack ? 3 : 2;
     renderPositionStack(currentAxes, machineCfg.axes, fg, unitColor, decimals,
                         &lv_font_montserrat_14, &lv_font_montserrat_14);
     const int rowCount = static_cast<int>(min<size_t>(machineCfg.axes.size(), 3));
-    const int pitch = stepWithStack ? 18 : 22;
-    const int top = stepWithStack ? 139 : 84;
+    int pitch = 22;
+    int top = 84;
+    if (stepWithStack) {
+      pitch = 18;
+      top = 139;
+    } else if (programListWithStack) {
+      // Slotted below the BIG selected-program label (l2 ends near y~96)
+      // and above the yellow infoLine row (y=178).
+      pitch = 22;
+      top = 102;
+    }
     for (int i = 0; i < rowCount; i++) {
       if (positionStackSpans[i]) {
         lv_obj_align(positionStackSpans[i], LV_ALIGN_TOP_MID, 0,
@@ -2116,6 +2287,10 @@ void DemoStyleUiAdapter::render() {
       // overlap (default else-branch placed l3 at y=84).
       const int afterStack = top + rowCount * pitch + 4;
       lv_obj_align(line3Label, LV_ALIGN_TOP_MID, 0, static_cast<lv_coord_t>(afterStack));
+    }
+    if (programListWithStack) {
+      // l3 is empty in this screen; keep it hidden so it can't claim space.
+      lv_obj_add_flag(line3Label, LV_OBJ_FLAG_HIDDEN);
     }
   }
 }
@@ -2231,6 +2406,46 @@ static void onTouchReturn(lv_event_t *e) {
   navigateBack();
 }
 
+// Enter whichever Home item is currently active (`homeIndex`).  Keeps the
+// per-screen entry side effects (cursor resets, ownership request, program
+// list refresh) in one place so both touch and any future re-enabled
+// encoder press go through identical setup.
+static void enterActiveHomeItem() {
+  infoLine = "";
+  switch (homeIndex) {
+    case 0:
+      screen = Screen::Status;
+      break;
+    case 1:
+      setupMenuIndex = 0;
+      screen = Screen::Setup;
+      break;
+    case 2:
+      stepAxis = 0;
+      stepValue = 0.0f;
+      stepValues.assign(machineCfg.axes.size(), 0.0f);
+      stepFeedEdit = false;
+      requestPanelOwnership();
+      screen = Screen::Step;
+      break;
+    case 3:
+      programStore.listPrograms(programNames);
+      programIndex = 0;  // default Return row
+      if (savedProgramSelectedName.length() > 0) {
+        for (size_t i = 0; i < programNames.size(); i++) {
+          if (programNames[i] == savedProgramSelectedName) {
+            programIndex = static_cast<int>(i) + 1;  // +1 for the Return row
+            break;
+          }
+        }
+      }
+      screen = Screen::ProgramList;
+      break;
+    default:
+      break;
+  }
+}
+
 static void onHomeCardClick(lv_event_t *e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
     return;
@@ -2246,8 +2461,7 @@ static void onHomeCardClick(lv_event_t *e) {
   }
 
   // Each ring button stores its menu index in its user_data.  Tapping any
-  // icon makes it the active item and immediately runs the same action a
-  // short-press would: a single tap navigates directly to that screen.
+  // icon makes it the active item and navigates directly to its screen.
   lv_obj_t *btn = static_cast<lv_obj_t *>(lv_event_get_target(e));
   const int idx = static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(btn)));
   if (idx < 0 || idx >= homeCount) {
@@ -2257,7 +2471,7 @@ static void onHomeCardClick(lv_event_t *e) {
     homeIndex = idx;
     persistHomeIndex();
   }
-  onShortPress();
+  enterActiveHomeItem();
   uiDirty = true;
 }
 
@@ -2293,12 +2507,14 @@ static void onArcReleased(lv_event_t *e) {
 static void onShortPress() {
   infoLine = "";
 
+  // Home page: encoder press is intentionally inert; menu selection is
+  // touch-only on this screen.  Rotation still updates the visual
+  // highlight for previewing.
+  if (screen == Screen::Home) {
+    return;
+  }
+
   if (hostControlActive) {
-    if (screen == Screen::Home) {
-      screen = Screen::Status;
-      infoLine = "Host active: monitor mode";
-      return;
-    }
     if (screen == Screen::Status) {
       requestPanelOwnership();
       infoLine = "Takeover requested";
@@ -2308,30 +2524,8 @@ static void onShortPress() {
     return;
   }
 
-  if (screen == Screen::Home) {
-    switch (homeIndex) {
-      case 0: screen = Screen::Status; break;
-      case 1:
-        setupMenuIndex = 0;
-        screen = Screen::Setup;
-        break;
-      case 2:
-        stepAxis = 0;
-        stepValue = 0.0f;
-        stepValues.assign(machineCfg.axes.size(), 0.0f);
-        stepFeedEdit = false;
-        requestPanelOwnership();
-        screen = Screen::Step;
-        break;
-      case 3:
-        programStore.listPrograms(programNames);
-        programIndex = 0;
-        screen = Screen::ProgramList;
-        break;
-      default: break;
-    }
-    return;
-  }
+  // The Home short-press path was disabled higher up; the equivalent
+  // navigation now lives in enterActiveHomeItem() and runs from touch only.
 
   if (screen == Screen::Setup) {
     switch (setupMenuIndex) {
@@ -2545,12 +2739,14 @@ static void onShortPress() {
         infoLine = grblClient.lastError().isEmpty() ? "Step send failed" : ("GRBL " + grblClient.lastError());
         return;
       }
+      recordSerialAxisStep(stepAxis, stepValue);
       infoLine = "";
       stepAxis++;
       stepValue = 0.0f;
       if (stepAxis >= static_cast<int>(machineCfg.axes.size())) {
         stepAxis = static_cast<int>(machineCfg.axes.size()) - 1;
-        stepActionIndex = 0;
+        // Megorizzuk a stepActionIndex-et: ha az elozo savsban Save volt
+        // a kurzor, ujra Save legyen az alapertelmezes.
         screen = Screen::StepActions;
       }
     } else if (machineCfg.operation_mode == "parallel") {
@@ -2563,7 +2759,6 @@ static void onShortPress() {
           return;
         }
         infoLine = "Parallel move sent";
-        stepActionIndex = 0;
         screen = Screen::StepActions;
       }
     } else {
@@ -2574,7 +2769,6 @@ static void onShortPress() {
       stepValue = 0.0f;
       if (stepAxis >= static_cast<int>(machineCfg.axes.size())) {
         stepAxis = static_cast<int>(machineCfg.axes.size()) - 1;
-        stepActionIndex = 0;
         screen = Screen::StepActions;
       }
     }
@@ -2592,9 +2786,18 @@ static void onShortPress() {
       case 1: // Save
         recordCurrentStep();
         programStore.listPrograms(programNames);
-        // Land on "New program" as the default selection (most common case).
+        // Default to "New program"; if a previously persisted target name
+        // matches an existing program, land the cursor on that row instead.
         saveProgramIndex = static_cast<int>(programNames.size());
-        saveModeIndex = 0;
+        if (savedSaveTargetName.length() > 0) {
+          for (size_t i = 0; i < programNames.size(); i++) {
+            if (programNames[i] == savedSaveTargetName) {
+              saveProgramIndex = static_cast<int>(i);
+              break;
+            }
+          }
+        }
+        // saveModeIndex is preserved (loaded from NVS at boot, updated on save).
         screen = Screen::StepSaveTarget;
         break;
     }
@@ -2605,12 +2808,12 @@ static void onShortPress() {
     const int N = static_cast<int>(programNames.size());
     if (saveProgramIndex < N) {
       saveTargetName = programNames[saveProgramIndex];
-      saveModeIndex = 1;  // existing -> default Overwrite
+      // saveModeIndex preserved (loaded from NVS / last save).
       screen = Screen::StepSaveMode;
     } else if (saveProgramIndex == N) {
       // "New program"
       saveTargetName = programStore.nextAutoName();
-      saveModeIndex = 0;  // new -> default Append
+      // saveModeIndex preserved (loaded from NVS / last save).
       screen = Screen::StepSaveMode;
     } else {
       // "Del program"
@@ -2627,6 +2830,8 @@ static void onShortPress() {
   if (screen == Screen::StepSaveMode) {
     bool append = saveModeIndex == 0;
     saveTeachProgram(saveTargetName, append);
+    persistSaveTargetName(saveTargetName);
+    persistSaveModeIndex();
     stepAxis = 0;
     stepValue = 0.0f;
     stepValues.assign(machineCfg.axes.size(), 0.0f);
@@ -2666,10 +2871,14 @@ static void onShortPress() {
       return;
     }
     ProgramData p;
-    if (!programStore.loadProgram(programNames[programIndex - 1], p, machineCfg.axes)) {
+    const String selectedName = programNames[programIndex - 1];
+    if (!programStore.loadProgram(selectedName, p, machineCfg.axes)) {
       infoLine = "Load err";
       return;
     }
+    persistProgramSelectedName(selectedName);
+    grblClient.clearRecentTx();
+    grblClient.clearError();
     programEngine.start(p);
     screen = Screen::ProgramRun;
     return;
@@ -2686,6 +2895,15 @@ static void onShortPress() {
 }
 
 static void onLongPress() {
+  // Home: encoder long-press is inert (touch-only navigation on this page).
+  if (screen == Screen::Home) {
+    return;
+  }
+  // StepSaveMode: long-press is a no-op; user must use the on-screen back
+  // button to leave (avoids accidentally exiting while choosing a mode).
+  if (screen == Screen::StepSaveMode) {
+    return;
+  }
   if (screen == Screen::SetupAxes && setupAxesCursor == 2 && setupAxesEditing &&
       (setupAxesField == 0 || setupAxesField == 1)) {
     AxisConfig &a = machineCfg.axes[setupAxesAxis];
@@ -2919,6 +3137,11 @@ void setup() {
   uiPrefs.begin("crowpanel", false);
   homeIndex = wrappedHomeIndex(uiPrefs.getInt("home_idx", homeIndex));
   savedHomeIndex = homeIndex;
+  savedSaveTargetName = uiPrefs.getString("sav_tgt_name", "");
+  saveModeIndex = uiPrefs.getInt("sav_mode", 0);
+  if (saveModeIndex < 0 || saveModeIndex >= saveModeCount) saveModeIndex = 0;
+  savedSaveModeIndex = saveModeIndex;
+  savedProgramSelectedName = uiPrefs.getString("prog_sel_name", "");
   stepValues.assign(machineCfg.axes.size(), 0.0f);
   teachCombined.assign(machineCfg.axes.size(), 0.0f);
 
@@ -2953,7 +3176,26 @@ void loop() {
       uiDirty = true;
     }
   }
-  programEngine.update(grblClient, machineCfg.axes);
+  // Gate the program engine on actual GRBL motion-idle (not just TX-idle).
+  // GRBL ACKs `ok` when the planner accepts a line, but motion can still be
+  // running.  Advance steps only when the controller reports it has finished
+  // moving (Idle/Hold) or before any status has been received (empty).
+  // Use baseGrblState() so substates like "Hold:0" / "Door:0" map back to
+  // their root ("Hold" / "Door").
+  {
+    const String base = baseGrblState();
+    const bool grblIdle = (base == "Idle" || base == "Hold" || base.isEmpty());
+    if (grblIdle) {
+      programEngine.update(grblClient, machineCfg.axes);
+    }
+  }
+  if (programEngine.state() == ProgramEngine::State::Paused &&
+      !grblClient.lastError().isEmpty() && screen == Screen::ProgramRun) {
+    if (infoLine != grblClient.lastError()) {
+      infoLine = grblClient.lastError();
+      uiDirty = true;
+    }
+  }
 
   {
     const uint32_t statusInterval =
@@ -2969,11 +3211,9 @@ void loop() {
   }
 
   if (uiDirty || (now - lastUiMs > 33)) {
-    if (programEngine.state() == ProgramEngine::State::Stopped && screen == Screen::ProgramRun) {
-      screen = Screen::ProgramList;
-      programStore.listPrograms(programNames);
-      uiDirty = true;
-    }
+    // Run-screen marad aktiv a program befejezese utan is; a felhasznalo
+    // a Back gombbal navigal vissza, igy lattja az utolso TX sorokat es
+    // a vegallapotot.
     uiAdapter.render();
     lastUiMs = now;
     uiDirty = false;

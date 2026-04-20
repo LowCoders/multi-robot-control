@@ -77,8 +77,21 @@ bool ProgramStore::loadProgram(const String &name, ProgramData &out, const std::
 
     JsonObject axes = s["axes"];
     for (size_t i = 0; i < axes_cfg.size(); i++) {
-      if (axes[axes_cfg[i].name].is<float>() || axes[axes_cfg[i].name].is<int>()) {
-        step.axes[i] = axes[axes_cfg[i].name].as<float>();
+      // Try exact match first; fall back to case-insensitive scan so a
+      // legacy program saved with lowercase axis names still loads against
+      // a current uppercase machine config.
+      const String &want = axes_cfg[i].name;
+      if (axes[want].is<float>() || axes[want].is<int>()) {
+        step.axes[i] = axes[want].as<float>();
+        continue;
+      }
+      for (JsonPair kv : axes) {
+        const String key = kv.key().c_str();
+        if (key.equalsIgnoreCase(want) &&
+            (kv.value().is<float>() || kv.value().is<int>())) {
+          step.axes[i] = kv.value().as<float>();
+          break;
+        }
       }
     }
     out.steps.push_back(step);

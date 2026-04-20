@@ -24,13 +24,19 @@ public:
   void setMotionAllowed(bool allowed);
   bool motionAllowed() const { return _motion_allowed; }
 
+  const std::deque<String> &recentTx() const { return _recent_tx; }
+  void clearRecentTx() { _recent_tx.clear(); }
+
 private:
   bool isMotionCommand(const String &line) const;
   void processLine(const String &line);
 
+  static constexpr size_t kRecentTxCap = 16;
+
   HardwareSerial *_serial = nullptr;
   GrblParser *_parser = nullptr;
   std::deque<String> _queue;
+  std::deque<String> _recent_tx;
   String _rx_line;
   bool _awaiting_ok = false;
   uint32_t _awaiting_since_ms = 0;

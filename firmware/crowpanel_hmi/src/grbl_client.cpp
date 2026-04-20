@@ -130,6 +130,10 @@ void GrblClient::update() {
                   millis(), line.c_str(),
                   static_cast<unsigned>(_queue.size()));
     _serial->println(line);
+    _recent_tx.push_back(line);
+    if (_recent_tx.size() > kRecentTxCap) {
+      _recent_tx.pop_front();
+    }
     _awaiting_ok = true;
     _awaiting_since_ms = millis();
     _awaiting_line = line;
