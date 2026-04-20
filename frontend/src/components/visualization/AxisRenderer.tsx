@@ -19,11 +19,15 @@ const AxisCarriage = memo(function AxisCarriage({ config, targetPosition, childr
   // Default dimensions if not specified
   const dims = config.dimensions ?? { width: 60, height: 40, depth: 60 }
   
-  // Get rail length based on axis limits
+  // Get rail length based on axis limits (null = no limit, fallback to sensible default)
   const railLength = useMemo(() => {
-    const range = config.max - config.min
+    const fallbackMax = config.type === 'rotary' ? 180 : 500
+    const fallbackMin = config.type === 'rotary' ? -180 : -500
+    const max = config.max ?? fallbackMax
+    const min = config.min ?? fallbackMin
+    const range = max - min
     return Math.max(range + 50, 100)
-  }, [config.max, config.min])
+  }, [config.max, config.min, config.type])
 
   // Carriage material
   const carriageMaterial = useMemo(() => {
@@ -165,13 +169,15 @@ const AxisCarriage = memo(function AxisCarriage({ config, targetPosition, childr
     }
   })
 
-  // Get rail position offset - memoized
+  // Get rail position offset - memoized (null limits = use 0 as midpoint)
   const railOffset = useMemo((): [number, number, number] => {
-    const midpoint = (config.max + config.min) / 2
+    const max = config.max ?? 0
+    const min = config.min ?? 0
+    const midpoint = (max + min) / 2
     switch (config.name) {
       case 'X': return [midpoint, 0, -dims.height / 2 - 10]
       case 'Y': return [0, midpoint, -dims.height / 2 - 10]
-      case 'Z': return [0, 0, (config.max + config.min) / 2]
+      case 'Z': return [0, 0, midpoint]
       default: return [0, 0, 0]
     }
   }, [config.max, config.min, config.name, dims.height])

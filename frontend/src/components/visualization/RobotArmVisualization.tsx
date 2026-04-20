@@ -268,9 +268,22 @@ interface KinematicArmProps {
   position: Position
   gripperState: GripperState
   frameColor?: string
+  // X/Y/Z tengely színek a config.axes-ból (a felhasználó által beállított).
+  // Default: piros / zöld / kék (klasszikus axis colors).
+  axisColorX?: string
+  axisColorY?: string
+  axisColorZ?: string
 }
 
-const KinematicArm = memo(function KinematicArm({ config, position, gripperState, frameColor = '#2d2d2d' }: KinematicArmProps) {
+const KinematicArm = memo(function KinematicArm({
+  config,
+  position,
+  gripperState,
+  frameColor = '#2d2d2d',
+  axisColorX = '#ef4444',
+  axisColorY = '#22c55e',
+  axisColorZ = '#3b82f6',
+}: KinematicArmProps) {
   const j1Ref = useRef<THREE.Group>(null)
   const j2Ref = useRef<THREE.Group>(null)
   const j3Ref = useRef<THREE.Group>(null)
@@ -350,26 +363,26 @@ const KinematicArm = memo(function KinematicArm({ config, position, gripperState
 
         {/* Váll pozíció */}
         <group position={[0, 0, baseHeight]}>
-          {/* Váll ízület */}
-          <Joint radius={lowerArmWidth * 0.45} color="#ef4444" />
+          {/* Váll ízület - X tengely színe */}
+          <Joint radius={lowerArmWidth * 0.45} color={axisColorX} />
 
           {/* Y tengely - Váll forgás (vízszintes tengely körül) */}
           <group ref={j2Ref}>
-            {/* Alsó kar */}
-            <ArmLink length={lowerArmLength} width={lowerArmWidth} color="#22c55e" frameColor={frameColor} />
+            {/* Alsó kar - Y tengely színe */}
+            <ArmLink length={lowerArmLength} width={lowerArmWidth} color={axisColorY} frameColor={frameColor} />
 
-            {/* Könyök ízület - a kar tetején */}
+            {/* Könyök ízület - a kar tetején (Y tengely színe) */}
             <group position={[0, 0, lowerArmLength]}>
-              <Joint radius={upperArmWidth * 0.45} color="#22c55e" />
+              <Joint radius={upperArmWidth * 0.45} color={axisColorY} />
 
               {/* Z tengely - Könyök forgás */}
               <group ref={j3Ref}>
-                {/* Felső kar */}
-                <ArmLink length={upperArmLength} width={upperArmWidth} color="#3b82f6" frameColor={frameColor} />
+                {/* Felső kar - Z tengely színe */}
+                <ArmLink length={upperArmLength} width={upperArmWidth} color={axisColorZ} frameColor={frameColor} />
 
-                {/* Végeffektor - a felső kar tetején */}
+                {/* Végeffektor - a felső kar tetején (Z tengely színe) */}
                 <group position={[0, 0, upperArmLength]}>
-                  <Joint radius={upperArmWidth * 0.35} color="#3b82f6" />
+                  <Joint radius={upperArmWidth * 0.35} color={axisColorZ} />
 
                   {/* Gripper */}
                   {config.endEffector.type === 'gripper' && (
@@ -564,6 +577,11 @@ function Scene({ config, position, status, cameraPosition, cameraTarget, cameraF
     endEffector: { type: 'gripper' as const, gripperWidth: 60, gripperLength: 50, gripperFingerCount: 2 },
   }
 
+  // X/Y/Z tengelyek beállított színei a configból
+  const axisColorX = config.axes.find((a) => a.name === 'X')?.color ?? '#ef4444'
+  const axisColorY = config.axes.find((a) => a.name === 'Y')?.color ?? '#22c55e'
+  const axisColorZ = config.axes.find((a) => a.name === 'Z')?.color ?? '#3b82f6'
+
   return (
     <>
       {/* Megvilágítás */}
@@ -611,6 +629,9 @@ function Scene({ config, position, status, cameraPosition, cameraTarget, cameraF
         position={currentPosition}
         gripperState={gripperState}
         frameColor={config.visuals?.frameColor}
+        axisColorX={axisColorX}
+        axisColorY={axisColorY}
+        axisColorZ={axisColorZ}
       />
     </>
   )

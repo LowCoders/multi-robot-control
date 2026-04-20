@@ -95,7 +95,9 @@ function resolveGeom(cfg?: TubeBenderConfig): ResolvedGeom {
   // és illeszkedjen a magasabb C profilú csőtengely-tartóhoz.
   const spindleY = Math.max(80, merged.baseHeight + 70) + merged.baseHeight
   const pillowX = 0
-  const fixedPulleyX = pillowX - merged.fixedPulleyThickness / 2 - 10
+  // A fix bordástárcsa a felső kar felénél, hogy az Y motor felette elférjen
+  // (a párnacsapágy mellett), és a bordásszíj függőleges legyen.
+  const fixedPulleyX = pillowX - merged.upperArmLength / 2
   const tubeSpindleEndX = pillowX
   const tubeSpindleStartX = tubeSpindleEndX - merged.tubeSpindleLength
   const rollerX = tubeSpindleStartX + merged.feedRollerDiameter / 2 + 5
@@ -360,19 +362,22 @@ const TubeSpindle = memo(function TubeSpindle({ geom, frameColor }: SupportProps
 // FIX BORDÁSTÁRCSA (csőtengelyre rögzítve, soha nem forog)
 // =========================================
 
-const FixedPulley = memo(function FixedPulley({ geom }: { geom: ResolvedGeom }) {
+const FixedPulley = memo(function FixedPulley({
+  geom,
+  axisColorY = '#22c55e',
+}: { geom: ResolvedGeom; axisColorY?: string }) {
   const bodyMat = useMemo(() => new THREE.MeshStandardMaterial({
     color: '#383840',
     metalness: 0.6,
     roughness: 0.5,
   }), [])
   const teethMat = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#22c55e',
+    color: axisColorY,
     metalness: 0.5,
     roughness: 0.4,
-    emissive: '#22c55e',
+    emissive: axisColorY,
     emissiveIntensity: 0.1,
-  }), [])
+  }), [axisColorY])
 
   useEffect(() => () => { bodyMat.dispose(); teethMat.dispose() }, [bodyMat, teethMat])
 
@@ -481,9 +486,19 @@ interface BendUnitProps {
   frameColor: string
   yRotationDeg: number  // gép Y axis = forgás csőtengely (X) körül
   zRotationDeg: number  // gép Z axis = hajlítási szög
+  // A felhasználó által konfigurált tengely-színek (Y/Z)
+  axisColorY?: string
+  axisColorZ?: string
 }
 
-const BendUnit = memo(function BendUnit({ geom, frameColor, yRotationDeg, zRotationDeg }: BendUnitProps) {
+const BendUnit = memo(function BendUnit({
+  geom,
+  frameColor,
+  yRotationDeg,
+  zRotationDeg,
+  axisColorY = '#22c55e',
+  axisColorZ = '#3b82f6',
+}: BendUnitProps) {
   const armMat = useFrameMaterial(frameColor)
   const motorMat = useMotorMaterial()
   const gearboxMat = useMemo(() => new THREE.MeshStandardMaterial({
@@ -492,19 +507,19 @@ const BendUnit = memo(function BendUnit({ geom, frameColor, yRotationDeg, zRotat
     roughness: 0.4,
   }), [])
   const dieMat = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#3b82f6',
+    color: axisColorZ,
     metalness: 0.55,
     roughness: 0.35,
-    emissive: '#3b82f6',
+    emissive: axisColorZ,
     emissiveIntensity: 0.08,
-  }), [])
+  }), [axisColorZ])
   const pillowMat = useMemo(() => new THREE.MeshStandardMaterial({
-    color: '#22c55e',
+    color: axisColorY,
     metalness: 0.6,
     roughness: 0.4,
-    emissive: '#22c55e',
+    emissive: axisColorY,
     emissiveIntensity: 0.08,
-  }), [])
+  }), [axisColorY])
   const beltMat = useMemo(() => new THREE.MeshStandardMaterial({
     color: '#1a1a1a',
     metalness: 0.2,
@@ -559,17 +574,25 @@ const BendUnit = memo(function BendUnit({ geom, frameColor, yRotationDeg, zRotat
 
   const v = geom.armVerticalLen
   const w = geom.armWidth
-  const upL = geom.upperArmLength
   const loL = geom.lowerArmLength
   const motorR = geom.motorSize / 2
   const dieR = geom.bendDieDiameter / 2
+  // Fix bordástárcsa lokális X-koordinátája a hajlító egységen belül.
+  // Az Y motort EZ FÖLÉ helyezzük (azonos X), így a bordásszíj függőleges lesz.
+  const fpLocalX = geom.fixedPulleyX - geom.pillowX
+  // A felső kar vízszintes szegmense csak az Y motorig (= fix bordástárcsa fölé) megy,
+  // nem a teljes upperArmLength-ig.
+  const upperArmReach = Math.abs(fpLocalX)
 
   // A párnacsapágy a hajlító egység group lokális [0,0,0]-jában van.
   // A csapágy felfelé függőleges szegmens, majd hátra (X-) a felső karon.
   // Lefelé függőleges szegmens, majd előre (X+) az alsó karon.
   // A hajlítókerék KONTAKTPONTJA a csővel (lokálisan): X = loL, Y = 0, Z = 0
-  // A hajlítókerék KÖZÉPPONTJA: X = loL, Y = 0, Z = bendDieRadius
-  const bendDieCenterLocal: [number, number, number] = [loL, 0, geom.bendDieRadius]
+  // A hajlítókerék KÖZÉPPONTJA: vizuálisan a tartó tengely fölé helyezve (Z = 0),
+  // és lejjebb tolva a saját magasságának 3/4-ével (Y = -bendDieThickness * 0.75),
+  // hogy a korong felülete a cső szintjéhez közelebb essen. (A hajlított cső geometriája
+  // a kontaktpont és a bendDieRadius alapján számolódik, tehát ez csak vizuális eltolás.)
+  const bendDieCenterLocal: [number, number, number] = [loL, -geom.bendDieThickness, 0]
   const bendStartLocal: [number, number, number] = [loL, 0, 0]
 
   return (
@@ -584,16 +607,17 @@ const BendUnit = memo(function BendUnit({ geom, frameColor, yRotationDeg, zRotat
       <mesh position={[0, v / 2, 0]} material={armMat}>
         <boxGeometry args={[w, v, w]} />
       </mesh>
-      {/* Vízszintes szegmens (hátrafelé X-) */}
-      <mesh position={[-upL / 2, v, 0]} material={armMat}>
-        <boxGeometry args={[upL, w, w]} />
+      {/* Vízszintes szegmens (hátrafelé X-, az Y motor X koordinátájáig) */}
+      <mesh position={[fpLocalX / 2, v, 0]} material={armMat}>
+        <boxGeometry args={[upperArmReach, w, w]} />
       </mesh>
-      {/* Y motor - a felső kar végén, hátrafelé néző tengellyel (X-axis-aligned).
+      {/* Y motor - közvetlenül a fix bordástárcsa FELETT (azonos X koordináta),
+          hátrafelé néző tengellyel (X-axis-aligned).
           Ha yMotorPulleyOnTop = true, akkor a motor "fordítva" van szerelve, a szíjtárcsa a motor FELETT
-          (a tengelye felfelé/elfelé az alaptól néz). Ekkor a bordásszíj a fix bordástárcsa FÖLÖTT halad át.
-          Ha false, a tárcsa a motor ALATT (régi viselkedés). */}
+          (a tengelye felfelé/elfelé az alaptól néz). Ekkor a bordásszíj FÜGGŐLEGESEN fut LE
+          a motor szíjtárcsájáról a fix bordástárcsára. */}
       {geom.showCounterweightMotor && (
-        <group position={[-upL - motorR, v, 0]}>
+        <group position={[fpLocalX, v, 0]}>
           {/* Motor henger (X-axis-aligned) */}
           <mesh rotation={[0, 0, Math.PI / 2]} material={motorMat}>
             <cylinderGeometry args={[motorR, motorR, geom.motorSize, 16]} />
@@ -610,14 +634,15 @@ const BendUnit = memo(function BendUnit({ geom, frameColor, yRotationDeg, zRotat
       )}
 
       {/* === BORDÁSSZÍJ - a motor szíjtárcsája és a fix bordástárcsa között.
-          yMotorPulleyOnTop = true: a tárcsa felül van, a szíj a fix bordástárcsa FELETT fut át. */}
+          A két szíjtárcsa azonos X koordinátán van, így a szíj FÜGGŐLEGES.
+          motorPulleyPos a motor szíjtárcsa CENTER pozíciója. */}
       {geom.showBelt && (
         <BeltVisualization
           geom={geom}
           beltMat={beltMat}
           motorPulleyPos={[
-            -upL - motorR,
-            geom.yMotorPulleyOnTop ? v + motorR + 11 : v - motorR - 11,
+            fpLocalX,
+            geom.yMotorPulleyOnTop ? v + motorR + 5 : v - motorR - 5,
             0,
           ]}
         />
@@ -688,36 +713,43 @@ interface BeltVisProps {
 }
 
 const BeltVisualization = memo(function BeltVisualization({ geom, beltMat, motorPulleyPos }: BeltVisProps) {
-  // A bordásszíj a motor szíjtárcsája és a fix bordástárcsa felső (vagy alsó) peremét érinti tangenciálisan.
+  // A bordásszíj két érintő szakasza a motor szíjtárcsáját és a fix bordástárcsát köti össze.
+  // A két végpont a tárcsák EGYMÁS FELÉ NÉZŐ peremén van (geometriailag helyes belső érintő).
   // A fix bordástárcsa lokálisan a hajlító egység koordinátáiban: X = fixedPulleyX - pillowX, Y = 0, Z = 0
   const fixedPulleyLocalX = geom.fixedPulleyX - geom.pillowX
   const fixedPulleyR = geom.fixedPulleyDiameter / 2
   const motorPulleyR = geom.motorSize / 2 * 0.7
 
-  // Melyik peremet érinti a szíj: ha a motor szíjtárcsája felül van, akkor a tárcsák FELSŐ peremét.
-  const side = geom.yMotorPulleyOnTop ? +1 : -1
+  // A két tárcsa center-center vektor iránya: a motor tárcsa szempontjából a fix tárcsa felé
+  // mutató peremen indul a szíj, és a fix tárcsa szempontjából a motor felé mutató peremen ér el.
+  const dyCenters = 0 - motorPulleyPos[1]
+  const dxCenters = fixedPulleyLocalX - motorPulleyPos[0]
+  const distCenters = Math.sqrt(dxCenters * dxCenters + dyCenters * dyCenters) || 1
+  // Egységvektor a motor tárcsától a fix tárcsa felé
+  const ux = dxCenters / distCenters
+  const uy = dyCenters / distCenters
 
-  // A motor szíjtárcsa középpontja és a fix bordástárcsa középpontja közötti tangenciális (érintő) szakasz
-  // két végpontja a két tárcsa felső (ill. alsó) peremén:
-  const startX = motorPulleyPos[0]
-  const startY = motorPulleyPos[1] + side * motorPulleyR
-  const endX = fixedPulleyLocalX
-  const endY = 0 + side * fixedPulleyR
+  // Érintő végpontok: a tárcsa peremén az egymás felé néző oldalon
+  const startX = motorPulleyPos[0] + ux * motorPulleyR
+  const startY = motorPulleyPos[1] + uy * motorPulleyR
+  const endX = fixedPulleyLocalX - ux * fixedPulleyR
+  const endY = 0 - uy * fixedPulleyR
   const dx = endX - startX
   const dy = endY - startY
   const length = Math.sqrt(dx * dx + dy * dy)
-  const angle = Math.atan2(dy, dx)  // Z körüli forgatás
+  const angle = Math.atan2(dy, dx)
   const cx = (startX + endX) / 2
   const cy = (startY + endY) / 2
 
-  // Két párhuzamos szíjág Z irányban szétválasztva (a tárcsa szélességéhez igazítva)
+  // Két párhuzamos szíjág Z irányban szétválasztva (a tárcsák tengelye X-irányú,
+  // így a szíj két ága Z+ és Z- irányban fut)
   const thickness = 4
   const z1 = +Math.min(motorPulleyR, fixedPulleyR) * 0.85
   const z2 = -z1
 
   return (
     <group>
-      {/* Két párhuzamos érintő szíjszakasz - ferde Z körüli forgással */}
+      {/* Két párhuzamos érintő szíjszakasz */}
       <mesh position={[cx, cy, z1]} rotation={[0, 0, angle]} material={beltMat}>
         <boxGeometry args={[length, thickness, thickness * 1.5]} />
       </mesh>
@@ -783,6 +815,10 @@ function Scene({
   const currentPos = position ?? { x: 0, y: 0, z: 0 }
   const geom = useMemo(() => resolveGeom(config.tubeBender), [config.tubeBender])
   const frameColor = config.visuals?.frameColor ?? '#2d2d2d'
+
+  // Y/Z tengelyek beállított színei a configból
+  const axisColorY = config.axes.find((a) => a.name === 'Y')?.color ?? '#22c55e'
+  const axisColorZ = config.axes.find((a) => a.name === 'Z')?.color ?? '#3b82f6'
 
   const controlsRef = useRef<any>(null)
   const { camera } = useThree()
@@ -905,7 +941,7 @@ function Scene({
       <SpindleSupport geom={geom} frameColor={frameColor} />
       <FeedRollers geom={geom} frameColor={frameColor} rollerSpinDeg={rollerSpinRef.current} />
       <TubeSpindle geom={geom} frameColor={frameColor} />
-      <FixedPulley geom={geom} />
+      <FixedPulley geom={geom} axisColorY={axisColorY} />
 
       {/* Munkadarab cső - egyenes szakasz, X-szel eltolódik */}
       <StraightTube geom={geom} pushOffset={currentPos.x ?? 0} />
@@ -916,6 +952,8 @@ function Scene({
         frameColor={frameColor}
         yRotationDeg={currentPos.y ?? 0}
         zRotationDeg={currentPos.z ?? 0}
+        axisColorY={axisColorY}
+        axisColorZ={axisColorZ}
       />
     </>
   )
