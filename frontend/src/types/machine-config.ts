@@ -2,7 +2,7 @@
 
 export type AxisName = 'X' | 'Y' | 'Z' | 'A' | 'B' | 'C' | 'J1' | 'J2' | 'J3' | 'J4' | 'J5' | 'J6'
 export type AxisType = 'linear' | 'rotary'
-export type MachineType = 'cnc_mill' | 'cnc_lathe' | 'laser_cutter' | '5axis' | 'robot_arm' | 'custom'
+export type MachineType = 'cnc_mill' | 'cnc_lathe' | 'laser_cutter' | '5axis' | 'robot_arm' | 'tube_bender' | 'custom'
 
 // Dynamic limits configuration - limits that depend on another axis position
 // Base min/max are derived from the axis's own min/max values
@@ -110,6 +110,59 @@ export interface RobotArmConfig {
   jointAngleOffset?: { x?: number; y?: number; z?: number }
 }
 
+// Tube bender specific config - 3D vizualizációs paraméterek
+export interface TubeBenderConfig {
+  // Alap méretei (mm)
+  baseLength?: number
+  baseWidth?: number
+  baseHeight?: number
+  // Csőtengely-tartó (SpindleSupport) C-profil geometriája (mm)
+  // A C profil X irányba nyitott, hogy a hajlító egység Y motorja
+  // körbeforgáskor át tudjon haladni rajta (ne ütközzön a tömör rúdba).
+  supportSpineThickness?: number    // gerinc vastagsága X-irányban (default 12)
+  supportFlangeThickness?: number   // felső és alsó szár vastagsága Y-irányban (default 12)
+  supportChannelOpenSide?: 'positive' | 'negative' // X+ (default) vagy X- felé nyitott
+  // Csőtengely méretei (mm)
+  tubeSpindleLength?: number
+  tubeSpindleDiameter?: number
+  // Munkadarab cső méretei (mm)
+  tubeDiameter?: number
+  tubeLength?: number
+  // Hajlítási sugár (mm) - a hajlítókerék hornyának sugara
+  bendDieRadius?: number
+  // Görgős előtoló méretei (mm)
+  feedRollerDiameter?: number
+  feedRollerWidth?: number
+  // Hajlító egység kar méretei (mm)
+  upperArmLength?: number
+  lowerArmLength?: number
+  armWidth?: number
+  // Motor házak méretei (mm)
+  motorSize?: number
+  // Fix bordástárcsa (mm)
+  fixedPulleyDiameter?: number
+  fixedPulleyThickness?: number
+  // Hajlítókerék (mm)
+  bendDieDiameter?: number
+  bendDieThickness?: number
+  // Drive típus - 'belt' = bordásszíjas + ellensúlyos (default), 'direct' = egyszerűbb
+  drive?: 'belt' | 'direct'
+  // Vizuális opciók
+  showBelt?: boolean
+  showCounterweightMotor?: boolean
+  showClampDie?: boolean
+  // Y motor szíjtárcsa pozíciója: ha true, a tárcsa a motor felett van
+  // (ekkor a szíj felfelé fut és a fix bordástárcsa felett halad át).
+  // Ha false, a tárcsa a motor alatt (régi viselkedés).
+  yMotorPulleyOnTop?: boolean
+  // Limitek a vizualizációhoz (max határ a hajlítási és forgatási értékekre)
+  maxBendAngle?: number
+  // Adattár leírás (firmware/üzemi adatok, opcionális)
+  maxTubeDiameter?: number
+  minBendRadius?: number
+  feedLength?: number
+}
+
 export interface MachineConfig {
   id: string
   name: string
@@ -124,6 +177,8 @@ export interface MachineConfig {
   tool?: ToolConfig
   // Robot arm specific config
   robotArm?: RobotArmConfig
+  // Tube bender specific config
+  tubeBender?: TubeBenderConfig
   // Base/frame dimensions
   base?: {
     width: number
@@ -335,6 +390,59 @@ export const DEFAULT_ROBOT_ARM: MachineConfig = {
   },
 }
 
+export const DEFAULT_TUBE_BENDER: MachineConfig = {
+  id: 'default_tube_bender',
+  name: 'Default Csőhajlító',
+  type: 'tube_bender',
+  // X = cső előtolás (mm), Y = hajlító egység forgatása (°), Z = hajlítási szög (°)
+  workEnvelope: { x: 500, y: 360, z: 180 },
+  axes: [
+    { name: 'X', type: 'linear', min: 0, max: 500, color: '#ef4444' },
+    { name: 'Y', type: 'rotary', min: -180, max: 180, color: '#22c55e' },
+    { name: 'Z', type: 'rotary', min: -180, max: 180, color: '#3b82f6' },
+  ],
+  tubeBender: {
+    baseLength: 600,
+    baseWidth: 200,
+    baseHeight: 50,
+    supportSpineThickness: 12,
+    supportFlangeThickness: 12,
+    supportChannelOpenSide: 'positive',
+    tubeSpindleLength: 220,
+    tubeSpindleDiameter: 40,
+    tubeDiameter: 20,
+    tubeLength: 600,
+    bendDieRadius: 60,
+    feedRollerDiameter: 60,
+    feedRollerWidth: 40,
+    upperArmLength: 150,
+    lowerArmLength: 150,
+    armWidth: 30,
+    motorSize: 50,
+    fixedPulleyDiameter: 100,
+    fixedPulleyThickness: 20,
+    bendDieDiameter: 120,
+    bendDieThickness: 30,
+    drive: 'belt',
+    showBelt: true,
+    showCounterweightMotor: true,
+    showClampDie: true,
+    yMotorPulleyOnTop: true,
+    maxBendAngle: 180,
+  },
+  base: {
+    width: 600,
+    height: 50,
+    depth: 200,
+  },
+  visuals: {
+    showGrid: true,
+    showAxesHelper: true,
+    cameraPosition: { x: 500, y: -500, z: 350 },
+    cameraTarget: { x: 0, y: 0, z: 100 },
+  },
+}
+
 // Get default config for a machine type
 export function getDefaultConfigForType(type: MachineType): MachineConfig {
   switch (type) {
@@ -348,6 +456,8 @@ export function getDefaultConfigForType(type: MachineType): MachineConfig {
       return DEFAULT_LASER_CUTTER
     case 'robot_arm':
       return DEFAULT_ROBOT_ARM
+    case 'tube_bender':
+      return DEFAULT_TUBE_BENDER
     case 'custom':
     default:
       return DEFAULT_CUSTOM

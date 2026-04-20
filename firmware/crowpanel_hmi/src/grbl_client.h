@@ -20,6 +20,7 @@ public:
   bool awaitingOk() const { return _awaiting_ok; }
   const String &lastError() const { return _last_error; }
   void clearError() { _last_error = ""; }
+  void clearQueue();
   void setMotionAllowed(bool allowed);
   bool motionAllowed() const { return _motion_allowed; }
 

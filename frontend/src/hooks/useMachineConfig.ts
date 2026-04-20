@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { MachineConfig } from '../types/machine-config'
-import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC } from '../types/machine-config'
+import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, DEFAULT_TUBE_BENDER } from '../types/machine-config'
 import type { DeviceType } from '../types/device'
 
 // Map device types to default machine configs
@@ -35,6 +35,7 @@ const DEFAULT_CONFIGS: Record<string, MachineConfig> = {
     },
   },
   '5axis': DEFAULT_5AXIS_CNC,
+  tube_bender: DEFAULT_TUBE_BENDER,
 }
 
 interface UseMachineConfigResult {

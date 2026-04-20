@@ -19,7 +19,7 @@ import {
   GripHorizontal,
 } from 'lucide-react'
 import { useDeviceStore } from '../stores/deviceStore'
-import { MachineVisualization, GcodePanel } from '../components/visualization'
+import { MachineVisualization, GcodePanel, RobotArmVisualization, TubeBenderVisualization } from '../components/visualization'
 import { useMachineConfig } from '../hooks/useMachineConfig'
 
 interface Job {
@@ -140,12 +140,28 @@ function JobVisualizationPanel({ job, showGcode, show3D }: JobVisualizationPanel
                 <span>Konfiguráció betöltése...</span>
               </div>
             ) : machineConfig ? (
-              <MachineVisualization
-                config={machineConfig}
-                position={device?.status?.position}
-                status={device?.status}
-                className="h-full"
-              />
+              machineConfig.type === 'robot_arm' ? (
+                <RobotArmVisualization
+                  config={machineConfig}
+                  position={device?.status?.position}
+                  status={device?.status}
+                  className="h-full"
+                />
+              ) : machineConfig.type === 'tube_bender' ? (
+                <TubeBenderVisualization
+                  config={machineConfig}
+                  position={device?.status?.position}
+                  status={device?.status}
+                  className="h-full"
+                />
+              ) : (
+                <MachineVisualization
+                  config={machineConfig}
+                  position={device?.status?.position}
+                  status={device?.status}
+                  className="h-full"
+                />
+              )
             ) : (
               <div className="flex items-center justify-center h-full text-steel-400">
                 <span>Nincs elérhető konfiguráció</span>

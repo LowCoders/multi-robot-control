@@ -775,6 +775,12 @@ async def _auto_claim_host_if_supported(
         return result
 
     result["attempted"] = True
+
+    current_owner = getattr(device, "_control_owner", "none")
+    if current_owner == "panel":
+        result["reason"] = "panel_active"
+        return result
+
     for _ in range(max(0, retries) + 1):
         sent = bool(await device.send_realtime_command(RT_OWN_CLAIM_HOST))
         await device.send_realtime_command(RT_OWN_QUERY)

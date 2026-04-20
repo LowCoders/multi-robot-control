@@ -365,6 +365,12 @@ class GrblDeviceBase(SerialDeviceBase):
             return
         await self._write_bytes(b"~")
 
+    async def _grbl_jog_cancel(self) -> None:
+        """Jog cancel (0x85) küldése - azonnal Idle-be visz Hold nélkül."""
+        if not self.is_serial_open:
+            return
+        await self._write_bytes(bytes([0x85]))
+
     async def send_realtime_command(self, command: int) -> bool:
         """Egybájtos realtime parancs küldése a vezérlőnek."""
         if not self.is_serial_open:
@@ -591,15 +597,23 @@ class GrblDeviceBase(SerialDeviceBase):
     
     async def _poll_status(self, interval: float) -> None:
         """Állapot polling loop."""
+        empty_streak = 0
         while self._status_polling and self._connected:
             try:
                 jog_session_active = bool(getattr(self, "_jog_session_active", False))
                 if self._status.state == DeviceState.JOG or jog_session_active:
-                    # Streaming jog alatt ne kérdezzünk extra '?' státuszt pollingból,
-                    # mert a $J= ciklussal lock-kontenciót és jittert okoz.
                     await asyncio.sleep(interval)
                     continue
-                await self.get_grbl_status()
+                if self._control_owner == "panel":
+                    await asyncio.sleep(interval * 5)
+                    continue
+                result = await self.get_grbl_status()
+                if result:
+                    empty_streak = 0
+                else:
+                    empty_streak += 1
+                    if empty_streak >= 3:
+                        self._control_owner = "panel"
             except Exception:
                 pass
             await asyncio.sleep(interval)
@@ -612,10 +626,10 @@ class GrblDeviceBase(SerialDeviceBase):
         """
         Jog mozgás azonnali leállítása.
         
-        A $J= jog parancsokkal a feed hold (!) automatikusan:
+        Jog cancel (0x85) használata feed hold helyett:
         - Azonnal megállítja a mozgást
         - Törli a jog buffert
-        - Visszatér Idle állapotba
+        - Közvetlenül Idle állapotba visz (nincs Hold köztes állapot)
         - Motorok bekapcsolva maradnak
         
         Returns:
@@ -628,12 +642,7 @@ class GrblDeviceBase(SerialDeviceBase):
                     self._jog_stopping = False
                     return False
                 
-                # Feed hold - azonnal megállítja és törli a $J= buffert
-                await self._grbl_feed_hold()
-                await asyncio.sleep(0.05)
-                
-                # Cycle start - visszatérés Idle állapotba (Hold állapotból)
-                await self._grbl_cycle_start()
+                await self._grbl_jog_cancel()
                 await asyncio.sleep(0.02)
                 
                 self._set_state(DeviceState.IDLE)

@@ -1,5 +1,6 @@
 export { default as MachineVisualization } from './MachineVisualization'
 export { default as RobotArmVisualization } from './RobotArmVisualization'
+export { default as TubeBenderVisualization } from './TubeBenderVisualization'
 export type { CameraState } from './MachineVisualization'
 export { default as VisualizationPanel } from './VisualizationPanel'
 export { default as GcodeOverlay } from './GcodeOverlay'

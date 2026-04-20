@@ -638,11 +638,17 @@ class GrblDevice(GrblDeviceBase):
     async def stop_jog_session(self, hard_stop: bool = False) -> bool:
         """
         Folyamatos jog session leállítás.
+        Jog cancel (0x85) is sent immediately -- goes directly to Idle
+        without entering Hold state, which avoids ownership blocking.
         """
-        task_to_wait: Optional[asyncio.Task] = None
         async with self._jog_session_lock:
             self._jog_session_active = False
             self._jog_session_last_beat = 0.0
+
+        await self._grbl_jog_cancel()
+
+        task_to_wait: Optional[asyncio.Task] = None
+        async with self._jog_session_lock:
             if self._jog_session_task and not self._jog_session_task.done():
                 task_to_wait = self._jog_session_task
 
@@ -652,7 +658,6 @@ class GrblDevice(GrblDeviceBase):
             except asyncio.TimeoutError:
                 task_to_wait.cancel()
             except asyncio.CancelledError:
-                # A háttér session task normálisan cancel-ölődhet stop közben.
                 pass
             except Exception:
                 pass

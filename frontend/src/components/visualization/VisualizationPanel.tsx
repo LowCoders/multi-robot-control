@@ -3,6 +3,7 @@ import type { MachineConfig } from '../../types/machine-config'
 import type { DeviceStatus, Position } from '../../types/device'
 import MachineVisualization from './MachineVisualization'
 import RobotArmVisualization from './RobotArmVisualization'
+import TubeBenderVisualization from './TubeBenderVisualization'
 
 interface Props {
   config: MachineConfig
@@ -61,6 +62,12 @@ export default function VisualizationPanel({
             position={position}
             status={status}
           />
+        ) : config.type === 'tube_bender' ? (
+          <TubeBenderVisualization
+            config={config}
+            position={position}
+            status={status}
+          />
         ) : (
           <MachineVisualization
             config={config}
@@ -84,7 +91,19 @@ export default function VisualizationPanel({
       <div className="bg-steel-900/95 backdrop-blur border-t border-steel-700 px-3 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-4">
           {/* Position display */}
-          {config.type === 'robot_arm' ? (
+          {config.type === 'tube_bender' ? (
+            <div className="flex items-center gap-3 font-mono">
+              <span className="text-red-400">
+                X: {(position?.x ?? 0).toFixed(2)} mm
+              </span>
+              <span className="text-green-400">
+                Y: {(position?.y ?? 0).toFixed(2)}°
+              </span>
+              <span className="text-blue-400">
+                Z: {(position?.z ?? 0).toFixed(2)}°
+              </span>
+            </div>
+          ) : config.type === 'robot_arm' ? (
             <div className="flex items-center gap-3 font-mono">
               <span className="text-red-400">
                 X: {(position?.x ?? 0).toFixed(2)}°

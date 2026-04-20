@@ -96,6 +96,7 @@ export type DeviceType =
   | 'laser_engraver'
   | 'printer_3d'
   | 'robot_arm'
+  | 'tube_bender'
   | 'custom'
 
 export interface Device {

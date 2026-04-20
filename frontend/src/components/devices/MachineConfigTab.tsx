@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { MachineVisualization } from '../visualization'
 import RobotArmVisualization from '../visualization/RobotArmVisualization'
+import TubeBenderVisualization from '../visualization/TubeBenderVisualization'
 import CalibrationPanel from './CalibrationPanel'
 import type { CameraState } from '../visualization'
 import type { MachineConfig, AxisConfig, AxisName, AxisType, MachineType } from '../../types/machine-config'
@@ -713,6 +714,7 @@ export default function MachineConfigTab({
                       <option value="laser_cutter">Lézervágó</option>
                       <option value="5axis">5 Tengelyes</option>
                       <option value="robot_arm">Robotkar</option>
+                      <option value="tube_bender">Csőhajlító</option>
                       <option value="custom">Egyedi</option>
                     </select>
                   </div>
@@ -1178,6 +1180,12 @@ export default function MachineConfigTab({
           <div className="bg-steel-900/50 rounded-lg border border-steel-700 overflow-hidden h-[350px]">
             {config.type === 'robot_arm' ? (
               <RobotArmVisualization
+                config={config}
+                position={previewPosition}
+                onCameraChange={handleCameraChange}
+              />
+            ) : config.type === 'tube_bender' ? (
+              <TubeBenderVisualization
                 config={config}
                 position={previewPosition}
                 onCameraChange={handleCameraChange}

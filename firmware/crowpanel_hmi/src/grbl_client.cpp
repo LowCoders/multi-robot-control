@@ -37,6 +37,12 @@ void GrblClient::setMotionAllowed(bool allowed) {
   _motion_allowed = allowed;
 }
 
+void GrblClient::clearQueue() {
+  _queue.clear();
+  _awaiting_ok = false;
+  _awaiting_line = "";
+}
+
 void GrblClient::sendRealtime(uint8_t cmd) {
   if (!_serial) {
     return;
@@ -56,8 +62,10 @@ bool GrblClient::isIdle() const {
 }
 
 void GrblClient::processLine(const String &line) {
+#if CORE_DEBUG_LEVEL >= 4
   Serial.print("GRBL RX: ");
   Serial.println(line);
+#endif
 
   if (_parser) {
     _parser->ingestLine(line);
@@ -66,6 +74,9 @@ void GrblClient::processLine(const String &line) {
   String trimmed = line;
   trimmed.trim();
   if (trimmed.equalsIgnoreCase("ok")) {
+    uint32_t latency = millis() - _awaiting_since_ms;
+    Serial.printf("[GRBL] %lu ms: OK (%lums) cmd=[%s]\n",
+                  millis(), latency, _awaiting_line.c_str());
     _awaiting_ok = false;
     _awaiting_line = "";
     _last_error = "";
@@ -75,6 +86,8 @@ void GrblClient::processLine(const String &line) {
     _last_error = line;
     _awaiting_ok = false;
     _awaiting_line = "";
+    Serial.printf("[GRBL] %lu ms: ERR [%s] cmd=[%s]\n",
+                  millis(), line.c_str(), _awaiting_line.c_str());
     return;
   }
 }
@@ -101,9 +114,9 @@ void GrblClient::update() {
 
   if (_awaiting_ok) {
     const uint32_t now = millis();
-    if (now - _awaiting_since_ms > 1200) {
-      Serial.print("GRBL timeout waiting ok for: ");
-      Serial.println(_awaiting_line);
+    if (now - _awaiting_since_ms > 300) {
+      Serial.printf("[GRBL] %lu ms: TIMEOUT after 300ms cmd=[%s]\n",
+                    now, _awaiting_line.c_str());
       _last_error = String("timeout: ") + _awaiting_line;
       _awaiting_ok = false;
       _awaiting_line = "";
@@ -113,8 +126,9 @@ void GrblClient::update() {
   if (!_awaiting_ok && !_queue.empty()) {
     String line = _queue.front();
     _queue.pop_front();
-    Serial.print("GRBL TX: ");
-    Serial.println(line);
+    Serial.printf("[GRBL] %lu ms: TX [%s] q=%u\n",
+                  millis(), line.c_str(),
+                  static_cast<unsigned>(_queue.size()));
     _serial->println(line);
     _awaiting_ok = true;
     _awaiting_since_ms = millis();

@@ -35,6 +35,23 @@ pio run
 
 ## Upload
 
+### Script (ajánlott)
+
+```bash
+cd firmware/crowpanel_hmi
+
+./upload.sh              # build + upload
+./upload.sh --monitor    # build + upload + serial monitor
+./upload.sh --build-only # csak fordítás, nincs feltöltés
+./upload.sh --no-build   # kihagyja a fordítást, csak feltölt
+```
+
+A script automatikusan megkeresi az eszközt `/dev/serial/by-id/` alatt;
+ha a konfigurált port nem elérhető, visszaesik más Espressif JTAG vagy
+ttyACM/ttyUSB eszközre.
+
+### Kézi PlatformIO
+
 ```bash
 cd firmware/crowpanel_hmi
 pio run -t upload

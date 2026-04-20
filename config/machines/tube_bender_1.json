@@ -14,7 +14,7 @@
       "type": "linear",
       "unit": "mm",
       "min": 0,
-      "max": 5000,
+      "max": 0,
       "color": "#ef4444",
       "invert": false,
       "scale": 1
@@ -22,10 +22,10 @@
     {
       "name": "Y",
       "label": "Hajlítás",
-      "type": "rotary",
+      "type": "linear",
       "unit": "deg",
-      "min": -90,
-      "max": 90,
+      "min": -180,
+      "max": 180,
       "color": "#22c55e",
       "invert": false,
       "scale": 1
@@ -35,8 +35,8 @@
       "label": "Forgatás",
       "type": "rotary",
       "unit": "deg",
-      "min": -90,
-      "max": 90,
+      "min": -110,
+      "max": 110,
       "color": "#3b82f6",
       "invert": false,
       "scale": 1
