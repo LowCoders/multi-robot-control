@@ -9,6 +9,14 @@ from enum import Enum
 from typing import Optional, Callable, Dict, List, Any
 import asyncio
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
+
+
 
 class DeviceType(Enum):
     """Támogatott eszköz típusok"""

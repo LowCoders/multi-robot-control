@@ -14,6 +14,13 @@ except ImportError:
     from .grbl_driver import GrblDevice
 
 
+
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
 class TubeBenderDriver(GrblDevice):
     """
     GRBL-alapú csőhajlító driver.
@@ -228,6 +235,8 @@ class TubeBenderDriver(GrblDevice):
             return normalized
         for key, value in settings.items():
             try:
+
+
                 normalized[int(key)] = float(value)
             except (TypeError, ValueError):
                 continue
@@ -237,15 +246,15 @@ class TubeBenderDriver(GrblDevice):
         for setting, value in self._startup_grbl_settings.items():
             await self.set_grbl_setting(setting, value)
             if setting in (1, 4):
-                print(f"[TubeBender] startup GRBL ${setting} applied: {value}")
+                logger.info(f"[TubeBender] startup GRBL ${setting} applied: {value}")
         current = await self.get_grbl_settings()
         if current:
             s1 = current.get(1)
             s4 = current.get(4)
             if s1 is not None:
-                print(f"[TubeBender] startup verify $1={s1}")
+                logger.info(f"[TubeBender] startup verify $1={s1}")
             if s4 is not None:
-                print(f"[TubeBender] startup verify $4={s4}")
+                logger.info(f"[TubeBender] startup verify $4={s4}")
 
     def _set_tube_bender_capabilities(self, max_feed_rate: float) -> None:
         self._capabilities = DeviceCapabilities(

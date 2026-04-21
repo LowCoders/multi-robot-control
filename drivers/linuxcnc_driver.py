@@ -715,6 +715,8 @@ class LinuxCNCDevice(JogSafeDeviceDriver):
             return False
         
         try:
+
+
             await asyncio.to_thread(self._command.flood, linuxcnc.FLOOD_OFF)
             await asyncio.to_thread(self._command.mist, linuxcnc.MIST_OFF)
             return True

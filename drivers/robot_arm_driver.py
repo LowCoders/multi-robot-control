@@ -34,6 +34,13 @@ except ImportError:
     SERIAL_AVAILABLE = False
 
 try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
+
+try:
     from grbl_base import GrblDeviceBase
     from capabilities import ClosedLoopCapability, TeachingCapability
     from base import (
@@ -94,7 +101,8 @@ except ImportError:
     def inverse_kinematics(x, y, z, config):
         return JointAngles(0, 0, 0)
     
-    print("⚠️ kinematics modul nem elérhető - csak Joint mód használható")
+    logger.warning("⚠️ kinematics modul nem elérhető - csak Joint mód használható")
+
 
 class ControlMode(Enum):
     """Vezérlési módok"""
@@ -310,12 +318,12 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             if grbl_match:
                 self._use_grbl = True
                 self._grbl_version = grbl_match.group(1)
-                print(f"🤖 GRBL firmware detektálva: v{self._grbl_version}")
+                logger.info(f"🤖 GRBL firmware detektálva: v{self._grbl_version}")
             elif self.WELCOME_MSG in welcome:
                 self._use_grbl = False
-                print(f"🤖 Legacy firmware (AXIS4UI): {welcome}")
+                logger.info(f"🤖 Legacy firmware (AXIS4UI): {welcome}")
             else:
-                print(f"🤖 Firmware válasz: {repr(welcome)}")
+                logger.info(f"🤖 Firmware válasz: {repr(welcome)}")
             
             self._connected = True
             self._set_state(DeviceState.IDLE)
@@ -326,15 +334,15 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 if status:
                     grbl_state = status.get('state', 'unknown')
                     base_state = grbl_state.split(':')[0]
-                    print(f"🤖 GRBL státusz: {grbl_state}")
+                    logger.info(f"🤖 GRBL státusz: {grbl_state}")
                     
                     # Auto-unlock Door/Alarm állapotban
                     if base_state in ('Door', 'Alarm'):
-                        print(f"🤖 {grbl_state} állapot - automatikus unlock...")
+                        logger.info(f"🤖 {grbl_state} állapot - automatikus unlock...")
                         if await self._grbl_unlock():
                             status = await self.get_grbl_status()
                             new_state = status.get('state', 'unknown') if status else 'unknown'
-                            print(f"🤖 Unlock után: {new_state}")
+                            logger.info(f"🤖 Unlock után: {new_state}")
                 
                 # Home pozíció beállítása a konfiguráció alapján
                 await self._apply_home_position()
@@ -344,7 +352,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 if status:
                     wpos = status.get('wpos')
                     if wpos and KINEMATICS_AVAILABLE:
-                        print(f"🤖 Tengely pozíció: X={wpos.x:.1f}° Y={wpos.y:.1f}° Z={wpos.z:.1f}°")
+                        logger.info(f"🤖 Tengely pozíció: X={wpos.x:.1f}° Y={wpos.y:.1f}° Z={wpos.z:.1f}°")
                 
                 self._calibrated = True
             else:
@@ -359,7 +367,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             # Állapot polling indítása
             self._start_status_polling(interval=0.2)
             
-            print(f"🤖 Robotkar csatlakozva: {self.device_name} ({self.port})")
+            logger.info(f"🤖 Robotkar csatlakozva: {self.device_name} ({self.port})")
             return True
             
         except Exception as e:
@@ -405,7 +413,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         if mode == 'query':
             # Firmware pozíció elfogadása - lekérdezzük és azt használjuk
             # A get_grbl_status() már logikai pozíciókat ad vissza
-            print(f"🤖 Home mód: query - firmware pozíció elfogadása")
+            logger.info(f"🤖 Home mód: query - firmware pozíció elfogadása")
             status = await self.get_grbl_status()
             if status:
                 wpos = status.get('wpos')
@@ -413,10 +421,10 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                     # wpos már logikai koordinátákban van (invertálva)
                     self._status.position = Position(x=wpos.x, y=wpos.y, z=wpos.z)
                     self._status.work_position = Position(x=wpos.x, y=wpos.y, z=wpos.z)
-                    print(f"🤖 Firmware pozíció (logikai): X={wpos.x:.1f} Y={wpos.y:.1f} Z={wpos.z:.1f}")
+                    logger.info(f"🤖 Firmware pozíció (logikai): X={wpos.x:.1f} Y={wpos.y:.1f} Z={wpos.z:.1f}")
             else:
                 # Fallback: absolute mode ha nem tudtuk lekérdezni
-                print(f"🤖 Query fallback: absolute - pozíció: X={x:.1f} Y={y:.1f} Z={z:.1f}")
+                logger.info(f"🤖 Query fallback: absolute - pozíció: X={x:.1f} Y={y:.1f} Z={z:.1f}")
                 await self._send_command_no_response(f"G92 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f}")
                 await asyncio.sleep(0.3)
                 self._status.position = Position(x=x, y=y, z=z)
@@ -424,7 +432,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         
         else:  # mode == 'absolute' (default)
             # Megadott pozíció beállítása G92-vel (GRBL koordinátákban)
-            print(f"🤖 Home mód: absolute - logikai pozíció: X={x:.1f} Y={y:.1f} Z={z:.1f}")
+            logger.info(f"🤖 Home mód: absolute - logikai pozíció: X={x:.1f} Y={y:.1f} Z={z:.1f}")
             await self._send_command_no_response(f"G92 X{grbl_x:.2f} Y{grbl_y:.2f} Z{grbl_z:.2f}")
             await asyncio.sleep(0.3)
             # Status-ba logikai koordinátákat mentünk
@@ -464,14 +472,14 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             self._axis_invert = axis_invert
             inverted = [k for k, v in axis_invert.items() if v]
             if inverted:
-                print(f"🔄 Invertált tengelyek: {', '.join(inverted)}")
+                logger.info(f"🔄 Invertált tengelyek: {', '.join(inverted)}")
             elif old_invert:
-                print(f"🔄 Invertálás kikapcsolva (korábban: {old_invert})")
+                logger.info(f"🔄 Invertálás kikapcsolva (korábban: {old_invert})")
 
         if axis_scale is not None:
             self._axis_scale = axis_scale
             if axis_scale:
-                print(f"🔄 Tengely scale frissítve: {axis_scale}")
+                logger.info(f"🔄 Tengely scale frissítve: {axis_scale}")
 
         if axis_limits is not None:
             for axis, limits in axis_limits.items():
@@ -479,18 +487,18 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                     self._axis_limits[axis] = (limits[0], limits[1])
             self._capabilities.axis_limits = self._axis_limits.copy()
             if axis_limits:
-                print(f"🔄 Tengely limitek frissítve: {axis_limits}")
+                logger.info(f"🔄 Tengely limitek frissítve: {axis_limits}")
 
         if max_feed_rate is not None:
             self._config_max_feed_rate = max_feed_rate
             self._capabilities.max_feed_rate = max_feed_rate
-            print(f"🔄 Max feed rate frissítve: {max_feed_rate}")
+            logger.info(f"🔄 Max feed rate frissítve: {max_feed_rate}")
         
         if dynamic_limits is not None:
             self._dynamic_limit_config = dynamic_limits
             if dynamic_limits:
                 for axis, cfg in dynamic_limits.items():
-                    print(f"🔄 Dinamikus limit [{axis}]: függ {cfg.get('dependsOn', '?')}-tól, base=[{cfg.get('baseMin')}, {cfg.get('baseMax')}]")
+                    logger.info(f"🔄 Dinamikus limit [{axis}]: függ {cfg.get('dependsOn', '?')}-tól, base=[{cfg.get('baseMin')}, {cfg.get('baseMax')}]")
     
     # =========================================
     # DINAMIKUS LIMIT KEZELÉS
@@ -602,7 +610,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
     def set_soft_limits_enabled(self, enabled: bool) -> None:
         """Szoftveres limit kezelés be/kikapcsolása."""
         self._use_soft_limits = enabled
-        print(f"🔧 Szoftveres limitek: {'bekapcsolva' if enabled else 'kikapcsolva'}")
+        logger.info(f"🔧 Szoftveres limitek: {'bekapcsolva' if enabled else 'kikapcsolva'}")
         if not enabled:
             self._status.endstop_blocked = None
             self._status.dynamic_limits = None
@@ -690,7 +698,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             return status
             
         except Exception as e:
-            print(f"🤖 GRBL státusz hiba: {e}")
+            logger.error(f"🤖 GRBL státusz hiba: {e}")
             return {}
     
     def _update_limit_blocked(self) -> None:
@@ -769,11 +777,11 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 if direction < 0 and val <= lo + margin:
                     # Negatív irányba mozgás, alsó limit közelében
                     should_stop = True
-                    print(f"🛑 Limit monitor: {axis} tengely alsó limit közelében (val={val:.2f}, min={lo:.2f})")
+                    logger.info(f"🛑 Limit monitor: {axis} tengely alsó limit közelében (val={val:.2f}, min={lo:.2f})")
                 elif direction > 0 and val >= hi - margin:
                     # Pozitív irányba mozgás, felső limit közelében
                     should_stop = True
-                    print(f"🛑 Limit monitor: {axis} tengely felső limit közelében (val={val:.2f}, max={hi:.2f})")
+                    logger.info(f"🛑 Limit monitor: {axis} tengely felső limit közelében (val={val:.2f}, max={hi:.2f})")
                 
                 # Kétirányú limit: Y jog közben Z pozíció figyelése
                 # Mechanikus csatolás: Y felfele (pozitív) → Z lefele, Y lefele (negatív) → Z felfele
@@ -784,11 +792,11 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                     # Y pozitív (felfele) → Z lefele mozog → ha Z alsó limitnél, stop
                     if direction > 0 and z_val <= z_limits[0] + margin:
                         should_stop = True
-                        print(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte alsó limitet={z_limits[0]:.2f})")
+                        logger.info(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte alsó limitet={z_limits[0]:.2f})")
                     # Y negatív (lefele) → Z felfele mozog → ha Z felső limitnél, stop
                     elif direction < 0 and z_val >= z_limits[1] - margin:
                         should_stop = True
-                        print(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte felső limitet={z_limits[1]:.2f})")
+                        logger.info(f"🛑 Limit monitor: Y jog stop (Z={z_val:.2f} elérte felső limitet={z_limits[1]:.2f})")
 
                 if should_stop:
                     self._limit_monitoring = False
@@ -798,7 +806,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 await asyncio.sleep(0.02)  # 20ms polling (50 Hz) - gyorsabb reakció a limitek közelében
                 
             except Exception as e:
-                print(f"⚠️ Limit monitor hiba: {e}")
+                logger.error(f"⚠️ Limit monitor hiba: {e}")
                 self._limit_monitoring = False
                 return
     
@@ -838,7 +846,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         try:
             await self._send_command("M17")
             self._enabled = True
-            print(f"🤖 Robot engedélyezve")
+            logger.info(f"🤖 Robot engedélyezve")
             return True
         except Exception as e:
             self._set_error(f"Enable hiba: {str(e)}")
@@ -849,7 +857,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         try:
             await self._send_command("M84")
             self._enabled = False
-            print(f"🤖 Robot letiltva")
+            logger.info(f"🤖 Robot letiltva")
             return True
         except Exception as e:
             self._set_error(f"Disable hiba: {str(e)}")
@@ -942,7 +950,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 actual_distance = clamped_z - current.z
             
             if clamped:
-                print(f"🤖 Limit clamp: {clamped} (distance: {distance:.1f} -> {actual_distance:.1f})")
+                logger.info(f"🤖 Limit clamp: {clamped} (distance: {distance:.1f} -> {actual_distance:.1f})")
             
             if abs(actual_distance) < 0.001:
                 return True
@@ -1032,11 +1040,11 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
     async def set_control_mode(self, mode: ControlMode) -> bool:
         """Vezérlési mód váltása"""
         if mode == ControlMode.CARTESIAN and not KINEMATICS_AVAILABLE:
-            print("🤖 Cartesian mód nem elérhető - kinematics modul hiányzik")
+            logger.info("🤖 Cartesian mód nem elérhető - kinematics modul hiányzik")
             return False
         
         self._control_mode = mode
-        print(f"🤖 Vezérlési mód: {mode.value}")
+        logger.info(f"🤖 Vezérlési mód: {mode.value}")
         return True
     
     def get_control_mode(self) -> ControlMode:
@@ -1085,14 +1093,14 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
     async def move_to_xyz(self, x: float, y: float, z: float, speed: float = 500) -> bool:
         """Cartesian pozícióra mozgás (IK-val)"""
         if not KINEMATICS_AVAILABLE:
-            print("🤖 Cartesian mód nem elérhető - kinematics modul hiányzik")
+            logger.info("🤖 Cartesian mód nem elérhető - kinematics modul hiányzik")
             return False
         
         try:
             angles = inverse_kinematics(x, y, z, self._robot_config)
             
             if not angles.valid:
-                print(f"🤖 IK hiba: pozíció nem elérhető ({x:.1f}, {y:.1f}, {z:.1f})")
+                logger.error(f"🤖 IK hiba: pozíció nem elérhető ({x:.1f}, {y:.1f}, {z:.1f})")
                 return False
             
             return await self.move_to_joints(angles.j1, angles.j2, angles.j3, speed)
@@ -1137,10 +1145,10 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             
             # Blokkolás ha a limithez közel van ÉS abba az irányba próbál mozogni (logikai irány)
             if distance < 0 and current_val <= lo + soft_limit_margin:
-                print(f"🛑 Soft limit: {axis} tengely negatív irányban blokkolva (current={current_val:.2f} <= min={lo:.2f}+margin)")
+                logger.info(f"🛑 Soft limit: {axis} tengely negatív irányban blokkolva (current={current_val:.2f} <= min={lo:.2f}+margin)")
                 return False
             if distance > 0 and current_val >= hi - soft_limit_margin:
-                print(f"🛑 Soft limit: {axis} tengely pozitív irányban blokkolva (current={current_val:.2f} >= max={hi:.2f}-margin)")
+                logger.info(f"🛑 Soft limit: {axis} tengely pozitív irányban blokkolva (current={current_val:.2f} >= max={hi:.2f}-margin)")
                 return False
             
             # Kétirányú limit: Y mozgás előtt Z limit ellenőrzés
@@ -1152,11 +1160,11 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
                 
                 # Y pozitív (felfele) → Z lefele mozog → ha Z alsó limitnél, blokkolás
                 if distance > 0 and z_val <= z_limits[0] + bidir_margin:
-                    print(f"🛑 Kétirányú limit: Y pozitív blokkolva (Z={z_val:.2f} <= Z_min={z_limits[0]:.2f}+margin)")
+                    logger.info(f"🛑 Kétirányú limit: Y pozitív blokkolva (Z={z_val:.2f} <= Z_min={z_limits[0]:.2f}+margin)")
                     return False
                 # Y negatív (lefele) → Z felfele mozog → ha Z felső limitnél, blokkolás
                 if distance < 0 and z_val >= z_limits[1] - bidir_margin:
-                    print(f"🛑 Kétirányú limit: Y negatív blokkolva (Z={z_val:.2f} >= Z_max={z_limits[1]:.2f}-margin)")
+                    logger.info(f"🛑 Kétirányú limit: Y negatív blokkolva (Z={z_val:.2f} >= Z_max={z_limits[1]:.2f}-margin)")
                     return False
 
         async with self._jog_lock:
@@ -1243,7 +1251,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             await self._send_command("M3 S90")
             self._gripper_state = "closed"
             self._status.gripper_state = "closed"
-            print(f"🤖 Gripper: bezárva")
+            logger.info(f"🤖 Gripper: bezárva")
             return True
         except Exception as e:
             self._set_error(f"Gripper hiba: {str(e)}")
@@ -1255,7 +1263,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             await self._send_command("M3 S0")
             self._gripper_state = "open"
             self._status.gripper_state = "open"
-            print(f"🤖 Gripper: nyitva")
+            logger.info(f"🤖 Gripper: nyitva")
             return True
         except Exception as e:
             self._set_error(f"Gripper hiba: {str(e)}")
@@ -1267,7 +1275,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             await self._send_command("M10")
             self._sucker_state = True
             self._status.sucker_state = True
-            print(f"🤖 Szívó: bekapcsolva")
+            logger.info(f"🤖 Szívó: bekapcsolva")
             return True
         except Exception as e:
             self._set_error(f"Szívó hiba: {str(e)}")
@@ -1279,7 +1287,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             await self._send_command("M11")
             self._sucker_state = False
             self._status.sucker_state = False
-            print(f"🤖 Szívó: kikapcsolva")
+            logger.info(f"🤖 Szívó: kikapcsolva")
             return True
         except Exception as e:
             self._set_error(f"Szívó hiba: {str(e)}")
@@ -1293,7 +1301,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
         """Robot kalibráció - nullára mozgatás és pozíció reset"""
         try:
             self._set_state(DeviceState.HOMING)
-            print(f"🤖 Kalibráció indítása...")
+            logger.info(f"🤖 Kalibráció indítása...")
             
             response = await self._send_command("G92 X0 Y0 Z0")
             await asyncio.sleep(0.5)
@@ -1303,7 +1311,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             self._calibrated = True
             
             self._set_state(DeviceState.IDLE)
-            print(f"🤖 Kalibráció kész")
+            logger.info(f"🤖 Kalibráció kész")
             return True
                 
         except Exception as e:
@@ -1352,7 +1360,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             self._status.current_line = 0
             self._status.progress = 0.0
             
-            print(f"🤖 Program betöltve: {filepath} ({len(self._gcode_lines)} sor)")
+            logger.info(f"🤖 Program betöltve: {filepath} ({len(self._gcode_lines)} sor)")
             return True
             
         except Exception as e:
@@ -1398,7 +1406,7 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             if self.ERROR_PATTERN.search(response):
                 error_msg = response.strip()
                 if "COMMAND NOT RECOGNIZED" in response:
-                    print(f"🤖 Átugorva (sor {self._current_line_index + 1}): {line}")
+                    logger.info(f"🤖 Átugorva (sor {self._current_line_index + 1}): {line}")
                 else:
                     self._set_error(f"G-code hiba (sor {self._current_line_index + 1}): {error_msg}")
                     self._running = False
@@ -1468,6 +1476,8 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
     async def reset(self) -> bool:
         """Alarm törlése, eszköz reset"""
         try:
+
+
             success = await self._grbl_unlock()
             if success:
                 self._status.error_message = None

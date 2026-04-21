@@ -27,6 +27,8 @@ def _parse_version(version: Optional[str]) -> Tuple[int, int]:
         return (0, 0)
 
     try:
+
+
         major = int(parts[0])
     except ValueError:
         return (0, 0)

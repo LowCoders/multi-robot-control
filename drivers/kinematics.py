@@ -22,6 +22,14 @@ import math
 from dataclasses import dataclass
 from typing import Tuple, Optional
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
+
+
 
 @dataclass
 class PushrodConfig:
@@ -415,36 +423,36 @@ if __name__ == "__main__":
     # Pushrod kompenzációval
     config = RobotConfig()
     
-    print("=" * 60)
-    print("ROBOT KINEMATIKA TESZT")
-    print("=" * 60)
-    print()
-    print("Robot konfiguráció:")
-    print(f"  L1 (bázis): {config.L1} mm")
-    print(f"  L2 (felkar): {config.L2} mm")
-    print(f"  L3 (alkar): {config.L3} mm")
-    print(f"  Max elérés: {config.L2 + config.L3} mm")
-    print(f"  Min elérés: {abs(config.L2 - config.L3)} mm")
-    print()
-    print("Pushrod konfiguráció:")
-    print(f"  Enabled: {config.pushrod.enabled}")
-    print(f"  r1 (motor kar): {config.pushrod.r1} mm")
-    print(f"  r2 (tolórúd): {config.pushrod.r2} mm")
-    print(f"  r3 (alkar kar): {config.pushrod.r3} mm")
-    print(f"  d (motor-könyök táv): {config.pushrod.d} mm")
-    print()
+    logger.info("=" * 60)
+    logger.info("ROBOT KINEMATIKA TESZT")
+    logger.info("=" * 60)
+    logger.info()
+    logger.info("Robot konfiguráció:")
+    logger.info(f"  L1 (bázis): {config.L1} mm")
+    logger.info(f"  L2 (felkar): {config.L2} mm")
+    logger.info(f"  L3 (alkar): {config.L3} mm")
+    logger.info(f"  Max elérés: {config.L2 + config.L3} mm")
+    logger.info(f"  Min elérés: {abs(config.L2 - config.L3)} mm")
+    logger.info()
+    logger.info("Pushrod konfiguráció:")
+    logger.info(f"  Enabled: {config.pushrod.enabled}")
+    logger.info(f"  r1 (motor kar): {config.pushrod.r1} mm")
+    logger.info(f"  r2 (tolórúd): {config.pushrod.r2} mm")
+    logger.info(f"  r3 (alkar kar): {config.pushrod.r3} mm")
+    logger.info(f"  d (motor-könyök táv): {config.pushrod.d} mm")
+    logger.info()
     
     # Pushrod konverzió teszt
-    print("-" * 60)
-    print("Pushrod konverzió teszt (motor szög → könyök szög → motor szög):")
-    print("-" * 60)
+    logger.info("-" * 60)
+    logger.info("Pushrod konverzió teszt (motor szög → könyök szög → motor szög):")
+    logger.info("-" * 60)
     for motor_angle in [-90, -60, -30, 0, 30, 60, 90]:
         elbow_angle = motor_angle_to_elbow_angle(motor_angle, config)
         motor_back = elbow_angle_to_motor_angle(elbow_angle, config)
         diff = abs(motor_angle - motor_back)
         status = "✓" if diff < 0.1 else f"✗ (diff={diff:.2f}°)"
-        print(f"  Motor {motor_angle:+4.0f}° → Könyök {elbow_angle:+6.1f}° → Motor {motor_back:+6.1f}° {status}")
-    print()
+        logger.info(f"  Motor {motor_angle:+4.0f}° → Könyök {elbow_angle:+6.1f}° → Motor {motor_back:+6.1f}° {status}")
+    logger.info()
     
     # Teszt esetek
     test_cases = [
@@ -455,22 +463,22 @@ if __name__ == "__main__":
         (45, 30, -30, "Bázis 45°, váll 30°, könyök -30° (motor szög)"),
     ]
     
-    print("-" * 60)
-    print("Forward Kinematics teszt (pushrod kompenzációval):")
-    print("-" * 60)
+    logger.info("-" * 60)
+    logger.info("Forward Kinematics teszt (pushrod kompenzációval):")
+    logger.info("-" * 60)
     for j1, j2, j3_motor, desc in test_cases:
         pos = forward_kinematics(j1, j2, j3_motor, config)
         j3_real = motor_angle_to_elbow_angle(j3_motor, config)
-        print(f"{desc}")
-        print(f"  Motor: J1={j1}°, J2={j2}°, J3_motor={j3_motor}°")
-        print(f"  Valós könyök: {j3_real:.1f}°")
-        print(f"  Pozíció: X={pos.x:.1f}, Y={pos.y:.1f}, Z={pos.z:.1f} mm")
-    print()
+        logger.info(f"{desc}")
+        logger.info(f"  Motor: J1={j1}°, J2={j2}°, J3_motor={j3_motor}°")
+        logger.info(f"  Valós könyök: {j3_real:.1f}°")
+        logger.info(f"  Pozíció: X={pos.x:.1f}, Y={pos.y:.1f}, Z={pos.z:.1f} mm")
+    logger.info()
     
     # IK teszt - különböző célpontok
-    print("-" * 60)
-    print("Inverse Kinematics teszt (oda-vissza, pushrod kompenzációval):")
-    print("-" * 60)
+    logger.info("-" * 60)
+    logger.info("Inverse Kinematics teszt (oda-vissza, pushrod kompenzációval):")
+    logger.info("-" * 60)
     
     test_positions = [
         (200, 0, 150),
@@ -480,20 +488,20 @@ if __name__ == "__main__":
     ]
     
     for x, y, z in test_positions:
-        print(f"Cél: ({x}, {y}, {z}) mm")
+        logger.info(f"Cél: ({x}, {y}, {z}) mm")
         
         angles = inverse_kinematics(x, y, z, config)
         if angles.valid:
             j3_real = motor_angle_to_elbow_angle(angles.j3, config)
-            print(f"  IK: j1={angles.j1:.1f}°, j2={angles.j2:.1f}°, j3_motor={angles.j3:.1f}° (valós könyök: {j3_real:.1f}°)")
+            logger.info(f"  IK: j1={angles.j1:.1f}°, j2={angles.j2:.1f}°, j3_motor={angles.j3:.1f}° (valós könyök: {j3_real:.1f}°)")
             
             # FK visszaellenőrzés
             check = forward_kinematics(angles.j1, angles.j2, angles.j3, config)
-            print(f"  FK: ({check.x:.1f}, {check.y:.1f}, {check.z:.1f}) mm")
+            logger.info(f"  FK: ({check.x:.1f}, {check.y:.1f}, {check.z:.1f}) mm")
             
             error = math.sqrt((check.x - x)**2 + (check.y - y)**2 + (check.z - z)**2)
             status = "✓" if error < 0.1 else "✗"
-            print(f"  Hiba: {error:.3f} mm {status}")
+            logger.error(f"  Hiba: {error:.3f} mm {status}")
         else:
-            print(f"  Hiba: {angles.error}")
-        print()
+            logger.error(f"  Hiba: {angles.error}")
+        logger.info()

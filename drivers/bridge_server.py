@@ -11,7 +11,6 @@ import asyncio
 import json
 import os
 import threading
-import time
 from typing import Dict, Optional, Any, List, Union
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -28,6 +27,10 @@ from robot_arm_driver import RobotArmDevice
 from simulated_device import SimulatedDevice, SimulationMode
 from control_lock_decorator import ControlLockDecorator
 from usb_port_resolver import UsbIdentifier, resolve_port, list_usb_devices
+from log_config import setup_logging, get_logger
+
+setup_logging()
+logger = get_logger(__name__)
 
 # Machine config path
 MACHINE_CONFIG_DIR = Path(__file__).parent.parent / "config" / "machines"
@@ -39,7 +42,6 @@ RT_OWN_CLAIM_HOST = 0x8D
 RT_OWN_REQUEST_PANEL = 0x8E
 RT_OWN_RELEASE = 0x8F
 RT_OWN_QUERY = 0xA5
-DEBUG_LOG_PATH = "/web/multi-robot-control/.cursor/debug-e190d9.log"
 
 # Szimulációs mód már csak eszközönként (devices.yaml simulated mezője)
 
@@ -58,7 +60,7 @@ def load_machine_config(device_id: str) -> Optional[Dict[str, Any]]:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"⚠️ Nem sikerült betölteni a machine config-ot: {device_id}: {e}")
+        logger.warning(f"⚠️ Nem sikerült betölteni a machine config-ot: {device_id}: {e}")
         return None
 
 
@@ -243,7 +245,7 @@ class DeviceManager:
     async def load_config(self, config_path: str) -> None:
         """Konfiguráció betöltése YAML fájlból"""
         if not os.path.exists(config_path):
-            print(f"Konfiguráció nem található: {config_path}")
+            logger.info(f"Konfiguráció nem található: {config_path}")
             return
         
         with open(config_path, 'r') as f:
@@ -288,11 +290,11 @@ class DeviceManager:
                     max_z=config.config.get('max_z', 100.0),
                 )
                 connection_info = "Szimulált"
-                print(f"🎮 Szimulált eszköz: {config.name}")
+                logger.info(f"🎮 Szimulált eszköz: {config.name}")
             elif driver == "grbl":
                 port = self._resolve_device_port(config)
                 if port is None:
-                    print(f"⚠️ Port nem található: {config.name}")
+                    logger.warning(f"⚠️ Port nem található: {config.name}")
                     return False
                 device = GrblDevice(
                     device_id=config.id,
@@ -302,7 +304,7 @@ class DeviceManager:
                     max_feed_rate=config.config.get('max_feed_rate'),
                 )
                 connection_info = port
-                print(f"🔌 Valós GRBL eszköz: {config.name} ({port})")
+                logger.info(f"🔌 Valós GRBL eszköz: {config.name} ({port})")
             elif driver == "linuxcnc":
                 ini_file = config.config.get('ini_file')
                 device = LinuxCNCDevice(
@@ -311,11 +313,11 @@ class DeviceManager:
                     ini_file=ini_file,
                 )
                 connection_info = ini_file or "LinuxCNC"
-                print(f"🔌 Valós LinuxCNC eszköz: {config.name}")
+                logger.info(f"🔌 Valós LinuxCNC eszköz: {config.name}")
             elif driver == "robot_arm":
                 port = self._resolve_device_port(config)
                 if port is None:
-                    print(f"⚠️ Port nem található: {config.name}")
+                    logger.warning(f"⚠️ Port nem található: {config.name}")
                     return False
                 
                 # Betöltjük a machine-config.json-ból a driver beállításokat
@@ -324,10 +326,10 @@ class DeviceManager:
                 
                 if machine_config:
                     driver_cfg = extract_driver_config(machine_config)
-                    print(f"   📋 Machine config betöltve: {config.id}")
+                    logger.info(f"   📋 Machine config betöltve: {config.id}")
                 else:
                     # Fallback: devices.yaml-ból (átmeneti, migrálás előtt)
-                    print(f"   ⚠️ Machine config nem található, devices.yaml használata: {config.id}")
+                    logger.warning(f"   ⚠️ Machine config nem található, devices.yaml használata: {config.id}")
                 
                 # Driver paraméterek: machine config JSON elsőbbséggel, devices.yaml fallback
                 # Üres dict ({}) is valid érték, ezért None check kell az 'or' helyett
@@ -358,25 +360,25 @@ class DeviceManager:
                 if dynamic_limits:
                     device.update_driver_config(dynamic_limits=dynamic_limits)
                     for axis, cfg in dynamic_limits.items():
-                        print(f"   📐 Dinamikus limit [{axis}]: függ {cfg.get('dependsOn')}-tól")
+                        logger.info(f"   📐 Dinamikus limit [{axis}]: függ {cfg.get('dependsOn')}-tól")
                 
                 connection_info = port
                 closed_loop_info = " [Closed Loop]" if (closed_loop or {}).get('enabled') else ""
                 home_info = f" [Home: {(home_position or {}).get('mode', 'absolute')}]" if home_position else ""
-                print(f"🤖 Valós robotkar eszköz: {config.name} ({port}){closed_loop_info}{home_info}")
+                logger.info(f"🤖 Valós robotkar eszköz: {config.name} ({port}){closed_loop_info}{home_info}")
             elif driver == "tube_bender":
                 port = self._resolve_device_port(config)
                 if port is None:
-                    print(f"⚠️ Port nem található: {config.name}")
+                    logger.warning(f"⚠️ Port nem található: {config.name}")
                     return False
 
                 machine_config = load_machine_config(config.id)
                 driver_cfg = {}
                 if machine_config:
                     driver_cfg = extract_driver_config(machine_config)
-                    print(f"   📋 Machine config betöltve: {config.id}")
+                    logger.info(f"   📋 Machine config betöltve: {config.id}")
                 else:
-                    print(f"   ⚠️ Machine config nem található, devices.yaml használata: {config.id}")
+                    logger.warning(f"   ⚠️ Machine config nem található, devices.yaml használata: {config.id}")
 
                 from tube_bender_driver import TubeBenderDriver
                 startup_grbl_settings = driver_cfg.get('grbl_settings') or config.config.get('grbl_settings') or {}
@@ -384,7 +386,7 @@ class DeviceManager:
                     s1 = startup_grbl_settings.get('1', startup_grbl_settings.get(1))
                     s4 = startup_grbl_settings.get('4', startup_grbl_settings.get(4))
                     if s1 is not None or s4 is not None:
-                        print(f"   ⚙️ TubeBender startup hold settings: $1={s1}, $4={s4}")
+                        logger.info(f"   ⚙️ TubeBender startup hold settings: $1={s1}, $4={s4}")
                 device = TubeBenderDriver(
                     device_id=config.id,
                     device_name=config.name,
@@ -405,9 +407,9 @@ class DeviceManager:
                     supports_panel_controller=supports_panel_controller,
                 )
                 connection_info = port
-                print(f"🔧 Csőhajlító eszköz: {config.name} ({port}) [GRBL adapter]")
+                logger.info(f"🔧 Csőhajlító eszköz: {config.name} ({port}) [GRBL adapter]")
             else:
-                print(f"Ismeretlen driver: {driver}")
+                logger.info(f"Ismeretlen driver: {driver}")
                 return False
             
             if device is None:
@@ -438,11 +440,11 @@ class DeviceManager:
             )
             
             self.devices[config.id] = device
-            print(f"Eszköz hozzáadva: {config.id} ({config.name})")
+            logger.info(f"Eszköz hozzáadva: {config.id} ({config.name})")
             return True
             
         except Exception as e:
-            print(f"Eszköz hozzáadási hiba ({config.id}): {str(e)}")
+            logger.error(f"Eszköz hozzáadási hiba ({config.id}): {str(e)}")
             return False
     
     def _resolve_device_port(self, config: DeviceConfig) -> Optional[str]:
@@ -462,14 +464,14 @@ class DeviceManager:
                 location=usb_config.get('location'),
             )
             resolved = resolve_port(usb=usb_id, fallback_port=fallback_port)
-            print(
+            logger.info(
                 f"[CONNECT_PORT:{config.id}] resolved={resolved}, fallback={fallback_port}, "
                 f"usb_serial={usb_id.serial_number}, usb_vid={usb_id.vid}, usb_pid={usb_id.pid}, usb_location={usb_id.location}"
             )
             return resolved
         
         resolved = fallback_port or '/dev/ttyUSB0'
-        print(f"[CONNECT_PORT:{config.id}] resolved={resolved}, fallback_only=true")
+        logger.info(f"[CONNECT_PORT:{config.id}] resolved={resolved}, fallback_only=true")
         return resolved
     
     def get_device(self, device_id: str) -> Optional[DeviceDriver]:
@@ -482,13 +484,13 @@ class DeviceManager:
         for device_id, device in self.devices.items():
             try:
                 device_port = getattr(device, "port", "n/a")
-                print(f"[CONNECT_ALL:{device_id}] begin port={device_port}")
+                logger.info(f"[CONNECT_ALL:{device_id}] begin port={device_port}")
                 connected = await asyncio.wait_for(
                     device.connect(),
                     timeout=STARTUP_CONNECT_TIMEOUT_SECONDS,
                 )
                 results[device_id] = connected
-                print(f"[CONNECT_ALL:{device_id}] result connected={connected}")
+                logger.info(f"[CONNECT_ALL:{device_id}] result connected={connected}")
 
                 if connected:
                     try:
@@ -509,15 +511,15 @@ class DeviceManager:
                                         str(claim.get("reason") or "denied"),
                                         control,
                                     )
-                            print(
+                            logger.info(
                                 f"🔐 Startup ownership sync ({device_id}): "
                                 f"sent={claim.get('sent')}, granted={claim.get('granted')}, "
                                 f"owner={(control or {}).get('owner')}, reason={(control or {}).get('reason')}"
                             )
                     except Exception as e:
-                        print(f"⚠️ Startup ownership claim hiba ({device_id}): {e}")
+                        logger.error(f"⚠️ Startup ownership claim hiba ({device_id}): {e}")
             except asyncio.TimeoutError:
-                print(
+                logger.info(
                     f"Csatlakozási timeout ({device_id}): {STARTUP_CONNECT_TIMEOUT_SECONDS:.1f}s"
                 )
                 try:
@@ -526,7 +528,7 @@ class DeviceManager:
                     pass
                 results[device_id] = False
             except Exception as e:
-                print(f"Csatlakozási hiba ({device_id}): {str(e)}")
+                logger.error(f"Csatlakozási hiba ({device_id}): {str(e)}")
                 results[device_id] = False
         return results
     
@@ -652,60 +654,6 @@ _active_test_events: Dict[str, threading.Event] = {}
 
 # Aktív tesztek napló bejegyzései (device_id -> list[dict]) - a teszt objektum _log_entries listája
 _active_test_progress: Dict[str, list] = {}
-_debug_last_status_snapshot: Dict[str, Any] = {}
-
-
-def _debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: Dict[str, Any]) -> None:
-    # region agent log
-    payload = {
-        "sessionId": "e190d9",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # endregion
-
-
-def _debug_log_status_if_changed(device_id: str, status: DeviceStatus, control: Optional[Dict[str, Any]]) -> None:
-    if device_id != "tube_bender_1":
-        return
-    owner = str((control or {}).get("owner", "none"))
-    snapshot = (
-        status.state.value,
-        owner,
-        round(status.position.x, 3),
-        round(status.position.y, 3),
-        round(status.position.z, 3),
-        status.error_message or "",
-    )
-    if _debug_last_status_snapshot.get(device_id) == snapshot:
-        return
-    _debug_last_status_snapshot[device_id] = snapshot
-    _debug_log(
-        run_id="panel-step-debug-1",
-        hypothesis_id="H2_H3_H4",
-        location="bridge_server.py:get_device_status",
-        message="Status/control snapshot changed",
-        data={
-            "device_id": device_id,
-            "state": status.state.value,
-            "owner": owner,
-            "position": {
-                "x": round(status.position.x, 3),
-                "y": round(status.position.y, 3),
-                "z": round(status.position.z, 3),
-            },
-            "error_message": status.error_message,
-        },
-    )
 
 
 async def _sync_control_from_firmware(device: Any, changed_by: str) -> Optional[Dict[str, Any]]:
@@ -936,11 +884,6 @@ async def get_device_status(device_id: str):
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
     status = await device.get_status()
-    _debug_log_status_if_changed(
-        device_id=device_id,
-        status=status,
-        control=device_manager.get_control_state(device_id),
-    )
     return status.to_dict()
 
 
@@ -1042,25 +985,11 @@ async def request_device_control(device_id: str, request: ControlRequest):
                         reason,
                         control,
                     )
-                _debug_log(
-                    run_id="panel-step-debug-1",
-                    hypothesis_id="H1_H2",
-                    location="bridge_server.py:request_device_control",
-                    message="Ownership request processed",
-                    data={
-                        "device_id": device_id,
-                        "requested_owner": requested_owner,
-                        "granted": granted,
-                        "reason": result.get("reason"),
-                        "state_owner": control.get("owner"),
-                        "state_reason": control.get("reason"),
-                    },
-                )
                 return result
         except HTTPException:
             raise
         except Exception as e:
-            print(f"⚠️ Firmware ownership request hiba ({device_id}): {e}")
+            logger.error(f"⚠️ Firmware ownership request hiba ({device_id}): {e}")
 
     # Fallback for non-panel devices or drivers without realtime ownership.
     result = device.request_control(
@@ -1114,7 +1043,7 @@ async def release_device_control(device_id: str, request: Optional[ControlReleas
                 await device_manager._broadcast_control_state(device_id, control)
                 return result
         except Exception as e:
-            print(f"⚠️ Firmware ownership release hiba ({device_id}): {e}")
+            logger.error(f"⚠️ Firmware ownership release hiba ({device_id}): {e}")
 
     result = device.release_control(
         requested_by=(request.requested_by if request else None) or "api_release"
@@ -1133,14 +1062,14 @@ async def connect_device(device_id: str):
 
     try:
         device_port = getattr(device, "port", "n/a")
-        print(f"[CONNECT_API:{device_id}] begin port={device_port}")
+        logger.info(f"[CONNECT_API:{device_id}] begin port={device_port}")
         # Guard against serial/handshake stalls so callers get a clear HTTP error
         # instead of hanging until upstream client-side timeout.
         result = await asyncio.wait_for(
             device.connect(),
             timeout=CONNECT_TIMEOUT_SECONDS,
         )
-        print(f"[CONNECT_API:{device_id}] result connected={result}")
+        logger.info(f"[CONNECT_API:{device_id}] result connected={result}")
     except asyncio.TimeoutError as exc:
         raise HTTPException(
             status_code=504,
@@ -1174,7 +1103,7 @@ async def connect_device(device_id: str):
                         control,
                     )
         except Exception as e:
-            print(f"⚠️ Ownership claim küldési hiba ({device_id}): {e}")
+            logger.error(f"⚠️ Ownership claim küldési hiba ({device_id}): {e}")
     return {
         "success": result,
         "ownership_claim_sent": claim_sent,
@@ -1244,7 +1173,7 @@ async def reconnect_device(device_id: str):
                         control,
                     )
         except Exception as e:
-            print(f"⚠️ Reconnect ownership claim hiba ({device_id}): {e}")
+            logger.error(f"⚠️ Reconnect ownership claim hiba ({device_id}): {e}")
 
     return {
         "success": result,
@@ -1278,22 +1207,28 @@ async def jog_device(device_id: str, request: JogRequest):
     if not device:
         raise HTTPException(status_code=404, detail="Eszköz nem található")
     
-    # ControlLockDecorator wraps robot-arm jog methods and keeps lock checks active.
+    # ControlLockDecorator wraps any device and keeps lock checks active.
+    # Its `jog_joint`/`jog_cartesian` methods always exist (defined on the
+    # decorator itself), so a plain `hasattr(device, ...)` check would
+    # incorrectly route GRBL/CNC devices through the joint API and silently
+    # return False. Look at the *inner* device's actual interface instead.
     if isinstance(device, ControlLockDecorator):
-        if request.mode == 'cartesian':
-            result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
+        inner = device._inner
+        has_arm_jog = hasattr(inner, 'jog_joint') and hasattr(inner, 'jog_cartesian')
+        if has_arm_jog:
+            if request.mode == 'cartesian':
+                result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
+            else:
+                result = await device.jog_joint(request.axis, request.distance, request.feed_rate)
         else:
-            result = await device.jog_joint(request.axis, request.distance, request.feed_rate)
-    # Robot arm: jog_joint és jog_cartesian metódusok elérhetők
+            # GRBL/CNC: standard linear jog (lock check still applies inside the decorator).
+            result = await device.jog(request.axis, request.distance, request.feed_rate)
     elif hasattr(device, 'jog_joint') and hasattr(device, 'jog_cartesian'):
         if request.mode == 'cartesian':
-            # Cartesian mód: X/Y/Z mm-ben, IK számítással
             result = await device.jog_cartesian(request.axis, request.distance, request.feed_rate)
         else:
-            # Jog mód: X/Y/Z tengely direkt mozgatása
             result = await device.jog_joint(request.axis, request.distance, request.feed_rate)
     else:
-        # Nem robot arm (pl. laser, CNC) - standard jog
         result = await device.jog(request.axis, request.distance, request.feed_rate)
     
     return {"success": result}
@@ -1963,7 +1898,7 @@ async def reload_device_config(device_id: str):
             detail="Ez az eszköz nem támogatja a config reload-ot"
         )
 
-    print(f"🔄 Konfiguráció újratöltve: {device_id}")
+    logger.info(f"🔄 Konfiguráció újratöltve: {device_id}")
 
     return {
         "success": True,
@@ -2078,14 +2013,14 @@ async def run_diagnostics(device_id: str, move_test: bool = False):
     # Valós eszköz – soros kapcsolat szükséges
     # Ha a serial halott (USB disconnect/reconnect után), megpróbáljuk újracsatlakoztatni
     if not device._serial or not device._serial.is_open:
-        print(f"🔄 Serial kapcsolat nem él, újracsatlakozás próba ({device_id})...")
+        logger.info(f"🔄 Serial kapcsolat nem él, újracsatlakozás próba ({device_id})...")
         reconnected = await device.reconnect()
         if not reconnected or not device._serial or not device._serial.is_open:
             raise HTTPException(
                 status_code=400,
                 detail="Nincs soros kapcsolat. Ellenőrizd, hogy a vezérlő csatlakoztatva van-e."
             )
-        print(f"✅ Újracsatlakozás sikeres ({device_id})")
+        logger.info(f"✅ Újracsatlakozás sikeres ({device_id})")
     
     from board_diagnostics import BoardDiagnostics
     
@@ -2564,7 +2499,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         device_manager.unregister_ws_client(websocket)
     except Exception as e:
-        print(f"WebSocket hiba: {str(e)}")
+        logger.error(f"WebSocket hiba: {str(e)}")
         device_manager.unregister_ws_client(websocket)
 
 
@@ -2579,7 +2514,7 @@ def main():
     host = os.environ.get('BRIDGE_HOST', '0.0.0.0')
     port = int(os.environ.get('BRIDGE_PORT', '4002'))
     
-    print(f"Bridge szerver indítása: http://{host}:{port}")
+    logger.info(f"Bridge szerver indítása: http://{host}:{port}")
     uvicorn.run(app, host=host, port=port)
 
 

@@ -14,6 +14,13 @@ A host osztálynak rendelkeznie kell:
 import asyncio
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from ..log_config import get_logger
+
+logger = get_logger(__name__)
+
 if TYPE_CHECKING:
     try:
         from base import DeviceState, Position
@@ -60,7 +67,7 @@ class TeachingCapability:
             pos["sucker"] = self._sucker_state
         
         self._taught_positions.append(pos)
-        print(f"🤖 Pozíció rögzítve #{pos['index']}: "
+        logger.info(f"🤖 Pozíció rögzítve #{pos['index']}: "
               f"X={pos['x']:.2f} Y={pos['y']:.2f} Z={pos['z']:.2f}")
         return pos
     
@@ -82,6 +89,8 @@ class TeachingCapability:
             from base import DeviceState
         except ImportError:
             from ..base import DeviceState
+
+
         
         self._set_state(DeviceState.RUNNING)
         self._running = True
@@ -113,7 +122,7 @@ class TeachingCapability:
     def teach_clear(self) -> None:
         """Rögzített pozíciók törlése."""
         self._taught_positions.clear()
-        print(f"🤖 Tanított pozíciók törölve")
+        logger.info(f"🤖 Tanított pozíciók törölve")
     
     def teach_get_positions(self) -> List[Dict[str, Any]]:
         """

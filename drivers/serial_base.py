@@ -30,7 +30,12 @@ except ImportError:
         DeviceState,
     )
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
 
+logger = get_logger(__name__)
 class SerialDeviceBase(JogSafeDeviceDriver):
     """
     Serial kommunikációt használó eszközök base osztálya.
@@ -95,7 +100,7 @@ class SerialDeviceBase(JogSafeDeviceDriver):
             return True
             
         except Exception as e:
-            print(f"Serial port hiba: {e}")
+            logger.error(f"Serial port hiba: {e}")
             return False
     
     async def _close_serial(self) -> None:
@@ -215,6 +220,8 @@ class SerialDeviceBase(JogSafeDeviceDriver):
             
             if in_waiting > 0:
                 try:
+
+
                     line_bytes = await asyncio.to_thread(self._serial.readline)
                     line = line_bytes.decode(errors='replace').strip()
                     if line:

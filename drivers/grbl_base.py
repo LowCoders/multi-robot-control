@@ -33,6 +33,13 @@ except ImportError:
     )
 
 
+
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
 class GrblState(Enum):
     """GRBL belső állapotok"""
     IDLE = "Idle"
@@ -644,6 +651,8 @@ class GrblDeviceBase(SerialDeviceBase):
         self._jog_stopping = True
         async with self._jog_lock:
             try:
+
+
                 if not self.is_serial_open:
                     self._jog_stopping = False
                     return False

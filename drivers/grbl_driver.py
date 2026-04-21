@@ -42,6 +42,13 @@ except ImportError:
     )
     from .grbl_protocols import GrblProtocol, resolve_grbl_protocol
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class GrblDevice(GrblDeviceBase):
     """
@@ -115,9 +122,9 @@ class GrblDevice(GrblDeviceBase):
         """Emit concise connection diagnostics for recurring handshake issues."""
         details = ", ".join(f"{k}={v!r}" for k, v in fields.items())
         if details:
-            print(f"[GRBL_CONNECT:{self.device_id}] {phase} | {details}")
+            logger.info(f"[GRBL_CONNECT:{self.device_id}] {phase} | {details}")
         else:
-            print(f"[GRBL_CONNECT:{self.device_id}] {phase}")
+            logger.info(f"[GRBL_CONNECT:{self.device_id}] {phase}")
 
     def _looks_like_grbl_identity(self, response: str) -> bool:
         """Best-effort GRBL/grblHAL identity check from startup or $I response."""
@@ -868,48 +875,93 @@ class GrblDevice(GrblDeviceBase):
         self._run_task = asyncio.create_task(self._run_program())
         return True
     
+    async def _wait_until_motion_complete(
+        self,
+        max_wait: float = 120.0,
+        poll_interval: float = 0.05,
+        initial_delay: float = 0.03,
+    ) -> bool:
+        """
+        Megvárja amíg a GRBL ténylegesen befejezi a fizikai mozgást.
+
+        A GRBL "ok" válasza csak azt jelzi, hogy a parancs a planner buffer-be
+        került, NEM hogy a hardware végrehajtotta. A pontos szinkronizáláshoz
+        '?' realtime status query-vel pollozunk amíg a state Idle/Hold/Alarm/...
+        állapotba kerül (azaz nem Run/Jog/Home).
+
+        Returns:
+            True ha a movement befejeződött, False timeout esetén.
+        """
+        # A küldést követően adunk egy kis időt, hogy a hardware reagáljon
+        # és a state Run/Jog-ra váltson. E nélkül a get_grbl_status() még
+        # IDLE-t mutathat (a parancs még csak el sem indult).
+        await asyncio.sleep(initial_delay)
+
+        active_states = {GrblState.RUN, GrblState.JOG, GrblState.HOME}
+        loop = asyncio.get_event_loop()
+        start = loop.time()
+
+        while self._running:
+            try:
+                await self.get_grbl_status()
+            except Exception:
+                return False
+
+            if self._grbl_state not in active_states:
+                return True
+
+            if loop.time() - start > max_wait:
+                return False
+
+            await asyncio.sleep(poll_interval)
+
+        return False
+
     async def _run_program(self) -> None:
         """Program futtatás loop"""
         self._set_state(DeviceState.RUNNING)
-        
+
         total_lines = len(self._gcode_lines)
-        
+
         while self._running and self._current_line_index < total_lines:
-            # Pause ellenőrzés
             while self._paused:
                 await asyncio.sleep(0.1)
                 if not self._running:
                     break
-            
+
             if not self._running:
                 break
-            
-            # Következő sor küldése
+
             line = self._gcode_lines[self._current_line_index]
             response = await self._send_command(line)
-            
-            # Hiba ellenőrzés
+
             if self.GRBL_ERROR_PATTERN.search(response):
                 self._set_error(f"G-code hiba (sor {self._current_line_index + 1}): {response}")
                 self._running = False
                 break
-            
-            # Progress frissítése
+
+            # A GRBL "ok" csak buffer-accept jelzés, NEM movement-complete.
+            # Megvárjuk amíg a hardware ténylegesen befejezi a mozgást,
+            # hogy a frontend progress szinkronban legyen a fizikai mozgással.
+            await self._wait_until_motion_complete()
+
+            if not self._running:
+                break
+
             self._current_line_index += 1
             self._status.current_line = self._current_line_index
             if total_lines > 0:
                 self._status.progress = (self._current_line_index / total_lines) * 100
             else:
                 self._status.progress = 100.0
-            
-            # Progress callback
+
             if self.on_job_progress:
                 self.on_job_progress(
                     self._status.progress,
                     self._current_line_index,
                     total_lines,
                 )
-        
+
         # Befejezés
         if self._current_line_index >= total_lines:
             self._status.progress = 100.0

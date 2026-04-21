@@ -13,6 +13,14 @@ try:
 except ImportError:
     from .base import DeviceDriver, DeviceCapabilities, DeviceState, DeviceStatus, Position
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
+
+
 
 class ControlOwner(str, Enum):
     HOST = "host"

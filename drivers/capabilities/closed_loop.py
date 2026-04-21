@@ -12,6 +12,13 @@ A host osztálynak rendelkeznie kell:
 import asyncio
 from typing import Optional, Dict, Any, List
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from ..log_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class ClosedLoopCapability:
     """
@@ -155,7 +162,7 @@ class ClosedLoopCapability:
         
         try:
             self._set_state(DeviceState.HOMING)
-            print(f"🤖 Automatikus kalibráció indítása (stall detection)...")
+            logger.info(f"🤖 Automatikus kalibráció indítása (stall detection)...")
             
             # Pozíció nullázása a kezdőponton
             await self._send_command("G92 X0 Y0 Z0")
@@ -185,7 +192,7 @@ class ClosedLoopCapability:
                 )
                 if pos_limit is not None:
                     results[f'{joint_key}_limits'][1] = pos_limit
-                    print(f"  {joint} max: {pos_limit:.1f}°")
+                    logger.info(f"  {joint} max: {pos_limit:.1f}°")
                 
                 if self._calibration_stop_requested:
                     raise Exception("Kalibráció leállítva")
@@ -205,7 +212,7 @@ class ClosedLoopCapability:
                 )
                 if neg_limit is not None:
                     results[f'{joint_key}_limits'][0] = neg_limit
-                    print(f"  {joint} min: {neg_limit:.1f}°")
+                    logger.info(f"  {joint} min: {neg_limit:.1f}°")
             
             # Home pozícióba állás
             step += 1
@@ -240,7 +247,7 @@ class ClosedLoopCapability:
             })
             
             self._set_state(DeviceState.IDLE)
-            print(f"🤖 Automatikus kalibráció kész!")
+            logger.info(f"🤖 Automatikus kalibráció kész!")
             return results
             
         except Exception as e:
@@ -254,8 +261,10 @@ class ClosedLoopCapability:
                 from base import DeviceState
             except ImportError:
                 from ..base import DeviceState
+
+
             self._set_state(DeviceState.IDLE)
-            print(f"🤖 Kalibráció hiba: {e}")
+            logger.error(f"🤖 Kalibráció hiba: {e}")
             return results
     
     async def _search_limit_with_stall(
@@ -286,11 +295,11 @@ class ClosedLoopCapability:
         """
         grbl_axis = self.AXIS_TO_GRBL.get(joint.upper(), joint.upper())
         if grbl_axis not in ['X', 'Y', 'Z']:
-            print(f"  Ismeretlen tengely: {joint}")
+            logger.info(f"  Ismeretlen tengely: {joint}")
             return None
         
         direction_name = "pozitív" if direction > 0 else "negatív"
-        print(f"  {joint} {direction_name} irány keresése...")
+        logger.info(f"  {joint} {direction_name} irány keresése...")
         
         # Kezdő pozíció
         status = await self.get_grbl_status()
@@ -356,7 +365,7 @@ class ClosedLoopCapability:
                     stall_start_time = asyncio.get_event_loop().time()
                 elif asyncio.get_event_loop().time() - stall_start_time > stall_timeout:
                     # Stall detected!
-                    print(f"    Stall detected @ {current_pos:.1f}°")
+                    logger.info(f"    Stall detected @ {current_pos:.1f}°")
                     
                     # Mozgás leállítása
                     await self._send_command("!")

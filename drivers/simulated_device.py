@@ -22,6 +22,13 @@ from base import (
     Position,
 )
 
+try:
+    from log_config import get_logger
+except ImportError:
+    from .log_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class SimulationMode(Enum):
     """Szimulációs módok"""
@@ -117,12 +124,12 @@ class SimulatedDevice(DeviceDriver):
             }
         )
         
-        print(f"[SIM] Szimulált eszköz létrehozva: {name} ({device_type.value})")
+        logger.info(f"[SIM] Szimulált eszköz létrehozva: {name} ({device_type.value})")
     
     async def connect(self) -> bool:
         """Csatlakozás szimulálása"""
         if self.simulation_mode == SimulationMode.OFFLINE:
-            print(f"[SIM] {self.name}: Offline mód - csatlakozás sikertelen")
+            logger.info(f"[SIM] {self.name}: Offline mód - csatlakozás sikertelen")
             return False
         
         # Kis késleltetés a realisztikusság kedvéért
@@ -135,7 +142,7 @@ class SimulatedDevice(DeviceDriver):
         self._running = True
         self._simulation_task = asyncio.create_task(self._simulation_loop())
         
-        print(f"[SIM] {self.name}: Csatlakozva")
+        logger.info(f"[SIM] {self.name}: Csatlakozva")
         return True
     
     async def disconnect(self) -> bool:
@@ -159,7 +166,7 @@ class SimulatedDevice(DeviceDriver):
         self._connected = False
         self._set_state(DeviceState.DISCONNECTED)
         
-        print(f"[SIM] {self.name}: Lecsatlakozva")
+        logger.info(f"[SIM] {self.name}: Lecsatlakozva")
         return True
     
     async def get_status(self) -> DeviceStatus:
@@ -189,7 +196,7 @@ class SimulatedDevice(DeviceDriver):
             return False
         
         self._set_state(DeviceState.HOMING)
-        print(f"[SIM] {self.name}: Homing indítása - {axes or 'összes tengely'}")
+        logger.info(f"[SIM] {self.name}: Homing indítása - {axes or 'összes tengely'}")
         
         # Szimuláljuk a homing-ot
         steps = 20
@@ -228,7 +235,7 @@ class SimulatedDevice(DeviceDriver):
         self._notify_position_change()
         self._set_state(DeviceState.IDLE)
         
-        print(f"[SIM] {self.name}: Homing kész")
+        logger.info(f"[SIM] {self.name}: Homing kész")
         return True
     
     async def jog(self, axis: str, distance: float, feed_rate: float = 1000) -> bool:
@@ -279,7 +286,7 @@ class SimulatedDevice(DeviceDriver):
         if not self._connected:
             return False
         
-        print(f"[SIM] {self.name}: G-code: {gcode}")
+        logger.info(f"[SIM] {self.name}: G-code: {gcode}")
         
         # Egyszerű G-code értelmezés
         gcode = gcode.upper().strip()
@@ -367,7 +374,7 @@ class SimulatedDevice(DeviceDriver):
     
     async def load_file(self, filepath: str) -> bool:
         """G-code fájl betöltése (szimulált)"""
-        print(f"[SIM] {self.name}: Fájl betöltése: {filepath}")
+        logger.info(f"[SIM] {self.name}: Fájl betöltése: {filepath}")
         
         # Fájlnév tárolása
         self._current_file = filepath
@@ -376,11 +383,11 @@ class SimulatedDevice(DeviceDriver):
         try:
             with open(filepath, 'r') as f:
                 self._gcode_lines = f.read().splitlines()
-                print(f"[SIM] {self.name}: Valódi fájl betöltve: {len(self._gcode_lines)} sor")
+                logger.info(f"[SIM] {self.name}: Valódi fájl betöltve: {len(self._gcode_lines)} sor")
         except FileNotFoundError:
             # Ha nem létezik, szimulált G-code generálása
             self._gcode_lines = self._generate_sample_gcode()
-            print(f"[SIM] {self.name}: Szimulált G-code generálva: {len(self._gcode_lines)} sor")
+            logger.info(f"[SIM] {self.name}: Szimulált G-code generálva: {len(self._gcode_lines)} sor")
         
         self._current_line = 0
         self._status.current_file = filepath
@@ -428,7 +435,7 @@ class SimulatedDevice(DeviceDriver):
         self._is_paused = False
         self._set_state(DeviceState.RUNNING)
         
-        print(f"[SIM] {self.name}: Program indítása ({len(self._gcode_lines)} sor)")
+        logger.info(f"[SIM] {self.name}: Program indítása ({len(self._gcode_lines)} sor)")
         
         self._run_task = asyncio.create_task(self._run_program())
         return True
@@ -468,16 +475,16 @@ class SimulatedDevice(DeviceDriver):
             if self._state == DeviceState.RUNNING:
                 self._set_state(DeviceState.IDLE)
                 self._status.progress = 100.0
-                print(f"[SIM] {self.name}: Program befejezve")
+                logger.info(f"[SIM] {self.name}: Program befejezve")
                 
                 # Job complete callback
                 if self.on_job_complete and self._current_file:
                     self.on_job_complete(self._current_file)
                 
         except asyncio.CancelledError:
-            print(f"[SIM] {self.name}: Program megszakítva")
+            logger.info(f"[SIM] {self.name}: Program megszakítva")
         except Exception as e:
-            print(f"[SIM] {self.name}: Hiba: {e}")
+            logger.error(f"[SIM] {self.name}: Hiba: {e}")
             self._set_state(DeviceState.ALARM)
             self._status.error_message = str(e)
     
@@ -486,7 +493,7 @@ class SimulatedDevice(DeviceDriver):
         if self._state == DeviceState.RUNNING:
             self._is_paused = True
             self._set_state(DeviceState.HOLD)
-            print(f"[SIM] {self.name}: Szüneteltetve")
+            logger.info(f"[SIM] {self.name}: Szüneteltetve")
             return True
         return False
     
@@ -495,7 +502,7 @@ class SimulatedDevice(DeviceDriver):
         if self._state == DeviceState.HOLD:
             self._is_paused = False
             self._set_state(DeviceState.RUNNING)
-            print(f"[SIM] {self.name}: Folytatva")
+            logger.info(f"[SIM] {self.name}: Folytatva")
             return True
         return False
     
@@ -514,7 +521,7 @@ class SimulatedDevice(DeviceDriver):
         self._feed_rate = 0
         self._set_state(DeviceState.IDLE)
         
-        print(f"[SIM] {self.name}: Leállítva")
+        logger.info(f"[SIM] {self.name}: Leállítva")
         return True
     
     async def reset(self) -> bool:
@@ -528,19 +535,19 @@ class SimulatedDevice(DeviceDriver):
         self._status.progress = 0.0
         self._set_state(DeviceState.IDLE)
         
-        print(f"[SIM] {self.name}: Reset")
+        logger.info(f"[SIM] {self.name}: Reset")
         return True
     
     async def set_feed_override(self, percent: int) -> bool:
         """Feed override beállítása"""
         self._feed_override = max(0, min(200, percent))
-        print(f"[SIM] {self.name}: Feed override: {self._feed_override}%")
+        logger.info(f"[SIM] {self.name}: Feed override: {self._feed_override}%")
         return True
     
     async def set_spindle_override(self, percent: int) -> bool:
         """Spindle override beállítása"""
         self._spindle_override = max(0, min(200, percent))
-        print(f"[SIM] {self.name}: Spindle override: {self._spindle_override}%")
+        logger.info(f"[SIM] {self.name}: Spindle override: {self._spindle_override}%")
         return True
     
     def get_info(self) -> dict:
@@ -567,6 +574,8 @@ class SimulatedDevice(DeviceDriver):
     async def _simulation_loop(self):
         """Háttér szimulációs loop - véletlenszerű események"""
         try:
+
+
             while self._running:
                 await asyncio.sleep(1.0)
                 
@@ -611,7 +620,7 @@ if __name__ == "__main__":
         device.set_on_position_change(lambda id, pos: print(f"Pozíció: X={pos.x:.2f} Y={pos.y:.2f} Z={pos.z:.2f}"))
         
         await device.connect()
-        print(f"Státusz: {await device.get_status()}")
+        logger.info(f"Státusz: {await device.get_status()}")
         
         await device.home()
         await device.jog('X', 50, 2000)
