@@ -21,23 +21,25 @@ export default function LanguageSwitcher() {
     }
   }
 
+  const alternatives = (['en', 'hu'] as const).filter((lng) => lng !== current)
+
   return (
     <div
-      className="inline-flex items-center gap-0.5 rounded-lg border border-steel-700 bg-steel-900/90 p-0.5"
+      className="inline-flex items-center gap-1.5"
       role="group"
       aria-label={t('languageSwitcher.ariaLabel')}
     >
-      {(['en', 'hu'] as const).map((lng) => (
+      {alternatives.map((lng) => (
         <button
           key={lng}
           type="button"
           onClick={() => setLang(lng)}
           className={`
-            rounded px-2 py-1 text-lg leading-none transition-colors
-            ${current === lng ? 'bg-machine-600/30 ring-1 ring-machine-500/50' : 'opacity-70 hover:opacity-100 hover:bg-steel-800'}
+            flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-steel-700
+            bg-steel-900/90 text-lg leading-none transition-colors
+            hover:bg-steel-800 hover:border-steel-600
           `}
           title={t(`languageSwitcher.title.${lng}`)}
-          aria-pressed={current === lng}
           aria-label={t(`languageSwitcher.title.${lng}`)}
         >
           <span aria-hidden>{FLAGS[lng]}</span>
