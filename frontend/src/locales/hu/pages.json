@@ -130,6 +130,7 @@
     "when_prefix": "AMIKOR:",
     "then_prefix": "AKKOR:",
     "editor": {
+      "target_default": "Alapértelmezett",
       "new_rule": "Új Szabály",
       "edit_rule": "Szabály Szerkesztése",
       "rule_name_label": "Szabály neve",

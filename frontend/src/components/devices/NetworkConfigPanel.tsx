@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Wifi,
   CheckCircle,
@@ -60,6 +61,7 @@ interface NetworkConfigPanelProps {
 }
 
 export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps) {
+  const { t } = useTranslation('devices')
   const [form, setForm] = useState<NetworkForm>(EMPTY_FORM)
   const [original, setOriginal] = useState<NetworkForm>(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
@@ -103,11 +105,11 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
       setForm(next)
       setOriginal(next)
     } catch (e) {
-      setError(`Hálózati settings lekérdezés sikertelen: ${(e as Error).message}`)
+      setError(t('network_config.fetch_failed', { detail: (e as Error).message }))
     } finally {
       setLoading(false)
     }
-  }, [deviceId, formFromSettings])
+  }, [deviceId, formFromSettings, t])
 
   useEffect(() => {
     refresh()
@@ -161,7 +163,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
       }
 
       if (Object.keys(payload).length === 0) {
-        setSuccess('Nincs változás.')
+        setSuccess(t('network_config.no_change'))
         setTimeout(() => setSuccess(null), 2000)
         return
       }
@@ -175,30 +177,25 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
       if (!res.ok || body?.success === false) {
         throw new Error(body?.error || `HTTP ${res.status}`)
       }
-      setSuccess('Hálózati settings elküldve. A vezérlő újraindítása szükséges lehet.')
+      setSuccess(t('network_config.sent_restart'))
       setOriginal(form)
       setTimeout(() => setSuccess(null), 4000)
     } catch (e) {
-      setError(`Apply sikertelen: ${(e as Error).message}`)
+      setError(t('network_config.apply_failed', { detail: (e as Error).message }))
     } finally {
       setApplying(false)
     }
-  }, [deviceId, form, original])
+  }, [deviceId, form, original, t])
 
   return (
     <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
       <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <Wifi className="w-4 h-4" />
-        Hálózat (WiFi)
+        {t('network_config.panel_title')}
         <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
       </summary>
       <div className="px-3 pb-3 space-y-3">
-        <div className="text-[11px] text-steel-500">
-          A grblHAL networking plugin beállításai (`$71`/`$73`–`$77`/`$300`).
-          A „Reset to defaults” az eszköz id-jét másolja az SSID/hostname mezőkbe és
-          a project-wide <code>panelDefault</code> jelszót állítja be — ezzel a CrowPanel
-          out-of-the-box pár képes csatlakozni.
-        </div>
+        <div className="text-[11px] text-steel-500">{t('network_config.intro')}</div>
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 rounded p-2 flex items-center gap-2 text-red-400 text-xs">
@@ -313,7 +310,8 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             disabled={loading}
             className="btn btn-secondary btn-sm text-xs flex items-center gap-1 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} /> Refresh
+            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />{' '}
+            {t('network_config.refresh')}
           </button>
           <button
             type="button"
@@ -321,7 +319,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             className="btn btn-secondary btn-sm text-xs flex items-center gap-1"
             title={`SSID/hostname = "${deviceId}", password = "panelDefault"`}
           >
-            <RotateCcw className="w-3 h-3" /> Reset to defaults
+            <RotateCcw className="w-3 h-3" /> {t('network_config.reset_defaults')}
           </button>
           <button
             type="button"
@@ -329,7 +327,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             disabled={!dirty}
             className="btn btn-secondary btn-sm text-xs flex items-center gap-1 disabled:opacity-50"
           >
-            Visszaállít
+            {t('network_config.revert')}
           </button>
           <button
             type="button"
@@ -338,7 +336,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             className="btn btn-primary btn-sm text-xs flex items-center gap-1 disabled:opacity-50 ml-auto"
           >
             <Save className="w-3 h-3" />
-            {applying ? 'Mentés...' : 'Apply to controller'}
+            {applying ? t('network_config.applying') : t('network_config.apply')}
           </button>
         </div>
       </div>

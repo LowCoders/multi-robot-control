@@ -10,6 +10,7 @@ import {
   Save,
   Loader2,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useDeviceStore } from '../stores/deviceStore'
 import { createLogger } from '../utils/logger'
 
@@ -32,22 +33,15 @@ interface Rule {
   }[]
 }
 
-const TRIGGER_TYPES = [
-  { value: 'job_complete', label: 'Job Befejezés' },
-  { value: 'state_change', label: 'Állapot Változás' },
-  { value: 'position', label: 'Pozíció Elérés' },
-  { value: 'timer', label: 'Időzítő' },
-  { value: 'manual', label: 'Manuális' },
-]
+const TRIGGER_VALUES = [
+  'job_complete',
+  'state_change',
+  'position',
+  'timer',
+  'manual',
+] as const
 
-const ACTION_TYPES = [
-  { value: 'run', label: 'Indítás' },
-  { value: 'pause', label: 'Szünet' },
-  { value: 'stop', label: 'Leállítás' },
-  { value: 'home', label: 'Homing' },
-  { value: 'send_gcode', label: 'G-code Küldés' },
-  { value: 'notify', label: 'Értesítés' },
-]
+const ACTION_VALUES = ['run', 'pause', 'stop', 'home', 'send_gcode', 'notify'] as const
 
 interface RuleEditorProps {
   rule: Rule | null
@@ -58,6 +52,7 @@ interface RuleEditorProps {
 }
 
 function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps) {
+  const { t } = useTranslation('pages')
   const [formData, setFormData] = useState<Partial<Rule>>({
     name: '',
     description: '',
@@ -98,7 +93,7 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
     <div className="card">
       <div className="card-header flex items-center justify-between">
         <span className="font-medium">
-          {isNew ? 'Új Szabály' : 'Szabály Szerkesztése'}
+          {isNew ? t('automation.editor.new_rule') : t('automation.editor.edit_rule')}
         </span>
         <button onClick={onCancel} className="text-steel-400 hover:text-white">
           <X className="w-5 h-5" />
@@ -106,31 +101,37 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
       </div>
       <form onSubmit={handleSubmit} className="card-body space-y-4">
         <div>
-          <label className="block text-sm text-steel-400 mb-1">Szabály neve</label>
+          <label className="block text-sm text-steel-400 mb-1">
+            {t('automation.editor.rule_name_label')}
+          </label>
           <input
             type="text"
             value={formData.name || ''}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="input w-full"
-            placeholder="Pl: CNC után Lézer"
+            placeholder={t('automation.editor.rule_name_placeholder')}
             required
           />
         </div>
         
         <div>
-          <label className="block text-sm text-steel-400 mb-1">Leírás</label>
+          <label className="block text-sm text-steel-400 mb-1">
+            {t('automation.editor.description_label')}
+          </label>
           <input
             type="text"
             value={formData.description || ''}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             className="input w-full"
-            placeholder="Mit csinál ez a szabály?"
+            placeholder={t('automation.editor.description_placeholder')}
           />
         </div>
         
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-steel-400 mb-1">Trigger típus</label>
+            <label className="block text-sm text-steel-400 mb-1">
+              {t('automation.editor.trigger_type')}
+            </label>
             <select
               value={formData.trigger?.type || 'job_complete'}
               onChange={(e) => setFormData({
@@ -139,14 +140,18 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
               })}
               className="input w-full"
             >
-              {TRIGGER_TYPES.map(t => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+              {TRIGGER_VALUES.map((value) => (
+                <option key={value} value={value}>
+                  {t(`automation.triggers.${value}`)}
+                </option>
               ))}
             </select>
           </div>
           
           <div>
-            <label className="block text-sm text-steel-400 mb-1">Trigger eszköz</label>
+            <label className="block text-sm text-steel-400 mb-1">
+              {t('automation.editor.trigger_device')}
+            </label>
             <select
               value={formData.trigger?.device || ''}
               onChange={(e) => setFormData({
@@ -155,7 +160,7 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
               })}
               className="input w-full"
             >
-              <option value="">Bármely</option>
+              <option value="">{t('automation.editor.any_device')}</option>
               {devices.map(d => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
@@ -165,7 +170,9 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
         
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-steel-400 mb-1">Akció típus</label>
+            <label className="block text-sm text-steel-400 mb-1">
+              {t('automation.editor.action_type')}
+            </label>
             <select
               value={formData.actions?.[0]?.type || 'run'}
               onChange={(e) => setFormData({
@@ -174,14 +181,18 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
               })}
               className="input w-full"
             >
-              {ACTION_TYPES.map(a => (
-                <option key={a.value} value={a.value}>{a.label}</option>
+              {ACTION_VALUES.map((value) => (
+                <option key={value} value={value}>
+                  {t(`automation.actions.${value}`)}
+                </option>
               ))}
             </select>
           </div>
           
           <div>
-            <label className="block text-sm text-steel-400 mb-1">Cél eszköz</label>
+            <label className="block text-sm text-steel-400 mb-1">
+              {t('automation.editor.target_device')}
+            </label>
             <select
               value={formData.actions?.[0]?.device || ''}
               onChange={(e) => setFormData({
@@ -190,8 +201,8 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
               })}
               className="input w-full"
             >
-              <option value="">Mind</option>
-              <option value="all">Összes eszköz</option>
+              <option value="">{t('automation.editor.target_default')}</option>
+              <option value="all">{t('automation.editor.all_devices')}</option>
               {devices.map(d => (
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
@@ -205,7 +216,7 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
             onClick={onCancel}
             className="btn btn-secondary flex-1"
           >
-            Mégse
+            {t('automation.editor.cancel')}
           </button>
           <button
             type="submit"
@@ -217,7 +228,7 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
             ) : (
               <Save className="w-4 h-4" />
             )}
-            {isNew ? 'Létrehozás' : 'Mentés'}
+            {isNew ? t('automation.editor.create') : t('automation.editor.save')}
           </button>
         </div>
       </form>
@@ -226,6 +237,7 @@ function RuleEditor({ rule, isNew, onSave, onCancel, devices }: RuleEditorProps)
 }
 
 export default function Automation() {
+  const { t } = useTranslation('pages')
   const [rules, setRules] = useState<Rule[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingRule, setEditingRule] = useState<Rule | null>(null)
@@ -265,7 +277,7 @@ export default function Automation() {
   }
   
   const deleteRule = async (ruleId: string) => {
-    if (!confirm('Biztosan törölni szeretnéd ezt a szabályt?')) return
+    if (!confirm(t('automation.confirm_delete_rule'))) return
     
     try {
       const response = await fetch(`/api/automation/rules/${ruleId}`, {
@@ -314,23 +326,18 @@ export default function Automation() {
     setIsCreatingNew(false)
   }
   
-  const getTriggerLabel = (trigger: Rule['trigger']) => {
-    const type = TRIGGER_TYPES.find(t => t.value === trigger.type)
-    return type?.label || trigger.type
-  }
-  
-  const getActionLabel = (action: Rule['actions'][0]) => {
-    const type = ACTION_TYPES.find(a => a.value === action.type)
-    return type?.label || action.type
-  }
+  const getTriggerLabel = (trigger: Rule['trigger']) =>
+    String(t(`automation.triggers.${trigger.type}`, { defaultValue: trigger.type }))
+  const getActionLabel = (action: Rule['actions'][0]) =>
+    String(t(`automation.actions.${action.type}`, { defaultValue: action.type }))
   
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Automatizálás</h1>
-          <p className="text-steel-400">Szabályok az eszközök közötti koordinációhoz</p>
+          <h1 className="text-2xl font-bold text-white">{t('automation.title')}</h1>
+          <p className="text-steel-400">{t('automation.subtitle')}</p>
         </div>
         
         <button 
@@ -338,7 +345,7 @@ export default function Automation() {
           className="btn btn-primary flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
-          Új Szabály
+          {t('automation.new_rule')}
         </button>
       </div>
       
@@ -356,21 +363,19 @@ export default function Automation() {
       {/* Active Rules */}
       <div className="card">
         <div className="card-header">
-          <span className="font-medium">Szabályok</span>
+          <span className="font-medium">{t('automation.rules_heading')}</span>
           <span className="text-sm text-steel-400">
-            {rules.filter(r => r.enabled).length} aktív
+            {t('automation.active_count', { count: rules.filter((r) => r.enabled).length })}
           </span>
         </div>
         <div className="divide-y divide-steel-700">
           {isLoading ? (
             <div className="p-8 text-center text-steel-400">
               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-              Betöltés...
+              {t('automation.loading')}
             </div>
           ) : rules.length === 0 ? (
-            <div className="p-8 text-center text-steel-400">
-              Nincsenek automatizálási szabályok. Hozz létre egyet.
-            </div>
+            <div className="p-8 text-center text-steel-400">{t('automation.empty')}</div>
           ) : (
             rules.map((rule) => (
               <div 
@@ -406,14 +411,14 @@ export default function Automation() {
                     
                     <div className="flex items-center gap-4 mt-3 text-sm">
                       <div>
-                        <span className="text-steel-500">AMIKOR: </span>
+                        <span className="text-steel-500">{t('automation.when_prefix')} </span>
                         <span className="text-steel-300">
                           {getTriggerLabel(rule.trigger)}
                           {rule.trigger.device && ` (${rule.trigger.device})`}
                         </span>
                       </div>
                       <div>
-                        <span className="text-steel-500">AKKOR: </span>
+                        <span className="text-steel-500">{t('automation.then_prefix')} </span>
                         <span className="text-steel-300">
                           {rule.actions.map(a => getActionLabel(a)).join(', ')}
                         </span>

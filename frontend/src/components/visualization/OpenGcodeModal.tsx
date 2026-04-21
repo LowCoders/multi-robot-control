@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X, FolderOpen, FileCode, HardDrive, Cloud } from 'lucide-react'
 import GcodeFileBrowser from './GcodeFileBrowser'
 
@@ -17,6 +18,7 @@ export default function OpenGcodeModal({
   onPickServerFile,
   onPickLocalFile,
 }: Props) {
+  const { t } = useTranslation('visualization')
   const [tab, setTab] = useState<Tab>('server')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -36,7 +38,7 @@ export default function OpenGcodeModal({
         <div className="card-header flex items-center justify-between">
           <span className="font-medium flex items-center gap-2">
             <FolderOpen className="w-4 h-4 text-machine-400" />
-            G-code megnyitása
+            {t('open_modal.title')}
           </span>
           <button onClick={onClose} className="text-steel-400 hover:text-white">
             <X className="w-5 h-5" />
@@ -53,7 +55,7 @@ export default function OpenGcodeModal({
             }`}
           >
             <Cloud className="w-4 h-4" />
-            Szerver
+            {t('open_modal.tab_server')}
           </button>
           <button
             onClick={() => setTab('local')}
@@ -64,7 +66,7 @@ export default function OpenGcodeModal({
             }`}
           >
             <HardDrive className="w-4 h-4" />
-            Helyi
+            {t('open_modal.tab_local')}
           </button>
         </div>
 
@@ -78,10 +80,7 @@ export default function OpenGcodeModal({
             />
           ) : (
             <div className="space-y-4">
-              <p className="text-sm text-steel-300">
-                Válassz G-code fájlt a számítógépedről. A fájl tartalma a böngészőben kerül
-                betöltésre, és csak akkor kerül a szerverre, ha a Mentés gombbal elmented.
-              </p>
+              <p className="text-sm text-steel-300">{t('open_modal.local_help')}</p>
               <div>
                 <input
                   ref={fileInputRef}
@@ -95,7 +94,7 @@ export default function OpenGcodeModal({
                   className="btn btn-primary flex items-center gap-2"
                 >
                   <FileCode className="w-4 h-4" />
-                  Fájl választása...
+                  {t('open_modal.pick_file')}
                 </button>
               </div>
             </div>

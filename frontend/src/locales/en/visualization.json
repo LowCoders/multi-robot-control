@@ -53,6 +53,7 @@
     "click_to_edit": "Click to edit",
     "eof_executing_title": "Last line executing",
     "eof_marker": "▶ — end of program —",
+    "eof_plain": "— end of program —",
     "waiting": "Waiting…",
     "no_buffer": "No G-code loaded"
   },
@@ -92,7 +93,11 @@
     "overwrite_title": "File exists",
     "overwrite_body": "Overwrite '{{path}}'?",
     "confirm_save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "path_prefix": "Full path:",
+    "extensions_hint": "Allowed extensions: {{exts}} (default: .nc)",
+    "exists_prompt": "This file already exists. Overwrite?",
+    "overwrite": "Overwrite"
   },
   "file_browser": {
     "load_dir_error": "Failed to load directory",

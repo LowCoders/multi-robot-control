@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X, Save, Loader2 } from 'lucide-react'
 import GcodeFileBrowser from './GcodeFileBrowser'
 
@@ -28,6 +29,7 @@ export default function SaveGcodeAsModal({
   defaultDir,
   onConfirm,
 }: Props) {
+  const { t } = useTranslation('visualization')
   const [filename, setFilename] = useState(defaultFilename || 'program.nc')
   const [currentDir, setCurrentDir] = useState<string | null>(defaultDir || null)
   const [error, setError] = useState<string | null>(null)
@@ -61,7 +63,7 @@ export default function SaveGcodeAsModal({
       setConfirmingOverwrite(true)
       return
     }
-    setError(result.error || 'Mentési hiba')
+    setError(result.error || t('save_modal.save_error'))
   }
 
   return (
@@ -70,7 +72,7 @@ export default function SaveGcodeAsModal({
         <div className="card-header flex items-center justify-between">
           <span className="font-medium flex items-center gap-2">
             <Save className="w-4 h-4 text-machine-400" />
-            Mentés másként
+            {t('save_modal.title')}
           </span>
           <button onClick={onClose} className="text-steel-400 hover:text-white">
             <X className="w-5 h-5" />
@@ -83,14 +85,15 @@ export default function SaveGcodeAsModal({
             hideFiles={false}
             onCurrentDirChange={(d) => setCurrentDir(d)}
             onPickFile={(file) => {
-              // Tölti ki a fájlnevet, hogy a felhasználó könnyen felülírhasson
               setFilename(file.name)
               setConfirmingOverwrite(false)
             }}
           />
 
           <div>
-            <label className="block text-sm text-steel-400 mb-1">Fájlnév</label>
+            <label className="block text-sm text-steel-400 mb-1">
+              {t('save_modal.filename_label')}
+            </label>
             <input
               type="text"
               value={filename}
@@ -103,19 +106,19 @@ export default function SaveGcodeAsModal({
               autoFocus
             />
             <p className="text-xs text-steel-500 mt-1">
-              Engedélyezett kiterjesztések: {ALLOWED_EXTS.join(', ')} (alapértelmezett: .nc)
+              {t('save_modal.extensions_hint', { exts: ALLOWED_EXTS.join(', ') })}
             </p>
           </div>
 
           {fullPath && (
             <div className="text-xs text-steel-400 break-all">
-              Teljes útvonal: <span className="text-steel-200">{fullPath}</span>
+              {t('save_modal.path_prefix')} <span className="text-steel-200">{fullPath}</span>
             </div>
           )}
 
           {confirmingOverwrite && (
             <div className="rounded border border-red-500/40 bg-red-500/10 p-2 text-sm text-red-200">
-              A fájl már létezik. Felülírja?
+              {t('save_modal.exists_prompt')}
             </div>
           )}
 
@@ -128,7 +131,7 @@ export default function SaveGcodeAsModal({
 
         <div className="card-footer flex justify-end gap-2 border-t border-steel-700 px-4 py-3">
           <button onClick={onClose} className="btn btn-secondary">
-            Mégse
+            {t('save_modal.cancel')}
           </button>
           {confirmingOverwrite ? (
             <button
@@ -137,7 +140,7 @@ export default function SaveGcodeAsModal({
               className="btn btn-danger flex items-center gap-2"
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Felülírás
+              {t('save_modal.overwrite')}
             </button>
           ) : (
             <button
@@ -147,7 +150,7 @@ export default function SaveGcodeAsModal({
             >
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
               <Save className="w-4 h-4" />
-              Mentés
+              {t('save_modal.confirm_save')}
             </button>
           )}
         </div>

@@ -53,6 +53,7 @@
     "click_to_edit": "Kattints a szerkesztéshez",
     "eof_executing_title": "A program utolsó sora végrehajtás alatt",
     "eof_marker": "▶ — program vége —",
+    "eof_plain": "— program vége —",
     "waiting": "Várakozás...",
     "no_buffer": "Nincs betöltött G-code"
   },
@@ -92,7 +93,11 @@
     "overwrite_title": "A fájl létezik",
     "overwrite_body": "Felülírod: '{{path}}'?",
     "confirm_save": "Mentés",
-    "cancel": "Mégse"
+    "cancel": "Mégse",
+    "path_prefix": "Teljes útvonal:",
+    "extensions_hint": "Engedélyezett kiterjesztések: {{exts}} (alapértelmezett: .nc)",
+    "exists_prompt": "A fájl már létezik. Felülírja?",
+    "overwrite": "Felülírás"
   },
   "file_browser": {
     "load_dir_error": "Hiba a könyvtár betöltésekor",

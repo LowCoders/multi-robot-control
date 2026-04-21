@@ -130,6 +130,7 @@
     "when_prefix": "WHEN:",
     "then_prefix": "THEN:",
     "editor": {
+      "target_default": "Default",
       "new_rule": "New rule",
       "edit_rule": "Edit rule",
       "rule_name_label": "Rule name",

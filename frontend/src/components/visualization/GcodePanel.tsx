@@ -10,6 +10,7 @@ import {
   Pencil,
   Eye,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { DeviceStatus } from '../../types/device'
 import { useGcodeBufferStore } from '../../stores/gcodeBufferStore'
 import OpenGcodeModal from './OpenGcodeModal'
@@ -49,6 +50,7 @@ export default function GcodePanel({
   showHeader = true,
   className = '',
 }: Props) {
+  const { t } = useTranslation('visualization')
   const buffer = useGcodeBufferStore((s) => s.buffers[deviceId])
   const loadFromServer = useGcodeBufferStore((s) => s.loadFromServer)
   const setLines = useGcodeBufferStore((s) => s.setLines)
@@ -130,7 +132,7 @@ export default function GcodePanel({
         // The store also stores the error in buffer.error, but we surface
         // a quick alert for visibility.
         // eslint-disable-next-line no-alert
-        alert(`Mentés sikertelen: ${result.error}`)
+        alert(t('gcode_panel.save_failed', { detail: result.error }))
       }
     } else {
       setSaveAsModalOpen(true)
@@ -176,13 +178,13 @@ export default function GcodePanel({
           <div className="flex items-center justify-between px-3 py-2 border-b border-steel-700">
             <div className="flex items-center gap-2">
               <FileCode className="w-4 h-4 text-steel-500" />
-              <span className="text-sm text-steel-500">G-code</span>
+              <span className="text-sm text-steel-500">{t('gcode_panel.label_short')}</span>
             </div>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setOpenModalOpen(true)}
                 className="text-steel-400 hover:text-white p-1 rounded hover:bg-steel-800"
-                title="Megnyitás"
+                title={t('gcode_panel.open_title')}
               >
                 <FolderOpen className="w-4 h-4" />
               </button>
@@ -197,7 +199,7 @@ export default function GcodePanel({
             </div>
           </div>
         )}
-        <div className="p-4 text-center text-steel-500 text-sm">Nincs betöltött G-code fájl</div>
+        <div className="p-4 text-center text-steel-500 text-sm">{t('gcode_panel.empty')}</div>
         <OpenGcodeModal
           isOpen={openModalOpen}
           onClose={() => setOpenModalOpen(false)}
@@ -230,7 +232,7 @@ export default function GcodePanel({
             </span>
             {totalLines > 0 && (
               <span className="text-xs text-steel-500 flex-shrink-0">
-                Sor {currentLine} / {totalLines}
+                {t('gcode_panel.line_progress', { current: currentLine, total: totalLines })}
               </span>
             )}
           </div>
@@ -254,7 +256,7 @@ export default function GcodePanel({
             <button
               onClick={() => setOpenModalOpen(true)}
               className="p-1 rounded text-steel-400 hover:text-white hover:bg-steel-800"
-              title="Megnyitás"
+              title={t('gcode_panel.open_title')}
               disabled={isRunning}
             >
               <FolderOpen className="w-4 h-4" />
@@ -270,10 +272,10 @@ export default function GcodePanel({
               }`}
               title={
                 isRunning
-                  ? 'Futás közben nem menthető'
+                  ? t('gcode_panel.save_running')
                   : dirty
-                    ? 'Mentés'
-                    : 'Nincs változás'
+                    ? t('gcode_panel.save_tooltip')
+                    : t('gcode_panel.no_changes')
               }
               disabled={!dirty || isRunning || !!buffer?.saving}
             >
@@ -296,10 +298,10 @@ export default function GcodePanel({
               }`}
               title={
                 isRunning
-                  ? 'Futás közben olvasható mód'
+                  ? t('gcode_panel.edit_running')
                   : editing
-                    ? 'Olvasható mód'
-                    : 'Szerkesztés'
+                    ? t('gcode_panel.readonly_mode')
+                    : t('gcode_panel.edit_mode')
               }
               disabled={isRunning}
             >
@@ -313,7 +315,7 @@ export default function GcodePanel({
                   e.stopPropagation()
                   onToggle()
                 }}
-                title={collapsed ? 'Kibontás' : 'Összecsukás'}
+                title={collapsed ? t('gcode_panel.expand') : t('gcode_panel.collapse')}
               >
                 {collapsed ? (
                   <ChevronDown className="w-4 h-4" />
@@ -344,7 +346,7 @@ export default function GcodePanel({
           {buffer?.loading ? (
             <div className="p-4 text-center text-steel-400 text-xs">
               <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
-              G-code betöltése...
+              {t('gcode_panel.loading')}
             </div>
           ) : buffer?.error ? (
             <div className="p-4 text-center text-red-400 text-xs">{buffer.error}</div>
@@ -353,7 +355,7 @@ export default function GcodePanel({
               fallback={
                 <div className="flex items-center justify-center h-full text-steel-400 text-sm">
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                  Editor betöltése...
+                  {t('gcode_panel.editor_loading')}
                 </div>
               }
             >
@@ -375,7 +377,7 @@ export default function GcodePanel({
               className={`h-full overflow-y-auto font-mono text-xs ${
                 isRunning ? '' : 'cursor-text'
               }`}
-              title={isRunning ? undefined : 'Kattints a szerkesztéshez'}
+              title={isRunning ? undefined : t('gcode_panel.click_to_edit')}
             >
               {visibleLines.map(({ lineNumber, content, isNext, isExecuting, isPast, isNew }) => (
                 <div
@@ -404,17 +406,17 @@ export default function GcodePanel({
                   className={`px-3 py-1 flex gap-3 items-center bg-yellow-500/10 border-l-2 border-yellow-500 border-t border-dashed border-yellow-500/50 ${
                     !isRunning ? 'cursor-text hover:bg-yellow-500/15' : ''
                   }`}
-                  title="A program utolsó sora végrehajtás alatt"
+                  title={t('gcode_panel.eof_executing_title')}
                 >
                   <span className="text-steel-600 w-8 text-right select-none tabular-nums">
                     {visibleLines.length + 1}
                   </span>
-                  <span className="text-yellow-500">▶ — program vége —</span>
+                  <span className="text-yellow-500">{t('gcode_panel.eof_marker')}</span>
                 </div>
               )}
             </div>
           ) : (
-            <div className="p-4 text-center text-steel-500 text-xs">Nincs betöltött G-code</div>
+            <div className="p-4 text-center text-steel-500 text-xs">{t('gcode_panel.no_buffer')}</div>
           )}
         </div>
       )}
@@ -424,7 +426,7 @@ export default function GcodePanel({
           {pointerOverflow ? (
             <div className="flex gap-2 flex-1 items-center">
               <span className="text-yellow-500 font-medium">▶</span>
-              <span className="text-yellow-500">— program vége —</span>
+              <span className="text-yellow-500">{t('gcode_panel.eof_plain')}</span>
             </div>
           ) : (
             <>
@@ -439,7 +441,7 @@ export default function GcodePanel({
                   </div>
                 ))}
               {visibleLines.filter((l) => l.isNext).length === 0 && (
-                <span className="text-steel-500">Várakozás...</span>
+                <span className="text-steel-500">{t('gcode_panel.waiting')}</span>
               )}
             </>
           )}

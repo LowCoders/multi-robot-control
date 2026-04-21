@@ -885,7 +885,7 @@ export default function MachineConfigTab({
                   ))}
                   {config.axes.length === 0 && (
                     <div className="text-center text-steel-500 py-4 text-sm">
-                      Nincs tengely definiálva
+                      {t('machine_config.no_axes')}
                     </div>
                   )}
                 </div>
@@ -895,7 +895,7 @@ export default function MachineConfigTab({
               <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
                 <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Cpu className="w-4 h-4" />
-                  Driver Beállítások
+                  {t('machine_config.driver_section')}
                   <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
                 </summary>
                 <div className="px-3 pb-3 space-y-3">
@@ -903,7 +903,12 @@ export default function MachineConfigTab({
                 {/* Max Feed Rate */}
                 <div>
                   <label className="block text-xs text-steel-500 mb-1">
-                    Maximális előtolás ({config.type === 'robot_arm' ? 'fok/perc' : 'mm/perc'})
+                    {t(
+                      'machine_config.max_feed',
+                      config.type === 'robot_arm'
+                        ? { unit: t('machine_config.feed_unit_deg') }
+                        : { unit: t('machine_config.feed_unit_mm') },
+                    )}
                   </label>
                   <input
                     type="number"

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Loader2, Save, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 
 interface Props {
@@ -16,23 +17,17 @@ interface YamlEntry {
   [key: string]: unknown
 }
 
-const DRIVER_OPTIONS = [
-  { value: 'simulated', label: 'Szimulált (driver=simulated)' },
-  { value: 'grbl', label: 'GRBL' },
-  { value: 'linuxcnc', label: 'LinuxCNC' },
-  { value: 'robot_arm', label: 'Robotkar (open/closed loop)' },
-  { value: 'tube_bender', label: 'Csőhajlító (grblHAL)' },
-]
+const DRIVER_VALUES = ['simulated', 'grbl', 'linuxcnc', 'robot_arm', 'tube_bender'] as const
 
-const TYPE_OPTIONS = [
-  { value: 'cnc_mill', label: 'CNC Maró' },
-  { value: '5axis', label: '5-tengelyes CNC' },
-  { value: 'cnc_lathe', label: 'CNC Eszterga' },
-  { value: 'laser_cutter', label: 'Lézervágó' },
-  { value: '3d_printer', label: '3D Nyomtató' },
-  { value: 'robot_arm', label: 'Robotkar' },
-  { value: 'tube_bender', label: 'Csőhajlító' },
-]
+const TYPE_VALUES = [
+  'cnc_mill',
+  '5axis',
+  'cnc_lathe',
+  'laser_cutter',
+  '3d_printer',
+  'robot_arm',
+  'tube_bender',
+] as const
 
 function formatJson(value: unknown): string {
   try {
@@ -43,6 +38,7 @@ function formatJson(value: unknown): string {
 }
 
 export default function DeviceYamlConfigPanel({ deviceId }: Props) {
+  const { t } = useTranslation('devices')
   const [entry, setEntry] = useState<YamlEntry | null>(null)
   const [name, setName] = useState('')
   const [driver, setDriver] = useState('simulated')
@@ -70,7 +66,7 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
         return
       }
       if (!resp.ok) {
-        throw new Error(`Hiba (${resp.status})`)
+        throw new Error(t('device_yaml.error_http', { status: resp.status }))
       }
       const data = (await resp.json()) as YamlEntry
       setEntry(data)
@@ -81,11 +77,11 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
       setConfigText(formatJson(data.config))
       setConfigError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Letöltési hiba')
+      setError(err instanceof Error ? err.message : t('device_yaml.download_error'))
     } finally {
       setLoading(false)
     }
-  }, [deviceId])
+  }, [deviceId, t])
 
   useEffect(() => {
     load()
@@ -96,14 +92,14 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
     try {
       const parsed = JSON.parse(configText)
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        setConfigError('A config-nak JSON objektumnak kell lennie')
+        setConfigError(t('device_yaml.config_must_be_object'))
       } else {
         setConfigError(null)
       }
     } catch (err) {
-      setConfigError(err instanceof Error ? err.message : 'Érvénytelen JSON')
+      setConfigError(err instanceof Error ? err.message : t('device_yaml.invalid_json'))
     }
-  }, [configText])
+  }, [configText, t])
 
   const handleSave = async () => {
     if (configError) return
@@ -111,7 +107,7 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
     try {
       configObj = JSON.parse(configText) as Record<string, unknown>
     } catch {
-      setConfigError('Érvénytelen JSON')
+      setConfigError(t('device_yaml.invalid_json'))
       return
     }
     setSaving(true)
@@ -131,13 +127,13 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
       })
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))
-        throw new Error(data.error || `Hiba (${resp.status})`)
+        throw new Error(data.error || t('device_yaml.error_http', { status: resp.status }))
       }
-      setSuccess('devices.yaml frissítve. Az új driver/port változások a bridge újraindítása után lépnek életbe.')
+      setSuccess(t('device_yaml.success_updated'))
       setTimeout(() => setSuccess(null), 6000)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Mentési hiba')
+      setError(err instanceof Error ? err.message : t('device_yaml.save_error'))
     } finally {
       setSaving(false)
     }
@@ -147,18 +143,14 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
     return (
       <div className="flex items-center gap-2 text-steel-400 text-sm p-3">
         <Loader2 className="w-4 h-4 animate-spin" />
-        Betöltés…
+        {t('device_yaml.loading')}
       </div>
     )
   }
 
   if (notFound) {
     return (
-      <div className="text-xs text-steel-500 p-3">
-        Az eszköz <code className="bg-steel-800 px-1 rounded">{deviceId}</code> nem
-        található a <code className="bg-steel-800 px-1 rounded">config/devices.yaml</code>-ben.
-        Az ezen a panelen állítható mezők csak meglévő YAML-bejegyzéshez érhetők el.
-      </div>
+      <div className="text-xs text-steel-500 p-3">{t('device_yaml.not_found_body', { id: deviceId })}</div>
     )
   }
 
@@ -172,13 +164,7 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="text-[11px] text-steel-500">
-        A <code className="bg-steel-800 px-1 rounded">config/devices.yaml</code>-ben tárolt
-        eszköz-szintű beállítások (driver, szimulált mód, csatlakozási paraméterek).
-        Az engedélyezett/letiltott állapotot nem itt, hanem az „Eszköz hozzáadása"
-        modalban lehet kapcsolni. A driver / port változás a bridge újraindítása után
-        lép életbe.
-      </div>
+      <div className="text-[11px] text-steel-500">{t('device_yaml.intro')}</div>
 
       {error && (
         <div className="flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/30 rounded px-2 py-1">
@@ -195,17 +181,17 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="block text-[11px] text-steel-400 mb-1">Eszköz neve</label>
+          <label className="block text-[11px] text-steel-400 mb-1">{t('device_yaml.device_name')}</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="input w-full"
-            placeholder="Pl. CNC Maró"
+            placeholder={t('device_yaml.name_placeholder')}
           />
         </div>
         <div>
-          <label className="block text-[11px] text-steel-400 mb-1">Eszköz ID</label>
+          <label className="block text-[11px] text-steel-400 mb-1">{t('device_yaml.device_id')}</label>
           <input
             type="text"
             value={deviceId}
@@ -220,30 +206,29 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
             onChange={(e) => setDriver(e.target.value)}
             className="input w-full"
           >
-            {DRIVER_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
+            {DRIVER_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {t(`device_yaml.drivers.${value}`)}
               </option>
             ))}
-            {/* Ha a YAML-ben szokatlan driver van, megőrizzük az opciók közt */}
-            {entry?.driver && !DRIVER_OPTIONS.some((o) => o.value === entry.driver) && (
+            {entry?.driver && !DRIVER_VALUES.some((v) => v === entry.driver) && (
               <option value={entry.driver as string}>{entry.driver as string}</option>
             )}
           </select>
         </div>
         <div>
-          <label className="block text-[11px] text-steel-400 mb-1">Eszköz típusa</label>
+          <label className="block text-[11px] text-steel-400 mb-1">{t('device_yaml.device_type')}</label>
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
             className="input w-full"
           >
-            {TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
+            {TYPE_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {t(`device_yaml.types.${value}`)}
               </option>
             ))}
-            {entry?.type && !TYPE_OPTIONS.some((o) => o.value === entry.type) && (
+            {entry?.type && !TYPE_VALUES.some((v) => v === entry.type) && (
               <option value={entry.type as string}>{entry.type as string}</option>
             )}
           </select>
@@ -257,20 +242,15 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
           onChange={(e) => setSimulated(e.target.checked)}
           className="w-3 h-3 rounded bg-steel-700 border-steel-600"
         />
-        <span className="text-xs text-steel-200">Szimulált (emulált) mód</span>
-        <span
-          className="text-[10px] text-steel-500"
-          title="Ha be van pipálva, az eszköz a SimulatedDevice driverrel jön létre, valós port nélkül."
-        >
-          (info)
+        <span className="text-xs text-steel-200">{t('device_yaml.simulated_mode')}</span>
+        <span className="text-[10px] text-steel-500" title={t('device_yaml.simulated_hint')}>
+          {t('device_yaml.info_marker')}
         </span>
       </label>
 
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="block text-[11px] text-steel-400">
-            Csatlakozás / driver-specifikus config (JSON)
-          </label>
+          <label className="block text-[11px] text-steel-400">{t('device_yaml.connection_json')}</label>
           {configError && (
             <span className="text-[10px] text-red-400">{configError}</span>
           )}
@@ -283,14 +263,7 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
           }`}
           spellCheck={false}
         />
-        <div className="text-[10px] text-steel-500 mt-1">
-          Példa kulcsok: <code className="bg-steel-800 px-1 rounded">port</code>,{' '}
-          <code className="bg-steel-800 px-1 rounded">baudrate</code>,{' '}
-          <code className="bg-steel-800 px-1 rounded">ini_file</code>,{' '}
-          <code className="bg-steel-800 px-1 rounded">protocol</code>,{' '}
-          <code className="bg-steel-800 px-1 rounded">usb.{'{vid,pid,serial_number,location}'}</code>.
-          A teljes objektum cseréje történik mentéskor.
-        </div>
+        <div className="text-[10px] text-steel-500 mt-1">{t('device_yaml.config_help')}</div>
       </div>
 
       <div className="flex items-center gap-2 pt-1">
@@ -305,24 +278,24 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
           ) : (
             <Save className="w-3.5 h-3.5" />
           )}
-          {saving ? 'Mentés…' : 'Mentés'}
+          {saving ? t('machine_config.toolbar.saving') : t('machine_config.toolbar.save')}
         </button>
         <button
           type="button"
           onClick={load}
           disabled={loading}
           className="btn btn-secondary btn-sm flex items-center gap-1 disabled:opacity-50"
-          title="YAML újraolvasása diszkről (a piszkozat változások elvesznek)"
+          title={t('device_yaml.reload_title')}
         >
           {loading ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
             <RefreshCw className="w-3.5 h-3.5" />
           )}
-          Visszatöltés
+          {t('device_yaml.reload')}
         </button>
         {dirty && !configError && (
-          <span className="text-[10px] text-amber-400">Mentés nélküli változások</span>
+          <span className="text-[10px] text-amber-400">{t('device_yaml.dirty_hint')}</span>
         )}
       </div>
     </div>

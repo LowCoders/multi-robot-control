@@ -12,6 +12,7 @@ import {
   Save,
   Power,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { createLogger } from '../../utils/logger'
 
 const log = createLogger('calibration')
@@ -31,6 +32,7 @@ interface CalibrationPanelProps {
 }
 
 export default function CalibrationPanel({ deviceId, onApplyResults }: CalibrationPanelProps) {
+  const { t } = useTranslation('devices')
   const [isCalibrating, setIsCalibrating] = useState(false)
   const [results, setResults] = useState<CalibrationResults | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -86,7 +88,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
       
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.detail || 'Kalibráció indítása sikertelen')
+        throw new Error(data.detail || t('calibration.calibration_start_failed'))
       }
       
       const data: CalibrationResults = await response.json()
@@ -97,7 +99,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
         setError(data.error)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ismeretlen hiba')
+      setError(err instanceof Error ? err.message : t('calibration.unknown_error'))
       setIsCalibrating(false)
     }
   }
@@ -143,13 +145,13 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
       
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.detail || 'Mentés sikertelen')
+        throw new Error(data.detail || t('calibration.save_failed'))
       }
       
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Mentés sikertelen')
+      setError(err instanceof Error ? err.message : t('calibration.save_failed'))
     } finally {
       setSaving(false)
     }
@@ -178,13 +180,13 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
       
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.detail || 'Mentés sikertelen')
+        throw new Error(data.detail || t('calibration.save_failed'))
       }
       
       setHomeSaveSuccess(true)
       setTimeout(() => setHomeSaveSuccess(false), 3000)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Mentés sikertelen')
+      setError(err instanceof Error ? err.message : t('calibration.save_failed'))
     } finally {
       setSavingHome(false)
     }
@@ -200,33 +202,31 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
           <Target className="w-4 h-4" />
-          Automatikus Kalibráció
+          {t('calibration.panel_title')}
         </div>
         <button
           onClick={() => setShowSettings(!showSettings)}
           className="btn-icon text-steel-400 hover:text-white"
-          title="Beállítások"
+          title={t('calibration.settings_tooltip')}
         >
           {showSettings ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           <Settings className="w-4 h-4" />
         </button>
       </div>
 
-      <p className="text-xs text-steel-500">
-        Automatikusan megkeresi a végállásokat stall detection segítségével. 
-        Csak closed loop driverekkel (pl. SERVO42C) működik.
-      </p>
+      <p className="text-xs text-steel-500">{t('calibration.intro')}</p>
 
       {showSettings && (
         <div className="bg-steel-800/50 rounded-lg p-3 space-y-3">
-          <div className="text-xs text-steel-400 font-medium">Kalibráció beállítások</div>
-          <p className="text-xs text-steel-600">
-            Ezek az alapértékek, a devices.yaml-ban finomhangolhatók.
-          </p>
-          
-          {/* Tengely választó */}
+          <div className="text-xs text-steel-400 font-medium">
+            {t('calibration.settings_section_title')}
+          </div>
+          <p className="text-xs text-steel-600">{t('calibration.settings_yaml_hint')}</p>
+
           <div>
-            <label className="block text-xs text-steel-500 mb-2">Kalibrálandó tengelyek</label>
+            <label className="block text-xs text-steel-500 mb-2">
+              {t('calibration.axes_to_calibrate')}
+            </label>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 text-xs text-steel-300 cursor-pointer">
                 <input
@@ -235,7 +235,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
                   onChange={(e) => setSelectedJoints({ ...selectedJoints, X: e.target.checked })}
                   className="w-3 h-3 rounded border-steel-600 bg-steel-700 text-machine-500 focus:ring-machine-500"
                 />
-                X (Bázis)
+                {t('calibration.axis_x')}
               </label>
               <label className="flex items-center gap-2 text-xs text-steel-300 cursor-pointer">
                 <input
@@ -244,7 +244,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
                   onChange={(e) => setSelectedJoints({ ...selectedJoints, Y: e.target.checked })}
                   className="w-3 h-3 rounded border-steel-600 bg-steel-700 text-machine-500 focus:ring-machine-500"
                 />
-                Y (Váll)
+                {t('calibration.axis_y')}
               </label>
               <label className="flex items-center gap-2 text-xs text-steel-300 cursor-pointer">
                 <input
@@ -253,17 +253,17 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
                   onChange={(e) => setSelectedJoints({ ...selectedJoints, Z: e.target.checked })}
                   className="w-3 h-3 rounded border-steel-600 bg-steel-700 text-machine-500 focus:ring-machine-500"
                 />
-                Z (Könyök)
+                {t('calibration.axis_z')}
               </label>
             </div>
-            <p className="text-xs text-steel-600 mt-1">
-              X (bázis) általában nem kalibrálható - nincs fizikai végállása.
-            </p>
+            <p className="text-xs text-steel-600 mt-1">{t('calibration.axis_base_note')}</p>
           </div>
           
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-steel-500 mb-1">Sebesség (°/min)</label>
+              <label className="block text-xs text-steel-500 mb-1">
+                {t('calibration.speed_label')}
+              </label>
               <input
                 type="number"
                 value={settings.speed}
@@ -274,7 +274,9 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
               />
             </div>
             <div>
-              <label className="block text-xs text-steel-500 mb-1">Stall timeout (s)</label>
+              <label className="block text-xs text-steel-500 mb-1">
+                {t('calibration.stall_timeout_label')}
+              </label>
               <input
                 type="number"
                 value={settings.stall_timeout}
@@ -286,7 +288,9 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
               />
             </div>
             <div>
-              <label className="block text-xs text-steel-500 mb-1">Tolerancia (°)</label>
+              <label className="block text-xs text-steel-500 mb-1">
+                {t('calibration.tolerance_label')}
+              </label>
               <input
                 type="number"
                 value={settings.stall_tolerance}
@@ -311,7 +315,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
       {isCalibrating && (
         <div className="flex items-center gap-2 text-sm text-steel-300">
           <Loader2 className="w-4 h-4 animate-spin" />
-          Kalibráció fut...
+          {t('calibration.running_status')}
         </div>
       )}
 
@@ -319,23 +323,23 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
         <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
             <CheckCircle className="w-4 h-4" />
-            Kalibráció sikeres!
+            {t('calibration.success_title')}
           </div>
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="bg-steel-800/50 rounded p-2">
-              <div className="text-steel-500 mb-1">X (Bázis)</div>
+              <div className="text-steel-500 mb-1">{t('calibration.axis_x')}</div>
               <div className="text-white">
                 {formatLimit(results.j1_limits[0])} ... {formatLimit(results.j1_limits[1])}
               </div>
             </div>
             <div className="bg-steel-800/50 rounded p-2">
-              <div className="text-steel-500 mb-1">Y (Váll)</div>
+              <div className="text-steel-500 mb-1">{t('calibration.axis_y')}</div>
               <div className="text-white">
                 {formatLimit(results.j2_limits[0])} ... {formatLimit(results.j2_limits[1])}
               </div>
             </div>
             <div className="bg-steel-800/50 rounded p-2">
-              <div className="text-steel-500 mb-1">Z (Könyök)</div>
+              <div className="text-steel-500 mb-1">{t('calibration.axis_z')}</div>
               <div className="text-white">
                 {formatLimit(results.j3_limits[0])} ... {formatLimit(results.j3_limits[1])}
               </div>
@@ -344,7 +348,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
           {/* Home position info */}
           {results.home_position && (
             <div className="bg-steel-800/50 rounded p-2 text-xs">
-              <div className="text-steel-500 mb-1">Kalibrált home pozíció</div>
+              <div className="text-steel-500 mb-1">{t('calibration.home_calibrated_title')}</div>
               <div className="text-white">
                 X: {results.home_position.j1.toFixed(1)}° |
                 Y: {results.home_position.j2.toFixed(1)}° |
@@ -359,7 +363,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
                 className="btn btn-primary btn-sm flex-1 flex items-center justify-center gap-1"
               >
                 <CheckCircle className="w-3 h-3" />
-                Alkalmazás
+                {t('calibration.apply_btn')}
               </button>
             )}
             <button
@@ -368,12 +372,12 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
               className="btn btn-secondary btn-sm flex-1 flex items-center justify-center gap-1 disabled:opacity-50"
             >
               <Save className="w-3 h-3" />
-              {saving ? 'Mentés...' : 'Mentés YAML-ba'}
+              {saving ? t('calibration.saving') : t('calibration.save_yaml')}
             </button>
           </div>
           {saveSuccess && (
             <div className="text-xs text-green-400 text-center">
-              Mentve a devices.yaml fájlba!
+              {t('calibration.saved_yaml_banner')}
             </div>
           )}
           {/* Save as home position button */}
@@ -384,12 +388,12 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
               className="btn btn-secondary btn-sm w-full flex items-center justify-center gap-1 disabled:opacity-50"
             >
               <Power className="w-3 h-3" />
-              {savingHome ? 'Mentés...' : 'Mentés home pozícióként'}
+              {savingHome ? t('calibration.saving') : t('calibration.save_home')}
             </button>
           )}
           {homeSaveSuccess && (
             <div className="text-xs text-green-400 text-center">
-              Home pozíció mentve!
+              {t('calibration.saved_home_banner')}
             </div>
           )}
         </div>
@@ -402,7 +406,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
             className="btn btn-primary btn-sm flex-1 flex items-center justify-center gap-1"
           >
             <Play className="w-3 h-3" />
-            Végállások keresése
+            {t('calibration.find_limits')}
           </button>
         ) : (
           <button
@@ -410,7 +414,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
             className="btn btn-danger btn-sm flex-1 flex items-center justify-center gap-1"
           >
             <Square className="w-3 h-3" />
-            Leállítás
+            {t('calibration.stop_btn')}
           </button>
         )}
       </div>
