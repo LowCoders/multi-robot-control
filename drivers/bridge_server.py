@@ -12,7 +12,7 @@ import json
 import os
 import threading
 import time
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, List, Union
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -2418,7 +2418,7 @@ async def get_grbl_settings(device_id: str):
 
 class GrblSettingRequest(BaseModel):
     setting: int
-    value: float
+    value: Union[float, str]
 
 
 @app.post("/devices/{device_id}/grbl-settings")
@@ -2442,7 +2442,9 @@ async def set_grbl_setting(device_id: str, request: GrblSettingRequest):
 
 
 class GrblSettingsBatchRequest(BaseModel):
-    settings: Dict[int, float]
+    # Allow string values too: networking settings like $71/$73/$74/$75/$76
+    # are stored as strings by grblHAL.
+    settings: Dict[int, Union[float, str]]
 
 
 @app.post("/devices/{device_id}/grbl-settings/batch")

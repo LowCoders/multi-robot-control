@@ -1215,8 +1215,8 @@ class RobotArmDevice(GrblDeviceBase, ClosedLoopCapability, TeachingCapability):
             return {}
         return await super().get_grbl_settings()
     
-    async def set_grbl_setting(self, setting: int, value: float) -> bool:
-        """GRBL beállítás módosítása"""
+    async def set_grbl_setting(self, setting: int, value) -> bool:
+        """GRBL beállítás módosítása (numeric vagy string érték)."""
         if not self._use_grbl:
             return False
         return await super().set_grbl_setting(setting, value)

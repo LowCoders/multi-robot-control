@@ -25,6 +25,7 @@ import { MachineVisualization } from '../visualization'
 import RobotArmVisualization from '../visualization/RobotArmVisualization'
 import TubeBenderVisualization from '../visualization/TubeBenderVisualization'
 import CalibrationPanel from './CalibrationPanel'
+import NetworkConfigPanel from './NetworkConfigPanel'
 import CapabilityToggles from './capabilities/CapabilityToggles'
 import EndEffectorEditor from './capabilities/EndEffectorEditor'
 import SpindleEditor from './capabilities/SpindleEditor'
@@ -1378,6 +1379,11 @@ export default function MachineConfigTab({
                 )}
                 </div>
               </details>
+
+              {/* Network (WiFi) - only for grbl-compatible controllers */}
+              {config.driverConfig?.protocol === 'grbl' && (
+                <NetworkConfigPanel deviceId={deviceId} />
+              )}
 
               {/* Calibration Panel - robot_arm only */}
               {config.type === 'robot_arm' && (

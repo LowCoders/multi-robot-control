@@ -12,13 +12,22 @@
 #include "lgfx_crowpanel_128.h"
 #include "program_engine.h"
 #include "program_store.h"
+#include "transport.h"
+#include "transport_bluetooth.h"
+#include "transport_uart.h"
+#include "transport_wifi.h"
 #include "vertical_menu.h"
+#include "wifi_scan.h"
 
 static CrowPanelLGFX gfx;
 static HardwareSerial GrblSerial(1);
 static GrblParser grblParser;
 static GrblClient grblClient;
 static ConfigStore configStore;
+static UartTransport uartTransport(GrblSerial, GRBL_UART_RX_PIN, GRBL_UART_TX_PIN, GRBL_UART_BAUD);
+static WifiTcpTransport wifiTransport;
+static BluetoothTransport bluetoothTransport;
+static IGrblTransport *currentTransport = nullptr;
 static ProgramStore programStore;
 static ProgramEngine programEngine;
 static ProfileSet profileSet;
@@ -95,8 +104,14 @@ enum class Screen {
   SetupProfileSelect,
   SetupAxes,
   SetupDriver,
+  SetupPanel,
+  SetupPanelSsidScan,
+  SetupExtras,
+  SetupExtraEdit,
   Step,
   StepActions,
+  StepOptionsList,
+  StepOptionDetail,
   StepSaveTarget,
   StepSaveMode,
   StepSaveDelete,
@@ -136,7 +151,7 @@ static const int homeCount = sizeof(homeItems) / sizeof(homeItems[0]);
 static int savedHomeIndex = -1;
 
 static int setupMenuIndex = 0;
-static const char *setupMenuItems[] = {"Profile", "Axes", "Driver"};
+static const char *setupMenuItems[] = {"Profile", "Axes", "Driver", "Panel", "Extras"};
 static const int setupMenuCount = sizeof(setupMenuItems) / sizeof(setupMenuItems[0]);
 
 // SetupProfile: cursor on Add/Del/Set/Push submenu
@@ -166,6 +181,41 @@ static const char *setupDriverFields[] = {
     "motorHold", "invert", "opMode"};
 static const int setupDriverFieldCount = sizeof(setupDriverFields) / sizeof(setupDriverFields[0]);
 
+// SetupPanel: communication-link configuration screen.
+// cursor 0 = field list, 1 = editing.
+// String fields (ssid/pass/host) use a positional character editor:
+// rotate cycles characters at the current position; short press advances
+// (auto-extends with space at end); long press commits and exits the
+// string editor back to field selection.
+static const char *kPanelChannels[] = {"uart", "wifi", "bluetooth"};
+static const int kPanelChannelCount = sizeof(kPanelChannels) / sizeof(kPanelChannels[0]);
+static const uint32_t kPanelBaudPresets[] = {9600, 19200, 38400, 57600, 115200, 230400, 460800};
+static const int kPanelBaudCount = sizeof(kPanelBaudPresets) / sizeof(kPanelBaudPresets[0]);
+static const char *kPanelWifiModes[] = {"ap_join", "sta"};
+static const int kPanelWifiModeCount = sizeof(kPanelWifiModes) / sizeof(kPanelWifiModes[0]);
+static const char *kPanelEditCharset =
+    " 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-_:/";
+
+static int setupPanelField = 0;
+static int setupPanelCursor = 0;
+static bool setupPanelEditing = false;
+static bool setupPanelStringEditing = false;
+static int setupPanelStringPos = 0;
+static String setupPanelStringBuf;
+static String *setupPanelStringTarget = nullptr;
+static constexpr int kPanelStringMaxLen = 32;
+
+static const char **panelFieldList(int &count);
+static String panelFieldDisplayValue(const char *field);
+static void selectTransport(const PanelLinkConfig &lc);
+static void panelStringBeginEdit(String *target);
+static String linkStatusText();
+
+// SetupPanelSsidScan state.  Two static "control" rows are always present
+// at the top of the list: row 0 = Rescan, row 1 = Manual entry; the actual
+// scan results follow at index 2..N+1.
+static int setupPanelSsidScanCursor = 0;
+
 static int stepAxis = 0;
 static float stepValue = 0.0f;
 static std::vector<float> stepValues;
@@ -181,8 +231,49 @@ static bool     mpgJogActive = false;
 static uint32_t mpgLastJogMs = 0;
 
 static int stepActionIndex = 0;
-static const char *stepActionItems[] = {"Next Step", "Save"};
-static const int stepActionCount = sizeof(stepActionItems) / sizeof(stepActionItems[0]);
+// Built dynamically from rebuildStepActions(): always {"Next Step"}, with
+// "Options" inserted only when at least one extra declaration is enabled,
+// and "Save" appended last.  Keeps the menu free of clutter on machines
+// with no extras configured.
+static std::vector<String> stepActions;
+
+// ── Setup > Extras state ────────────────────────────────────────────────────
+// SetupExtras: list view of declared extras with [add] / [del last] entries.
+static int setupExtrasCursor = 0;
+// SetupExtraEdit: editing one declaration; `setupExtraEditIdx` indexes into
+// machineCfg.extras.items.  Field cursor + per-field editing flags mirror
+// the SetupAxes/SetupPanel pattern.
+static int setupExtraEditIdx = -1;
+static int setupExtraField = 0;
+static int setupExtraCursor = 0;       // 0 = field list, 1 = editing
+static bool setupExtraEditing = false;
+// String editor reused for label / onTemplate / offTemplate fields.  Mirrors
+// the panelString* helpers but lives in its own state so the two editors
+// can never collide.
+static bool extraStringEditing = false;
+static String extraStringBuf;
+static int extraStringPos = 0;
+static String *extraStringTarget = nullptr;
+static constexpr int kExtraStringMaxLen = 32;
+static const char *kExtraEditCharset =
+    " 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-_:/{}=GMT";
+
+static const char *setupExtraFields[] = {
+    "type", "enabled", "label", "ioPort",
+    "maxPower", "maxRPM", "onTpl", "offTpl"};
+static const int setupExtraFieldCount = sizeof(setupExtraFields) / sizeof(setupExtraFields[0]);
+
+// ── StepOptions state ───────────────────────────────────────────────────────
+// Pending extra commands attached to the next saved step.  Populated when
+// the user picks a preset on the StepOptionDetail screen; consumed and
+// cleared once the step is recorded into teachBuffer.
+static std::vector<ExtraCommand> pendingStepExtras;
+// Cursor for StepOptionsList (which extra to edit, plus a trailing "Done").
+static int stepOptionsListCursor = 0;
+// Index into machineCfg.extras.items for the extra currently being edited.
+static int stepOptionEditIdx = -1;
+// Cursor for StepOptionDetail preset list.
+static int stepOptionDetailCursor = 0;
 
 static int saveProgramIndex = 0;
 static int saveModeIndex = 0;
@@ -264,8 +355,14 @@ static const char *screenIcon(Screen s) {
     case Screen::SetupProfileSelect: return "PROF";
     case Screen::SetupAxes: return "AXES";
     case Screen::SetupDriver: return "DRV";
+    case Screen::SetupPanel: return "PNL";
+    case Screen::SetupPanelSsidScan: return "SCAN";
+    case Screen::SetupExtras: return "EXTR";
+    case Screen::SetupExtraEdit: return "EXTR";
     case Screen::Step: return "STEP";
     case Screen::StepActions: return "ACT";
+    case Screen::StepOptionsList: return "OPT";
+    case Screen::StepOptionDetail: return "OPT";
     case Screen::StepSaveTarget: return "SAVE";
     case Screen::StepSaveMode: return "MODE";
     case Screen::StepSaveDelete: return "DEL";
@@ -384,8 +481,14 @@ static UiPalette paletteForScreen(Screen s) {
     case Screen::SetupProfileSelect: return {0x2A1F38, 0xF6EDFF, 0xBC8CFF};
     case Screen::SetupAxes: return {0x2A1F38, 0xF6EDFF, 0xBC8CFF};
     case Screen::SetupDriver: return {0x2A1F38, 0xF6EDFF, 0xBC8CFF};
+    case Screen::SetupPanel: return {0x2A1F38, 0xF6EDFF, 0xBC8CFF};
+    case Screen::SetupPanelSsidScan: return {0x2A1F38, 0xF6EDFF, 0xBC8CFF};
+    case Screen::SetupExtras: return {0x2A1F38, 0xF6EDFF, 0xBC8CFF};
+    case Screen::SetupExtraEdit: return {0x2A1F38, 0xF6EDFF, 0xBC8CFF};
     case Screen::Step: return {0x233229, 0xEDFFF2, 0x5FFB92};
     case Screen::StepActions: return {0x362A1F, 0xFFF4E8, 0xFFB35A};
+    case Screen::StepOptionsList: return {0x362A1F, 0xFFF4E8, 0xFFB35A};
+    case Screen::StepOptionDetail: return {0x362A1F, 0xFFF4E8, 0xFFB35A};
     case Screen::StepSaveTarget: return {0x362A1F, 0xFFF4E8, 0xFFB35A};
     case Screen::StepSaveMode: return {0x362A1F, 0xFFF4E8, 0xFFB35A};
     case Screen::StepSaveDelete: return {0x362A1F, 0xFFF4E8, 0xFFB35A};
@@ -1436,6 +1539,270 @@ static bool queueParallelMove(const std::vector<float> &values) {
   return grblClient.queueLine(line);
 }
 
+// ── Extras: helpers ──────────────────────────────────────────────────────────
+
+// Display label for an extra declaration: prefer the user-supplied label,
+// otherwise fall back to the canonical type name.
+static String extraDisplayLabel(const ExtraDeclaration &d) {
+  return d.label.isEmpty() ? String(extraTypeLabel(d.type)) : d.label;
+}
+
+// Returns true if at least one declaration is enabled.  Used to decide
+// whether the "Options" entry should appear in the StepActions menu.
+static bool anyExtraEnabled() {
+  for (const auto &e : machineCfg.extras.items) if (e.enabled) return true;
+  return false;
+}
+
+// Indices of enabled declarations; kept stable across calls (order matches
+// machineCfg.extras.items so rebuilding mid-flow doesn't shuffle the menu).
+static std::vector<int> enabledExtraIndices() {
+  std::vector<int> out;
+  for (size_t i = 0; i < machineCfg.extras.items.size(); i++) {
+    if (machineCfg.extras.items[i].enabled) out.push_back(static_cast<int>(i));
+  }
+  return out;
+}
+
+// Rebuild the StepActions menu to include "Options" only when relevant.
+static void rebuildStepActions() {
+  stepActions.clear();
+  stepActions.push_back("Next Step");
+  if (anyExtraEnabled()) stepActions.push_back("Options");
+  stepActions.push_back("Save");
+  if (stepActionIndex < 0) stepActionIndex = 0;
+  if (stepActionIndex >= static_cast<int>(stepActions.size())) {
+    stepActionIndex = static_cast<int>(stepActions.size()) - 1;
+  }
+}
+
+// Substitute {val} / {port} in a template into a concrete G/M code line.
+// `val` is rendered without trailing zeros for whole numbers (so M3 S500
+// not M3 S500.00); fractional values keep two decimals.
+static String substituteExtraTemplate(const String &tmpl, float val, int port) {
+  String out = tmpl;
+  String valStr;
+  if (val == static_cast<float>(static_cast<int>(val))) {
+    valStr = String(static_cast<int>(val));
+  } else {
+    valStr = String(val, 2);
+  }
+  out.replace("{val}", valStr);
+  out.replace("{port}", String(port));
+  return out;
+}
+
+struct ExtraPreset {
+  String label;
+  std::vector<String> lines;
+};
+
+// Build the list of presets exposed on the StepOptionDetail screen for a
+// given extra declaration.  Keep the first entry as "Clear" so the user
+// can detach a previously chosen preset without dropping back to back nav.
+static std::vector<ExtraPreset> buildExtraPresets(const ExtraDeclaration &d) {
+  std::vector<ExtraPreset> out;
+  out.push_back({"Clear", {}});
+
+  auto withDefaultsOn = [&](const String &fallback) -> String {
+    return d.onTemplate.isEmpty() ? fallback : d.onTemplate;
+  };
+  auto withDefaultsOff = [&](const String &fallback) -> String {
+    return d.offTemplate.isEmpty() ? fallback : d.offTemplate;
+  };
+
+  switch (d.type) {
+    case ExtraType::Gripper: {
+      String openTpl = withDefaultsOn("M62 P{port}");
+      String closeTpl = withDefaultsOff("M63 P{port}");
+      out.push_back({"Open",  {substituteExtraTemplate(openTpl, 1.0f, d.ioPort)}});
+      out.push_back({"Close", {substituteExtraTemplate(closeTpl, 0.0f, d.ioPort)}});
+      break;
+    }
+    case ExtraType::Sucker: {
+      String onTpl  = withDefaultsOn("M62 P{port}");
+      String offTpl = withDefaultsOff("M63 P{port}");
+      out.push_back({"On",  {substituteExtraTemplate(onTpl, 1.0f, d.ioPort)}});
+      out.push_back({"Off", {substituteExtraTemplate(offTpl, 0.0f, d.ioPort)}});
+      break;
+    }
+    case ExtraType::Vacuum: {
+      String onTpl  = withDefaultsOn("M62 P{port}");
+      String offTpl = withDefaultsOff("M63 P{port}");
+      out.push_back({"On",  {substituteExtraTemplate(onTpl, 1.0f, d.ioPort)}});
+      out.push_back({"Off", {substituteExtraTemplate(offTpl, 0.0f, d.ioPort)}});
+      break;
+    }
+    case ExtraType::Laser: {
+      String onTpl  = withDefaultsOn("M3 S{val}");
+      String offTpl = withDefaultsOff("M5");
+      // Power presets: 25/50/75/100 % of declared maxPower, plus an Off entry.
+      const float maxP = d.maxPower > 0.0f ? d.maxPower : 1000.0f;
+      static const int pcts[] = {25, 50, 75, 100};
+      for (int p : pcts) {
+        float val = roundf(maxP * static_cast<float>(p) / 100.0f);
+        String label = String(p) + "%";
+        out.push_back({label, {substituteExtraTemplate(onTpl, val, d.ioPort)}});
+      }
+      out.push_back({"Off", {substituteExtraTemplate(offTpl, 0.0f, d.ioPort)}});
+      break;
+    }
+    case ExtraType::Spindle: {
+      const float rpm = d.maxSpindleRpm > 0.0f ? d.maxSpindleRpm : 12000.0f;
+      out.push_back({"CW",  {String("M3 S") + String(static_cast<int>(rpm))}});
+      out.push_back({"CCW", {String("M4 S") + String(static_cast<int>(rpm))}});
+      out.push_back({"Off", {String("M5")}});
+      break;
+    }
+    case ExtraType::Coolant: {
+      out.push_back({"Mist (M7)",  {String("M7")}});
+      out.push_back({"Flood (M8)", {String("M8")}});
+      out.push_back({"Off (M9)",   {String("M9")}});
+      break;
+    }
+    case ExtraType::Probe: {
+      // Probe down -10 mm at the configured feed (maxPower repurposed as
+      // probe feed when set, else 100 mm/min default).
+      const float feed = d.maxPower > 0.0f ? d.maxPower : 100.0f;
+      out.push_back({"Probe Z-10",
+                     {String("G38.2 Z-10 F") + String(static_cast<int>(feed))}});
+      break;
+    }
+    case ExtraType::ToolChanger: {
+      // ioPort doubles as default tool number; expose T{port}, T{port}+1,
+      // T{port}+2 so the user can teach a small set without leaving the menu.
+      const int t0 = d.ioPort > 0 ? d.ioPort : 1;
+      for (int i = 0; i < 3; i++) {
+        int t = t0 + i;
+        out.push_back({String("T") + String(t),
+                       {String("M6 T") + String(t)}});
+      }
+      break;
+    }
+    case ExtraType::Custom: {
+      if (!d.onTemplate.isEmpty()) {
+        out.push_back({"On",  {substituteExtraTemplate(d.onTemplate,  1.0f, d.ioPort)}});
+      }
+      if (!d.offTemplate.isEmpty()) {
+        out.push_back({"Off", {substituteExtraTemplate(d.offTemplate, 0.0f, d.ioPort)}});
+      }
+      if (out.size() == 1) {
+        // No templates configured; surface a hint instead of an empty menu.
+        out.push_back({"(set in Setup)", {}});
+      }
+      break;
+    }
+  }
+  return out;
+}
+
+// Returns the index of the pending extra command for the given declaration,
+// or -1 if nothing is currently attached.  Match key is type + label so
+// the same extra type can be declared twice with different labels.
+static int findPendingExtraIdx(const ExtraDeclaration &d) {
+  const String label = extraDisplayLabel(d);
+  for (size_t i = 0; i < pendingStepExtras.size(); i++) {
+    if (pendingStepExtras[i].type == d.type &&
+        pendingStepExtras[i].label == label) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+// Apply the user's preset choice: an empty `lines` list clears any existing
+// pending entry; otherwise the entry is upserted (replace if same label).
+static void applyExtraPreset(const ExtraDeclaration &d, const ExtraPreset &p) {
+  const int existing = findPendingExtraIdx(d);
+  if (p.lines.empty()) {
+    if (existing >= 0) {
+      pendingStepExtras.erase(pendingStepExtras.begin() + existing);
+    }
+    return;
+  }
+  ExtraCommand cmd;
+  cmd.type = d.type;
+  cmd.label = extraDisplayLabel(d);
+  cmd.lines = p.lines;
+  if (existing >= 0) {
+    pendingStepExtras[existing] = cmd;
+  } else {
+    pendingStepExtras.push_back(cmd);
+  }
+}
+
+// Helper: make sure pending extras are attached to the most recently saved
+// teach step.  Used in serial mode where each axis pushes its own step;
+// the extras should ride along with the very last one so they fire after
+// the multi-axis sequence completes.
+static void flushPendingExtrasIntoLastStep() {
+  if (pendingStepExtras.empty() || teachBuffer.steps.empty()) return;
+  ProgramStep &last = teachBuffer.steps.back();
+  last.extras.insert(last.extras.end(),
+                     pendingStepExtras.begin(),
+                     pendingStepExtras.end());
+}
+
+// ── Extras: string editor (separate state from SetupPanel) ───────────────────
+
+static void extraStringBeginEdit(String *target) {
+  if (!target) return;
+  extraStringTarget = target;
+  extraStringBuf = *target;
+  if (extraStringBuf.length() > kExtraStringMaxLen) {
+    extraStringBuf = extraStringBuf.substring(0, kExtraStringMaxLen);
+  }
+  extraStringPos = extraStringBuf.length();
+  if (extraStringPos < kExtraStringMaxLen) {
+    extraStringBuf += ' ';
+  } else {
+    extraStringPos = kExtraStringMaxLen - 1;
+  }
+  extraStringEditing = true;
+}
+
+static void extraStringCommit() {
+  if (!extraStringEditing) return;
+  if (extraStringTarget) {
+    String trimmed = extraStringBuf;
+    while (trimmed.length() > 0 && trimmed[trimmed.length() - 1] == ' ') {
+      trimmed.remove(trimmed.length() - 1);
+    }
+    *extraStringTarget = trimmed;
+  }
+  extraStringEditing = false;
+  extraStringTarget = nullptr;
+  extraStringBuf = "";
+  extraStringPos = 0;
+}
+
+static void extraStringRotate(int delta) {
+  if (!extraStringEditing || delta == 0) return;
+  if (extraStringPos < 0 || extraStringPos >= static_cast<int>(extraStringBuf.length())) {
+    return;
+  }
+  const int csLen = static_cast<int>(strlen(kExtraEditCharset));
+  char cur = extraStringBuf[extraStringPos];
+  int curIdx = 0;
+  for (int i = 0; i < csLen; i++) {
+    if (kExtraEditCharset[i] == cur) { curIdx = i; break; }
+  }
+  int next = ((curIdx + delta) % csLen + csLen) % csLen;
+  extraStringBuf[extraStringPos] = kExtraEditCharset[next];
+}
+
+static void extraStringAdvance() {
+  if (!extraStringEditing) return;
+  extraStringPos++;
+  if (extraStringPos >= static_cast<int>(extraStringBuf.length())) {
+    if (extraStringBuf.length() < kExtraStringMaxLen) {
+      extraStringBuf += ' ';
+    } else {
+      extraStringPos = extraStringBuf.length() - 1;
+    }
+  }
+}
+
 // Serial mode helper: each successful single-axis jog on the Step screen
 // pushes its own ProgramStep into the teach buffer, so by the time the
 // user reaches "Save" the buffer already contains one entry per axis with
@@ -1461,7 +1828,10 @@ static void recordCurrentStep() {
   if (machineCfg.operation_mode == "serial") {
     // Serial mode steps are recorded incrementally via recordSerialAxisStep
     // on each successful per-axis jog.  At Save time `stepValue` is already
-    // zero, so doing it here would only ever append a no-op all-zero step.
+    // zero, so doing it here would only ever append a no-op all-zero step;
+    // attach any pending extras to the most recently saved step instead so
+    // they ride along with the multi-axis sequence.
+    flushPendingExtrasIntoLastStep();
     return;
   } else if (machineCfg.operation_mode == "mpg") {
     // In MPG mode the user teaches the *current* machine pose by jogging,
@@ -1492,6 +1862,7 @@ static void recordCurrentStep() {
     s.feed = minRate;
   }
   s.comment = "teach";
+  s.extras = pendingStepExtras;
   teachBuffer.steps.push_back(s);
 }
 
@@ -1527,6 +1898,7 @@ static void saveTeachProgram(const String &name, bool append) {
   }
   teachBuffer.steps.clear();
   teachBuffer.name = "";
+  pendingStepExtras.clear();
   machineCfg.last_program_name = name;
   machineCfg.last_save_mode = append ? "append" : "overwrite";
   programStore.listPrograms(programNames);
@@ -1888,6 +2260,253 @@ void DemoStyleUiAdapter::render() {
       }
       break;
     }
+    case Screen::SetupPanel: {
+      int count = 0;
+      const char **fields = panelFieldList(count);
+      if (setupPanelField < 0) setupPanelField = 0;
+      if (setupPanelField >= count) setupPanelField = count - 1;
+      if (setupPanelCursor == 0) {
+        title = "Panel";
+        std::vector<VerticalMenuItem> rows;
+        for (int i = 0; i < count; i++) {
+          VerticalMenuItem row;
+          row.label = fields[i];
+          row.value = panelFieldDisplayValue(fields[i]);
+          rows.push_back(row);
+        }
+        l1 = renderVerticalMenu(rows, setupPanelField);
+        l2 = "";
+        l3 = "";
+      } else if (setupPanelStringEditing) {
+        const char *field = fields[setupPanelField];
+        title = String("Panel > ") + field;
+        l1 = String("pos ") + String(setupPanelStringPos + 1) + "/" + String(setupPanelStringBuf.length());
+        // Build a display string with brackets around the active char so the
+        // user can spot the cursor position.
+        String shown;
+        for (int i = 0; i < static_cast<int>(setupPanelStringBuf.length()); i++) {
+          char c = setupPanelStringBuf[i];
+          if (i == setupPanelStringPos) {
+            shown += '[';
+            shown += (c == ' ' ? '_' : c);
+            shown += ']';
+          } else {
+            shown += (c == ' ' ? '_' : c);
+          }
+        }
+        l2 = shown;
+        l3 = "rot:char  press:next  hold:OK";
+      } else {
+        const char *field = fields[setupPanelField];
+        title = String("Panel > ") + field;
+        l1 = field;
+        l2 = panelFieldDisplayValue(field);
+        l3 = "";
+      }
+      break;
+    }
+    case Screen::SetupPanelSsidScan: {
+      title = "WiFi scan";
+      WifiScanState st = wifiScanState();
+      // Build the list with raw row strings (no padded label-column) so we
+      // can fit longer SSIDs at smaller font size; the selected row is
+      // wrapped in an LVGL recolor tag (`#FFD400 ...#`) for emphasis.
+      struct Row { String text; };
+      std::vector<Row> rows;
+      {
+        Row r;
+        r.text = String("Rescan");
+        if (st == WifiScanState::Running) r.text += " ...";
+        rows.push_back(r);
+      }
+      {
+        Row r;
+        r.text = String("Manual entry");
+        rows.push_back(r);
+      }
+      if (st == WifiScanState::Done) {
+        int n = wifiScanCount();
+        for (int i = 0; i < n; i++) {
+          Row r;
+          String ssid = wifiScanSsid(i);
+          // Truncate long SSIDs so the row + RSSI fits within the label
+          // width even at the smaller font size.
+          if (ssid.length() > 18) ssid = ssid.substring(0, 17) + "~";
+          r.text = ssid + "  " + String(wifiScanRssi(i)) + "dBm";
+          if (wifiScanIsSecure(i)) r.text += " *";
+          rows.push_back(r);
+        }
+      }
+      int rowCount = static_cast<int>(rows.size());
+      if (setupPanelSsidScanCursor < 0) setupPanelSsidScanCursor = 0;
+      if (setupPanelSsidScanCursor >= rowCount) setupPanelSsidScanCursor = rowCount - 1;
+
+      // Sliding window: smaller font lets us show more rows comfortably
+      // (the `setupMenu` layout block centres `line1Label` based on the
+      // newline count, so this just expands it vertically).
+      const int kMaxVisible = 8;
+      const int visCount = rowCount < kMaxVisible ? rowCount : kMaxVisible;
+      int winStart = setupPanelSsidScanCursor - visCount / 2;
+      if (winStart < 0) winStart = 0;
+      if (winStart > rowCount - visCount) winStart = rowCount - visCount;
+
+      String out;
+      for (int v = 0; v < visCount; v++) {
+        int idx = winStart + v;
+        if (v > 0) out += '\n';
+        if (idx == setupPanelSsidScanCursor) {
+          // LVGL recolor: `#RRGGBB text#` paints `text` in the given hex
+          // colour; recolor must be enabled on the label (done below).
+          out += "#FFD400 > ";
+          out += rows[idx].text;
+          out += "#";
+        } else {
+          out += "  ";
+          out += rows[idx].text;
+        }
+      }
+      l1 = out;
+
+      if (st == WifiScanState::Running) {
+        l2 = "scanning...";
+      } else if (st == WifiScanState::Failed) {
+        l2 = "scan failed";
+      } else if (st == WifiScanState::Done) {
+        l2 = String(wifiScanCount()) + " AP";
+      } else {
+        l2 = "";
+      }
+      l3 = "rot:sel  press:ok  hold:back";
+      break;
+    }
+    case Screen::SetupExtras: {
+      title = "Extras";
+      const int n = static_cast<int>(machineCfg.extras.items.size());
+      std::vector<VerticalMenuItem> rows;
+      for (int i = 0; i < n; i++) {
+        const auto &d = machineCfg.extras.items[i];
+        rows.push_back({extraDisplayLabel(d), d.enabled ? String("on") : String("off")});
+      }
+      rows.push_back({"Add Extra", ""});
+      rows.push_back({"Del Last", ""});
+      l1 = renderVerticalMenu(rows, setupExtrasCursor);
+      l2 = "";
+      l3 = "";
+      break;
+    }
+    case Screen::SetupExtraEdit: {
+      const int n = static_cast<int>(machineCfg.extras.items.size());
+      if (setupExtraEditIdx < 0 || setupExtraEditIdx >= n) {
+        title = "Extras";
+        l1 = "(no extra)";
+        l2 = "";
+        l3 = "";
+        break;
+      }
+      const ExtraDeclaration &d = machineCfg.extras.items[setupExtraEditIdx];
+      if (setupExtraCursor == 0) {
+        title = String("Extra > ") + extraDisplayLabel(d);
+        std::vector<VerticalMenuItem> rows = {
+          {"type",     extraTypeLabel(d.type)},
+          {"enabled",  d.enabled ? String("ON") : String("OFF")},
+          {"label",    d.label.isEmpty() ? String("(auto)") : d.label},
+          {"ioPort",   String(d.ioPort)},
+          {"maxPower", String(d.maxPower, 0)},
+          {"maxRPM",   String(d.maxSpindleRpm, 0)},
+          {"onTpl",    d.onTemplate.isEmpty() ? String("(auto)") : d.onTemplate},
+          {"offTpl",   d.offTemplate.isEmpty() ? String("(auto)") : d.offTemplate},
+        };
+        l1 = renderVerticalMenu(rows, setupExtraField);
+        l2 = "";
+        l3 = "";
+      } else if (extraStringEditing) {
+        title = String("Extra > ") + setupExtraFields[setupExtraField];
+        l1 = String("pos ") + String(extraStringPos + 1) + "/" + String(extraStringBuf.length());
+        String shown;
+        for (int i = 0; i < static_cast<int>(extraStringBuf.length()); i++) {
+          char c = extraStringBuf[i];
+          if (i == extraStringPos) {
+            shown += '[';
+            shown += (c == ' ' ? '_' : c);
+            shown += ']';
+          } else {
+            shown += (c == ' ' ? '_' : c);
+          }
+        }
+        l2 = shown;
+        l3 = "rot:char  press:next  hold:OK";
+      } else {
+        title = String("Extra > ") + setupExtraFields[setupExtraField];
+        String val;
+        switch (setupExtraField) {
+          case 0: val = extraTypeLabel(d.type); break;
+          case 1: val = d.enabled ? "ON" : "OFF"; break;
+          case 2: val = d.label.isEmpty() ? "(auto)" : d.label; break;
+          case 3: val = String(d.ioPort); break;
+          case 4: val = String(d.maxPower, 0); break;
+          case 5: val = String(d.maxSpindleRpm, 0); break;
+          case 6: val = d.onTemplate.isEmpty() ? "(auto)" : d.onTemplate; break;
+          case 7: val = d.offTemplate.isEmpty() ? "(auto)" : d.offTemplate; break;
+        }
+        l1 = setupExtraFields[setupExtraField];
+        l2 = val;
+        l3 = "rot:edit  hold:back";
+      }
+      break;
+    }
+    case Screen::StepOptionsList: {
+      title = "Options";
+      std::vector<int> en = enabledExtraIndices();
+      std::vector<VerticalMenuItem> rows;
+      for (int idx : en) {
+        const ExtraDeclaration &d = machineCfg.extras.items[idx];
+        const int p = findPendingExtraIdx(d);
+        rows.push_back({extraDisplayLabel(d), p >= 0 ? String("*") : String("")});
+      }
+      rows.push_back({"Done", ""});
+      l1 = renderVerticalMenu(rows, stepOptionsListCursor);
+      l2 = "";
+      l3 = "";
+      break;
+    }
+    case Screen::StepOptionDetail: {
+      const int n = static_cast<int>(machineCfg.extras.items.size());
+      if (stepOptionEditIdx < 0 || stepOptionEditIdx >= n) {
+        title = "Option";
+        l1 = "(no extra)";
+        l2 = "";
+        l3 = "";
+        break;
+      }
+      const ExtraDeclaration &d = machineCfg.extras.items[stepOptionEditIdx];
+      title = extraDisplayLabel(d);
+      std::vector<ExtraPreset> presets = buildExtraPresets(d);
+      std::vector<VerticalMenuItem> rows;
+      const int pendingIdx = findPendingExtraIdx(d);
+      const String pendingLabel = pendingIdx >= 0 ? pendingStepExtras[pendingIdx].label : String();
+      for (const auto &p : presets) {
+        // Mark the currently-attached preset with a `*` in the value column.
+        // We compare the generated lines (best-effort) to identify which
+        // preset matches the pending entry.
+        bool matchesPending = false;
+        if (pendingIdx >= 0 && p.lines.size() == pendingStepExtras[pendingIdx].lines.size()) {
+          matchesPending = true;
+          for (size_t i = 0; i < p.lines.size(); i++) {
+            if (p.lines[i] != pendingStepExtras[pendingIdx].lines[i]) {
+              matchesPending = false;
+              break;
+            }
+          }
+        } else if (pendingIdx < 0 && p.lines.empty()) {
+          matchesPending = true;
+        }
+        rows.push_back({p.label, matchesPending ? String("*") : String("")});
+      }
+      l1 = renderVerticalMenu(rows, stepOptionDetailCursor);
+      l2 = "";
+      l3 = "press:set  hold:back";
+      break;
+    }
     case Screen::Step: {
       const AxisConfig &a = machineCfg.axes[stepAxis];
       const int axis_dec = decimalsForStep(a.step);
@@ -1920,13 +2539,34 @@ void DemoStyleUiAdapter::render() {
     }
     case Screen::StepActions: {
       title = "Actions";
-      l1 = String(stepActionIndex == 0 ? "> " : "  ") + stepActionItems[0];
-      l2 = String(stepActionIndex == 1 ? "> " : "  ") + stepActionItems[1];
+      // Rebuild every render so toggling extras in Setup is reflected on
+      // the very next paint without explicit invalidation hooks.
+      rebuildStepActions();
+      const int actionCount = static_cast<int>(stepActions.size());
+      if (stepActionIndex < 0) stepActionIndex = 0;
+      if (stepActionIndex >= actionCount) stepActionIndex = actionCount - 1;
+      // Each menu entry on its own line so 2- and 3-item layouts both fit
+      // the centred title + axis-value tail rendering below.
+      String menu;
+      for (int i = 0; i < actionCount; i++) {
+        if (i > 0) menu += '\n';
+        menu += (i == stepActionIndex) ? "> " : "  ";
+        menu += stepActions[i];
+      }
+      l1 = menu;
+      l2 = "";
       l3 = "";
       for (size_t i = 0; i < machineCfg.axes.size(); i++) {
         if (i > 0) l3 += "\n";
         float v = i < currentAxes.size() ? currentAxes[i] : 0.0f;
         l3 += machineCfg.axes[i].name + ": " + String(v, 2);
+      }
+      // Surface the current pending-extras count so the user sees there's
+      // something attached before pressing Save.
+      if (!pendingStepExtras.empty()) {
+        l3 += "\n+";
+        l3 += String(pendingStepExtras.size());
+        l3 += " extra";
       }
       break;
     }
@@ -1977,10 +2617,12 @@ void DemoStyleUiAdapter::render() {
       l1 = "Step " + String(programEngine.currentStep()) + "/" + String(programEngine.totalSteps());
       // Live axis position is suppressed here: the TX log occupies the centre
       // of the screen instead.  Step target axes are visible in the G-code
-      // lines themselves.
+      // lines themselves.  l3 is intentionally empty: the GRBL state row was
+      // removed to give the txLogPanel one extra line of vertical space; the
+      // current state is still surfaced via the screen-wide background tint
+      // (Idle = green, Run = blue, Hold = amber, Alarm = red).
       l2 = "";
-      const String grblState = grblParser.status().state;
-      l3 = String("State: ") + (grblState.isEmpty() ? String("?") : grblState);
+      l3 = "";
       break;
     }
   }
@@ -2087,12 +2729,20 @@ void DemoStyleUiAdapter::render() {
         screen == Screen::SetupProfileSelect ||
         (screen == Screen::SetupAxes && setupAxesCursor < 2) ||
         (screen == Screen::SetupDriver && setupDriverCursor < 1) ||
+        (screen == Screen::SetupPanel && setupPanelCursor < 1) ||
+        screen == Screen::SetupPanelSsidScan ||
+        screen == Screen::SetupExtras ||
+        (screen == Screen::SetupExtraEdit && setupExtraCursor < 1) ||
+        screen == Screen::StepOptionsList ||
+        screen == Screen::StepOptionDetail ||
         screen == Screen::StepSaveTarget ||
         screen == Screen::StepSaveDelete) {
       int menuLines = 0;
       for (size_t i = 0; i < l1.length(); i++) if (l1[i] == '\n') menuLines++;
       menuLines++;
-      const int lineH = 26;
+      // SsidScan uses montserrat_14 (smaller line height) so its rows pack
+      // tighter than the standard montserrat_20-based menus.
+      const int lineH = (screen == Screen::SetupPanelSsidScan) ? 18 : 26;
       const int menuH = menuLines * lineH;
       const int areaTop = 50;
       const int areaBot = 200;
@@ -2122,8 +2772,10 @@ void DemoStyleUiAdapter::render() {
         lv_obj_align(titleLabel, LV_ALIGN_TOP_MID, 0, 8);
         lv_obj_align(line1Label, LV_ALIGN_TOP_MID, 0, 32);
         lv_obj_add_flag(line2Label, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_align(line3Label, LV_ALIGN_TOP_MID, 0, 54);
-        lv_obj_clear_flag(line3Label, LV_OBJ_FLAG_HIDDEN);
+        // The "State:" row used to live at y=54; it was removed and the
+        // txLogPanel grown to fill the freed space (see the txLogPanel
+        // resize block below).
+        lv_obj_add_flag(line3Label, LV_OBJ_FLAG_HIDDEN);
       } else {
         lv_obj_align(titleLabel, LV_ALIGN_TOP_MID, 0, 8);
         lv_obj_align(line1Label, LV_ALIGN_TOP_MID, 0, 40);
@@ -2155,6 +2807,12 @@ void DemoStyleUiAdapter::render() {
                           screen == Screen::SetupProfileSelect ||
                           (screen == Screen::SetupAxes && setupAxesCursor < 2) ||
                           (screen == Screen::SetupDriver && setupDriverCursor < 1) ||
+                          (screen == Screen::SetupPanel && setupPanelCursor < 1) ||
+                          screen == Screen::SetupPanelSsidScan ||
+                          screen == Screen::SetupExtras ||
+                          (screen == Screen::SetupExtraEdit && setupExtraCursor < 1) ||
+                          screen == Screen::StepOptionsList ||
+                          screen == Screen::StepOptionDetail ||
                           screen == Screen::StepSaveTarget ||
                           screen == Screen::StepSaveDelete);
   const bool actionMenu = (screen == Screen::StepActions);
@@ -2164,14 +2822,26 @@ void DemoStyleUiAdapter::render() {
   String l3Fit = actionMenu ? l3 : fitLine(l3, 24);
   String l4Fit = fitLine(l4, 26);
   if (setupMenu) {
-    lv_obj_set_style_text_font(line1Label, &lv_font_montserrat_20, LV_PART_MAIN);
+    // SsidScan can show many APs; use the smaller font so long SSIDs fit
+    // on a single line and 6-8 entries are visible at once.  Also enable
+    // LVGL recolor here so the `#RRGGBB ...#` cursor highlight rendered
+    // in the SsidScan branch above is honoured.
+    if (screen == Screen::SetupPanelSsidScan) {
+      lv_obj_set_style_text_font(line1Label, &lv_font_montserrat_14, LV_PART_MAIN);
+      lv_label_set_recolor(line1Label, true);
+    } else {
+      lv_obj_set_style_text_font(line1Label, &lv_font_montserrat_20, LV_PART_MAIN);
+      lv_label_set_recolor(line1Label, false);
+    }
   } else if (showCarousel) {
     // Home centre row carries `infoLine` (ephemeral status / error). Match
     // the bottom yellow status row used on every other page: small font and
     // yellow tint so the user always recognises it as a transient message.
     lv_obj_set_style_text_font(line1Label, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_label_set_recolor(line1Label, false);
   } else {
     lv_obj_set_style_text_font(line1Label, (editLayout || actionMenu) ? &lv_font_montserrat_20 : &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_label_set_recolor(line1Label, false);
   }
   const bool bigValueLine2 = editLayout || screen == Screen::StepSaveMode || screen == Screen::ProgramList;
   lv_obj_set_style_text_font(line2Label, bigValueLine2 ? responsiveValueFont(l2Fit) : (actionMenu ? &lv_font_montserrat_20 : &lv_font_montserrat_14), LV_PART_MAIN);
@@ -2189,11 +2859,25 @@ void DemoStyleUiAdapter::render() {
   lv_label_set_text(line3Label, l3Fit.c_str());
 
   const bool showProfileSubtitle = setupMenu && !profileSet.activeName.isEmpty();
+  // Status screen reuses the subtitle slot to surface the live transport
+  // connection state ("Link: wifi connected (192.168.4.1:23)" etc.) so the
+  // operator can confirm at a glance whether the controller link is up
+  // without having to enter Setup.
+  const bool showStatusLinkSubtitle = (screen == Screen::Status);
   if (showProfileSubtitle) {
     lv_obj_clear_flag(subTitleLabel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_align(subTitleLabel, LV_ALIGN_TOP_MID, 0, 28);
     lv_obj_set_style_text_color(subTitleLabel, lv_color_mix(accent, fg, LV_OPA_60), LV_PART_MAIN);
     String subFit = fitLine(String("Profile: ") + profileSet.activeName, 28);
+    lv_label_set_text(subTitleLabel, subFit.c_str());
+  } else if (showStatusLinkSubtitle) {
+    lv_obj_clear_flag(subTitleLabel, LV_OBJ_FLAG_HIDDEN);
+    // Status screen: place the Link line just under `State:` (l1Label at
+    // y=40, ~16px tall in montserrat_14) and above the position stack
+    // (starts at y=84) — y=62 fits between them.
+    lv_obj_align(subTitleLabel, LV_ALIGN_TOP_MID, 0, 62);
+    lv_obj_set_style_text_color(subTitleLabel, lv_color_mix(accent, fg, LV_OPA_60), LV_PART_MAIN);
+    String subFit = fitLine(String("Link: ") + linkStatusText(), 28);
     lv_label_set_text(subTitleLabel, subFit.c_str());
   } else {
     lv_obj_add_flag(subTitleLabel, LV_OBJ_FLAG_HIDDEN);
@@ -2209,6 +2893,13 @@ void DemoStyleUiAdapter::render() {
 
   if (txLogPanel && txLogLabel) {
     if (screen == Screen::ProgramRun) {
+      // Reclaim the row that used to host "State: <grbl>" (y=54..76): grow
+      // the panel upwards by 22 px so the operator sees one extra line of
+      // G-code log while running.  Idempotent: setting the same geometry
+      // every frame is cheap and keeps us robust against future edits to
+      // the create-time defaults in setup().
+      lv_obj_set_size(txLogPanel, 200, 146);
+      lv_obj_align(txLogPanel, LV_ALIGN_TOP_MID, 0, 54);
       String log;
       const auto &recent = grblClient.recentTx();
       for (const String &l : recent) {
@@ -2325,6 +3016,261 @@ static void handleSetupDriverRotate(int delta) {
   viewModel.applyAdaptiveDelta(delta);
 }
 
+// ── Setup > Panel helpers ────────────────────────────────────────────────────
+
+static int panelChannelIndex(const String &ch) {
+  for (int i = 0; i < kPanelChannelCount; i++) {
+    if (ch == kPanelChannels[i]) return i;
+  }
+  return 0;  // default uart
+}
+
+static int panelWifiModeIndex(const String &m) {
+  for (int i = 0; i < kPanelWifiModeCount; i++) {
+    if (m == kPanelWifiModes[i]) return i;
+  }
+  return 0;
+}
+
+static int panelBaudPresetIndex(uint32_t baud) {
+  for (int i = 0; i < kPanelBaudCount; i++) {
+    if (kPanelBaudPresets[i] == baud) return i;
+  }
+  return 4;  // 115200 fallback
+}
+
+// Build the active field list for the SetupPanel screen based on the
+// currently selected channel.  Returns an array of field names; the count
+// is written to `count`.  The list always starts with `channel` and ends
+// with `apply`.
+static const char **panelFieldList(int &count) {
+  static const char *uartFields[] = {"channel", "baud", "apply"};
+  // WiFi mode uses "connect" instead of "apply" because the action both
+  // saves the profile and (re-)opens the TCP socket — "connect" is the
+  // user-visible verb we want exposed.  UART/Bluetooth still use the
+  // generic "apply" wording.
+  //
+  // Two flavours of the WiFi field list:
+  //   - ap_join: panel joins the controller's SoftAP, controller IS the
+  //     DHCP gateway, so `host` is redundant — hide it for a tighter UI.
+  //   - sta: panel joins an external router; the controller's IP must be
+  //     supplied explicitly because the gateway points at the router.
+  static const char *wifiApJoinFields[] = {
+      "channel", "ssid", "pass", "port", "mode", "connect"};
+  static const char *wifiStaFields[] = {
+      "channel", "ssid", "pass", "host", "port", "mode", "connect"};
+  static const char *btFields[] = {"channel", "apply"};
+  const String &ch = machineCfg.link.channel;
+  if (ch == "wifi") {
+    if (machineCfg.link.wifi_mode == "sta") {
+      count = sizeof(wifiStaFields) / sizeof(wifiStaFields[0]);
+      return wifiStaFields;
+    }
+    count = sizeof(wifiApJoinFields) / sizeof(wifiApJoinFields[0]);
+    return wifiApJoinFields;
+  }
+  if (ch == "bluetooth") {
+    count = sizeof(btFields) / sizeof(btFields[0]);
+    return btFields;
+  }
+  count = sizeof(uartFields) / sizeof(uartFields[0]);
+  return uartFields;
+}
+
+static String panelFieldDisplayValue(const char *field) {
+  const PanelLinkConfig &lc = machineCfg.link;
+  if (!strcmp(field, "channel")) return lc.channel;
+  if (!strcmp(field, "baud")) return String(lc.baud);
+  if (!strcmp(field, "ssid")) return lc.ssid.isEmpty() ? String("(empty)") : lc.ssid;
+  if (!strcmp(field, "pass")) {
+    if (lc.password.isEmpty()) return "(empty)";
+    String masked;
+    for (size_t i = 0; i < lc.password.length(); i++) masked += '*';
+    return masked;
+  }
+  if (!strcmp(field, "host")) {
+    // Empty host is the recommended default in ap_join mode: the panel
+    // talks to whatever WiFi.gatewayIP() resolves to (i.e. the controller's
+    // SoftAP).  Show "(auto)" so users see the field is intentionally
+    // blank rather than misconfigured.  Users can still type an explicit
+    // override (sta mode, multi-AP topology, ...) if needed.
+    if (lc.host.isEmpty()) return "(auto)";
+    return lc.host;
+  }
+  if (!strcmp(field, "port")) return String(lc.port);
+  if (!strcmp(field, "mode")) return lc.wifi_mode;
+  if (!strcmp(field, "apply")) return "[run]";
+  if (!strcmp(field, "connect")) return "[run]";
+  return "";
+}
+
+// Apply the current PanelLinkConfig: tear down whatever transport is
+// active, instantiate the requested one, and rebind GrblClient to it.
+// Status messages are surfaced through `infoLine`.
+static void selectTransport(const PanelLinkConfig &lc) {
+  if (currentTransport) {
+    currentTransport->end();
+  }
+  currentTransport = nullptr;
+
+  if (lc.channel == "wifi") {
+    WifiTcpTransport::Mode mode = lc.wifi_mode == "sta"
+                                      ? WifiTcpTransport::Mode::Sta
+                                      : WifiTcpTransport::Mode::ApJoin;
+    wifiTransport.configure(lc.ssid, lc.password, lc.host, lc.port, mode);
+    wifiTransport.begin();
+    currentTransport = &wifiTransport;
+    infoLine = String("WiFi: ") + wifiTransport.statusText();
+  } else if (lc.channel == "bluetooth") {
+    bluetoothTransport.begin();
+    currentTransport = &bluetoothTransport;
+    infoLine = "BT not supported on ESP32-S3";
+  } else {
+    uartTransport.configure(lc.baud, GRBL_UART_RX_PIN, GRBL_UART_TX_PIN);
+    uartTransport.begin();
+    currentTransport = &uartTransport;
+    infoLine = String("UART ") + String(lc.baud);
+  }
+
+  grblClient.setTransport(currentTransport);
+  uiDirty = true;
+}
+
+static void applyPanelLink() {
+  persistActiveProfile();
+  selectTransport(machineCfg.link);
+}
+
+// Human-readable summary of the active transport's connection state, used
+// by the Status screen subtitle.  WiFi reports its own state machine
+// (joining / no AP / idle) via WifiTcpTransport::statusText(); UART/BT
+// just collapse to "<kind> connected" / "<kind> not connected".
+static String linkStatusText() {
+  if (!currentTransport) return "no link";
+  if (currentTransport == &wifiTransport) {
+    if (wifiTransport.connected()) {
+      return String("wifi connected (") + wifiTransport.statusText() + ")";
+    }
+    return String("wifi ") + wifiTransport.statusText();
+  }
+  bool ok = currentTransport->connected();
+  return String(currentTransport->name()) + (ok ? " connected" : " not connected");
+}
+
+static void panelStringBeginEdit(String *target) {
+  if (!target) return;
+  setupPanelStringTarget = target;
+  setupPanelStringBuf = *target;
+  if (setupPanelStringBuf.length() > kPanelStringMaxLen) {
+    setupPanelStringBuf = setupPanelStringBuf.substring(0, kPanelStringMaxLen);
+  }
+  setupPanelStringPos = setupPanelStringBuf.length();
+  // Append a trailing space so the user can immediately type a fresh char
+  // at the end without first having to extend the buffer.
+  if (setupPanelStringPos < kPanelStringMaxLen) {
+    setupPanelStringBuf += ' ';
+  } else {
+    setupPanelStringPos = kPanelStringMaxLen - 1;
+  }
+  setupPanelStringEditing = true;
+}
+
+static void panelStringCommit() {
+  if (!setupPanelStringEditing) return;
+  if (setupPanelStringTarget) {
+    String trimmed = setupPanelStringBuf;
+    while (trimmed.length() > 0 && trimmed[trimmed.length() - 1] == ' ') {
+      trimmed.remove(trimmed.length() - 1);
+    }
+    *setupPanelStringTarget = trimmed;
+  }
+  setupPanelStringEditing = false;
+  setupPanelStringTarget = nullptr;
+  setupPanelStringBuf = "";
+  setupPanelStringPos = 0;
+}
+
+static void panelStringRotate(int delta) {
+  if (!setupPanelStringEditing || delta == 0) return;
+  if (setupPanelStringPos < 0 || setupPanelStringPos >= static_cast<int>(setupPanelStringBuf.length())) {
+    return;
+  }
+  const int csLen = static_cast<int>(strlen(kPanelEditCharset));
+  char cur = setupPanelStringBuf[setupPanelStringPos];
+  int curIdx = 0;
+  for (int i = 0; i < csLen; i++) {
+    if (kPanelEditCharset[i] == cur) { curIdx = i; break; }
+  }
+  int next = ((curIdx + delta) % csLen + csLen) % csLen;
+  setupPanelStringBuf[setupPanelStringPos] = kPanelEditCharset[next];
+}
+
+static void panelStringAdvance() {
+  if (!setupPanelStringEditing) return;
+  setupPanelStringPos++;
+  if (setupPanelStringPos >= static_cast<int>(setupPanelStringBuf.length())) {
+    if (setupPanelStringBuf.length() < kPanelStringMaxLen) {
+      setupPanelStringBuf += ' ';
+    } else {
+      setupPanelStringPos = setupPanelStringBuf.length() - 1;
+    }
+  }
+}
+
+static void handleSetupPanelRotate(int delta) {
+  if (delta == 0) return;
+  if (setupPanelStringEditing) {
+    panelStringRotate(delta);
+    return;
+  }
+  if (setupPanelCursor == 0) {
+    int count = 0;
+    panelFieldList(count);
+    int ni = setupPanelField + delta;
+    if (ni < 0) ni = 0;
+    if (ni >= count) ni = count - 1;
+    setupPanelField = ni;
+    return;
+  }
+  // cursor 1 + non-string editing: cycle/edit non-string field values.
+  if (!setupPanelEditing) return;
+  int count = 0;
+  const char **fields = panelFieldList(count);
+  if (setupPanelField < 0 || setupPanelField >= count) return;
+  const char *field = fields[setupPanelField];
+  PanelLinkConfig &lc = machineCfg.link;
+  if (!strcmp(field, "channel")) {
+    int idx = panelChannelIndex(lc.channel);
+    int ni = ((idx + delta) % kPanelChannelCount + kPanelChannelCount) % kPanelChannelCount;
+    lc.channel = kPanelChannels[ni];
+    // Switching channel may invalidate the field cursor; clamp later.
+  } else if (!strcmp(field, "baud")) {
+    int idx = panelBaudPresetIndex(lc.baud);
+    int ni = ((idx + delta) % kPanelBaudCount + kPanelBaudCount) % kPanelBaudCount;
+    lc.baud = kPanelBaudPresets[ni];
+  } else if (!strcmp(field, "port")) {
+    int v = static_cast<int>(lc.port) + delta;
+    if (v < 1) v = 1;
+    if (v > 65535) v = 65535;
+    lc.port = static_cast<uint16_t>(v);
+  } else if (!strcmp(field, "mode")) {
+    int idx = panelWifiModeIndex(lc.wifi_mode);
+    int ni = ((idx + delta) % kPanelWifiModeCount + kPanelWifiModeCount) % kPanelWifiModeCount;
+    lc.wifi_mode = kPanelWifiModes[ni];
+    // Field list shape depends on wifi_mode (host is hidden in ap_join);
+    // re-anchor the cursor to "mode" so the user keeps editing the same
+    // logical field after the toggle instead of landing on a neighbour.
+    int newCount = 0;
+    const char **newFields = panelFieldList(newCount);
+    for (int i = 0; i < newCount; i++) {
+      if (!strcmp(newFields[i], "mode")) {
+        setupPanelField = i;
+        break;
+      }
+    }
+  }
+}
+
 static void requestPanelOwnership() {
   Serial.printf("[OWN] %lu ms: REQUEST panel (q=%u await=%d)\n",
                 millis(), grblClient.queuedCount(), grblClient.awaitingOk());
@@ -2368,8 +3314,55 @@ static void navigateBack() {
         screen = Screen::Setup;
       }
       break;
+    case Screen::SetupPanelSsidScan:
+      wifiScanRelease();
+      screen = Screen::SetupPanel;
+      break;
+    case Screen::SetupPanel:
+      if (setupPanelStringEditing) {
+        // Cancel string edit without committing.
+        setupPanelStringEditing = false;
+        setupPanelStringTarget = nullptr;
+        setupPanelStringBuf = "";
+        setupPanelStringPos = 0;
+      } else if (setupPanelCursor == 1) {
+        setupPanelEditing = false;
+        setupPanelCursor = 0;
+      } else {
+        screen = Screen::Setup;
+      }
+      break;
+    case Screen::SetupExtras:
+      screen = Screen::Setup;
+      break;
+    case Screen::SetupExtraEdit:
+      if (extraStringEditing) {
+        // Cancel string edit without committing.
+        extraStringEditing = false;
+        extraStringTarget = nullptr;
+        extraStringBuf = "";
+        extraStringPos = 0;
+      } else if (setupExtraCursor == 1) {
+        setupExtraEditing = false;
+        setupExtraCursor = 0;
+      } else {
+        screen = Screen::SetupExtras;
+      }
+      break;
     case Screen::StepActions:
       screen = Screen::Home;
+      break;
+    case Screen::StepOptionsList:
+      screen = Screen::StepActions;
+      break;
+    case Screen::StepOptionDetail:
+      // Back returns to the chooser if multiple extras exist, else
+      // straight to Actions; mirror the post-press routing.
+      if (enabledExtraIndices().size() <= 1) {
+        screen = Screen::StepActions;
+      } else {
+        screen = Screen::StepOptionsList;
+      }
       break;
     case Screen::StepSaveTarget:
       screen = Screen::Step;
@@ -2546,6 +3539,17 @@ static void onShortPress() {
         setupDriverEditing = false;
         screen = Screen::SetupDriver;
         break;
+      case 3:
+        setupPanelCursor = 0;
+        setupPanelField = 0;
+        setupPanelEditing = false;
+        setupPanelStringEditing = false;
+        screen = Screen::SetupPanel;
+        break;
+      case 4:
+        setupExtrasCursor = 0;
+        screen = Screen::SetupExtras;
+        break;
     }
     return;
   }
@@ -2570,6 +3574,7 @@ static void onShortPress() {
         profileSet.activeName = candidate;
         syncMachineCfgFromActive();
         configStore.saveAll(profileSet);
+        selectTransport(machineCfg.link);
         infoLine = String("Added ") + candidate;
         return;
       }
@@ -2620,6 +3625,7 @@ static void onShortPress() {
       configStore.saveAll(profileSet);
       stepValues.assign(machineCfg.axes.size(), 0.0f);
       teachCombined.assign(machineCfg.axes.size(), 0.0f);
+      selectTransport(machineCfg.link);
       infoLine = String("Active: ") + name;
       screen = Screen::SetupProfile;
     } else {
@@ -2634,6 +3640,7 @@ static void onShortPress() {
         syncMachineCfgFromActive();
         stepValues.assign(machineCfg.axes.size(), 0.0f);
         teachCombined.assign(machineCfg.axes.size(), 0.0f);
+        selectTransport(machineCfg.link);
       }
       configStore.saveAll(profileSet);
       infoLine = String("Removed ") + name;
@@ -2715,6 +3722,194 @@ static void onShortPress() {
     return;
   }
 
+  if (screen == Screen::SetupPanel) {
+    if (setupPanelStringEditing) {
+      panelStringAdvance();
+      return;
+    }
+    int count = 0;
+    const char **fields = panelFieldList(count);
+    if (setupPanelField < 0) setupPanelField = 0;
+    if (setupPanelField >= count) setupPanelField = count - 1;
+    const char *field = fields[setupPanelField];
+    if (setupPanelCursor == 0) {
+      // Enter editing for the selected field.
+      // `apply` (UART/BT) and `connect` (WiFi) are both leaf actions that
+      // route to applyPanelLink — the wording differs by channel only.
+      if (!strcmp(field, "apply") || !strcmp(field, "connect")) {
+        applyPanelLink();
+        return;
+      }
+      // ssid: short press jumps to the dedicated WiFi scan screen so the
+      // user can pick an active controller from the air.  The positional
+      // character editor is only reachable through "Manual entry" there.
+      if (!strcmp(field, "ssid")) {
+        setupPanelSsidScanCursor = 0;
+        wifiScanStart();
+        screen = Screen::SetupPanelSsidScan;
+        return;
+      }
+      // String fields launch the positional character editor; everything
+      // else uses the standard rotate-to-cycle editing mode.
+      if (!strcmp(field, "pass")) {
+        panelStringBeginEdit(&machineCfg.link.password);
+      } else if (!strcmp(field, "host")) {
+        panelStringBeginEdit(&machineCfg.link.host);
+      }
+      setupPanelCursor = 1;
+      setupPanelEditing = true;
+      return;
+    }
+    if (setupPanelCursor == 1) {
+      setupPanelEditing = false;
+      persistActiveProfile();
+      setupPanelCursor = 0;
+      // Field list may have changed if the channel was just toggled; clamp
+      // the field cursor to the new range.
+      panelFieldList(count);
+      if (setupPanelField >= count) setupPanelField = count - 1;
+      return;
+    }
+    return;
+  }
+
+  if (screen == Screen::SetupPanelSsidScan) {
+    if (setupPanelSsidScanCursor == 0) {
+      // Rescan
+      wifiScanStart();
+      return;
+    }
+    if (setupPanelSsidScanCursor == 1) {
+      // Manual entry: drop into the positional character editor for ssid.
+      wifiScanRelease();
+      screen = Screen::SetupPanel;
+      panelStringBeginEdit(&machineCfg.link.ssid);
+      setupPanelCursor = 1;
+      setupPanelEditing = true;
+      return;
+    }
+    int resultIdx = setupPanelSsidScanCursor - 2;
+    if (resultIdx >= 0 && resultIdx < wifiScanCount()) {
+      machineCfg.link.ssid = wifiScanSsid(resultIdx);
+      persistActiveProfile();
+      wifiScanRelease();
+      infoLine = String("ssid ") + machineCfg.link.ssid;
+      screen = Screen::SetupPanel;
+      setupPanelCursor = 0;
+    }
+    return;
+  }
+
+  if (screen == Screen::SetupExtras) {
+    const int n = static_cast<int>(machineCfg.extras.items.size());
+    if (setupExtrasCursor < n) {
+      setupExtraEditIdx = setupExtrasCursor;
+      setupExtraField = 0;
+      setupExtraCursor = 0;
+      setupExtraEditing = false;
+      extraStringEditing = false;
+      screen = Screen::SetupExtraEdit;
+    } else if (setupExtrasCursor == n) {
+      // Add Extra
+      ExtraDeclaration d;
+      d.type = ExtraType::Gripper;
+      machineCfg.extras.items.push_back(d);
+      persistActiveProfile();
+      rebuildStepActions();
+      setupExtrasCursor = n;
+      infoLine = "Added extra";
+    } else {
+      // Del Last
+      if (n > 0) {
+        machineCfg.extras.items.pop_back();
+        persistActiveProfile();
+        rebuildStepActions();
+        if (setupExtrasCursor > static_cast<int>(machineCfg.extras.items.size()) + 1) {
+          setupExtrasCursor = static_cast<int>(machineCfg.extras.items.size()) + 1;
+        }
+        infoLine = "Removed extra";
+      } else {
+        infoLine = "No extras";
+      }
+    }
+    return;
+  }
+
+  if (screen == Screen::SetupExtraEdit) {
+    const int n = static_cast<int>(machineCfg.extras.items.size());
+    if (setupExtraEditIdx < 0 || setupExtraEditIdx >= n) {
+      screen = Screen::SetupExtras;
+      return;
+    }
+    if (extraStringEditing) {
+      extraStringAdvance();
+      return;
+    }
+    if (setupExtraCursor == 0) {
+      // Enter editing for the selected field.  String fields launch the
+      // positional character editor, otherwise rotate-to-cycle takes over.
+      if (setupExtraField == 2) {
+        extraStringBeginEdit(&machineCfg.extras.items[setupExtraEditIdx].label);
+      } else if (setupExtraField == 6) {
+        extraStringBeginEdit(&machineCfg.extras.items[setupExtraEditIdx].onTemplate);
+      } else if (setupExtraField == 7) {
+        extraStringBeginEdit(&machineCfg.extras.items[setupExtraEditIdx].offTemplate);
+      }
+      setupExtraCursor = 1;
+      setupExtraEditing = true;
+      return;
+    }
+    // cursor 1: short press exits editing for non-string fields and saves.
+    setupExtraEditing = false;
+    persistActiveProfile();
+    rebuildStepActions();
+    setupExtraCursor = 0;
+    return;
+  }
+
+  if (screen == Screen::StepOptionsList) {
+    std::vector<int> en = enabledExtraIndices();
+    if (stepOptionsListCursor >= 0 && stepOptionsListCursor < static_cast<int>(en.size())) {
+      stepOptionEditIdx = en[stepOptionsListCursor];
+      stepOptionDetailCursor = 0;
+      screen = Screen::StepOptionDetail;
+    } else {
+      // "Done": back to StepActions with the pending list intact.
+      screen = Screen::StepActions;
+    }
+    return;
+  }
+
+  if (screen == Screen::StepOptionDetail) {
+    const int n = static_cast<int>(machineCfg.extras.items.size());
+    if (stepOptionEditIdx < 0 || stepOptionEditIdx >= n) {
+      screen = Screen::StepActions;
+      return;
+    }
+    const ExtraDeclaration &d = machineCfg.extras.items[stepOptionEditIdx];
+    std::vector<ExtraPreset> presets = buildExtraPresets(d);
+    if (stepOptionDetailCursor < 0 || stepOptionDetailCursor >= static_cast<int>(presets.size())) {
+      return;
+    }
+    const ExtraPreset &p = presets[stepOptionDetailCursor];
+    applyExtraPreset(d, p);
+    if (p.lines.empty()) {
+      infoLine = String("Cleared ") + extraDisplayLabel(d);
+    } else {
+      infoLine = extraDisplayLabel(d) + ": " + p.label;
+    }
+    // Single-extra flow returns straight to Actions; multi-extra goes back
+    // to the chooser so the user can configure the next one without an
+    // extra hop.
+    std::vector<int> en = enabledExtraIndices();
+    if (en.size() <= 1) {
+      screen = Screen::StepActions;
+    } else {
+      screen = Screen::StepOptionsList;
+    }
+    return;
+  }
+
   if (screen == Screen::Step) {
     if (stepFeedEdit) {
       stepFeedEdit = false;
@@ -2776,30 +3971,46 @@ static void onShortPress() {
   }
 
   if (screen == Screen::StepActions) {
-    switch (stepActionIndex) {
-      case 0: // Next
-        stepAxis = 0;
-        stepValue = 0.0f;
-        stepValues.assign(machineCfg.axes.size(), 0.0f);
-        screen = Screen::Step;
-        break;
-      case 1: // Save
-        recordCurrentStep();
-        programStore.listPrograms(programNames);
-        // Default to "New program"; if a previously persisted target name
-        // matches an existing program, land the cursor on that row instead.
-        saveProgramIndex = static_cast<int>(programNames.size());
-        if (savedSaveTargetName.length() > 0) {
-          for (size_t i = 0; i < programNames.size(); i++) {
-            if (programNames[i] == savedSaveTargetName) {
-              saveProgramIndex = static_cast<int>(i);
-              break;
-            }
+    if (stepActionIndex < 0 || stepActionIndex >= static_cast<int>(stepActions.size())) {
+      return;
+    }
+    const String &sel = stepActions[stepActionIndex];
+    if (sel == "Next Step") {
+      stepAxis = 0;
+      stepValue = 0.0f;
+      stepValues.assign(machineCfg.axes.size(), 0.0f);
+      pendingStepExtras.clear();
+      rebuildStepActions();
+      screen = Screen::Step;
+    } else if (sel == "Options") {
+      std::vector<int> en = enabledExtraIndices();
+      if (en.empty()) {
+        infoLine = "No extras enabled";
+      } else if (en.size() == 1) {
+        // Skip the chooser when there's only one extra to configure.
+        stepOptionEditIdx = en.front();
+        stepOptionDetailCursor = 0;
+        screen = Screen::StepOptionDetail;
+      } else {
+        stepOptionsListCursor = 0;
+        screen = Screen::StepOptionsList;
+      }
+    } else if (sel == "Save") {
+      recordCurrentStep();
+      programStore.listPrograms(programNames);
+      // Default to "New program"; if a previously persisted target name
+      // matches an existing program, land the cursor on that row instead.
+      saveProgramIndex = static_cast<int>(programNames.size());
+      if (savedSaveTargetName.length() > 0) {
+        for (size_t i = 0; i < programNames.size(); i++) {
+          if (programNames[i] == savedSaveTargetName) {
+            saveProgramIndex = static_cast<int>(i);
+            break;
           }
         }
-        // saveModeIndex is preserved (loaded from NVS at boot, updated on save).
-        screen = Screen::StepSaveTarget;
-        break;
+      }
+      // saveModeIndex is preserved (loaded from NVS at boot, updated on save).
+      screen = Screen::StepSaveTarget;
     }
     return;
   }
@@ -2904,6 +4115,23 @@ static void onLongPress() {
   if (screen == Screen::StepSaveMode) {
     return;
   }
+  if (screen == Screen::SetupPanel && setupPanelStringEditing) {
+    panelStringCommit();
+    persistActiveProfile();
+    setupPanelEditing = false;
+    setupPanelCursor = 0;
+    uiDirty = true;
+    return;
+  }
+  if (screen == Screen::SetupExtraEdit && extraStringEditing) {
+    extraStringCommit();
+    persistActiveProfile();
+    rebuildStepActions();
+    setupExtraEditing = false;
+    setupExtraCursor = 0;
+    uiDirty = true;
+    return;
+  }
   if (screen == Screen::SetupAxes && setupAxesCursor == 2 && setupAxesEditing &&
       (setupAxesField == 0 || setupAxesField == 1)) {
     AxisConfig &a = machineCfg.axes[setupAxesAxis];
@@ -2964,12 +4192,118 @@ static void handleInput() {
         handleSetupDriverRotate(delta);
         uiDirty = true;
         break;
+      case Screen::SetupPanel:
+        handleSetupPanelRotate(delta);
+        uiDirty = true;
+        break;
+      case Screen::SetupPanelSsidScan: {
+        int total = 2 + (wifiScanState() == WifiScanState::Done ? wifiScanCount() : 0);
+        if (total > 0) {
+          int ni = setupPanelSsidScanCursor + delta;
+          if (ni < 0) ni = 0;
+          if (ni >= total) ni = total - 1;
+          setupPanelSsidScanCursor = ni;
+        }
+        uiDirty = true;
+        break;
+      }
       case Screen::Step:
         viewModel.applyAdaptiveDelta(delta);
         break;
       case Screen::StepActions: {
+        const int actionCount = static_cast<int>(stepActions.size());
         int ni = stepActionIndex + delta;
-        if (ni >= 0 && ni < stepActionCount) stepActionIndex = ni;
+        if (ni < 0) ni = 0;
+        if (ni >= actionCount) ni = actionCount - 1;
+        stepActionIndex = ni;
+        uiDirty = true;
+        break;
+      }
+      case Screen::SetupExtras: {
+        int total = static_cast<int>(machineCfg.extras.items.size()) + 2;
+        int ni = setupExtrasCursor + delta;
+        if (ni < 0) ni = 0;
+        if (ni >= total) ni = total - 1;
+        setupExtrasCursor = ni;
+        uiDirty = true;
+        break;
+      }
+      case Screen::SetupExtraEdit: {
+        if (extraStringEditing) {
+          extraStringRotate(delta);
+        } else if (setupExtraCursor == 0) {
+          int ni = setupExtraField + delta;
+          if (ni < 0) ni = 0;
+          if (ni >= setupExtraFieldCount) ni = setupExtraFieldCount - 1;
+          setupExtraField = ni;
+        } else if (setupExtraEditing &&
+                   setupExtraEditIdx >= 0 &&
+                   setupExtraEditIdx < static_cast<int>(machineCfg.extras.items.size())) {
+          // In-field rotate-to-cycle for non-string fields.  Strings drop
+          // through the dedicated extraString editor handled above.
+          ExtraDeclaration &d = machineCfg.extras.items[setupExtraEditIdx];
+          switch (setupExtraField) {
+            case 0: {  // type
+              int t = static_cast<int>(d.type) + delta;
+              const int max = static_cast<int>(ExtraType::Custom);
+              if (t < 0) t = 0;
+              if (t > max) t = max;
+              d.type = static_cast<ExtraType>(t);
+              break;
+            }
+            case 1:  // enabled toggle
+              d.enabled = (delta > 0);
+              break;
+            case 3: {  // ioPort 0..15
+              int v = d.ioPort + delta;
+              if (v < 0) v = 0;
+              if (v > 15) v = 15;
+              d.ioPort = v;
+              break;
+            }
+            case 4: {  // maxPower 100..10000 step 50
+              float v = d.maxPower + delta * 50.0f;
+              if (v < 0.0f) v = 0.0f;
+              if (v > 10000.0f) v = 10000.0f;
+              d.maxPower = v;
+              break;
+            }
+            case 5: {  // maxSpindleRpm 0..50000 step 500
+              float v = d.maxSpindleRpm + delta * 500.0f;
+              if (v < 0.0f) v = 0.0f;
+              if (v > 50000.0f) v = 50000.0f;
+              d.maxSpindleRpm = v;
+              break;
+            }
+            default:
+              break;
+          }
+        }
+        uiDirty = true;
+        break;
+      }
+      case Screen::StepOptionsList: {
+        std::vector<int> en = enabledExtraIndices();
+        int total = static_cast<int>(en.size()) + 1;  // +1 for "Done"
+        int ni = stepOptionsListCursor + delta;
+        if (ni < 0) ni = 0;
+        if (ni >= total) ni = total - 1;
+        stepOptionsListCursor = ni;
+        uiDirty = true;
+        break;
+      }
+      case Screen::StepOptionDetail: {
+        const int n = static_cast<int>(machineCfg.extras.items.size());
+        if (stepOptionEditIdx < 0 || stepOptionEditIdx >= n) break;
+        std::vector<ExtraPreset> presets =
+            buildExtraPresets(machineCfg.extras.items[stepOptionEditIdx]);
+        int total = static_cast<int>(presets.size());
+        if (total > 0) {
+          int ni = stepOptionDetailCursor + delta;
+          if (ni < 0) ni = 0;
+          if (ni >= total) ni = total - 1;
+          stepOptionDetailCursor = ni;
+        }
         uiDirty = true;
         break;
       }
@@ -3148,8 +4482,8 @@ void setup() {
   programStore.begin();
   programStore.listPrograms(programNames);
 
-  GrblSerial.begin(GRBL_UART_BAUD, SERIAL_8N1, GRBL_UART_RX_PIN, GRBL_UART_TX_PIN);
-  grblClient.begin(&GrblSerial, &grblParser);
+  selectTransport(machineCfg.link);
+  grblClient.begin(currentTransport, &grblParser);
   grblClient.setMotionAllowed(false);
   grblClient.sendRealtime(kOwnQueryRt);
 
@@ -3157,10 +4491,34 @@ void setup() {
   mpgLastSentRate = 0.0f;
   mpgJogActive = false;
   mpgLastJogMs = 0;
+
+  rebuildStepActions();
 }
 
 void loop() {
   handleInput();
+  if (currentTransport == &wifiTransport) {
+    wifiTransport.poll();
+    // Mirror the latest WifiTcpTransport status into `infoLine` on every
+    // change so the user sees live progress (joining → assoc fail → tcp ok)
+    // on whichever screen is active — the dedicated Status menu `Link:`
+    // line already polls statusText() per render, but SetupPanel relies on
+    // infoLine and would otherwise stay stuck on the initial "starting".
+    static String lastWifiStatus;
+    String nowWifi = wifiTransport.statusText();
+    if (nowWifi != lastWifiStatus) {
+      lastWifiStatus = nowWifi;
+      infoLine = String("WiFi: ") + nowWifi;
+      uiDirty = true;
+    }
+  }
+  if (screen == Screen::SetupPanelSsidScan) {
+    WifiScanState prev = wifiScanState();
+    WifiScanState now = wifiScanPoll();
+    if (now != prev) {
+      uiDirty = true;
+    }
+  }
   grblClient.update();
   updateOwnershipFromStatus();
 

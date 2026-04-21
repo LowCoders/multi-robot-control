@@ -94,6 +94,27 @@ bool ProgramStore::loadProgram(const String &name, ProgramData &out, const std::
         }
       }
     }
+
+    // Optional extras (added 2026): list of pre-motion G/M code commands
+    // attached to this step.  Older programs simply omit the field.
+    if (s["extras"].is<JsonArray>()) {
+      for (JsonObject ex : s["extras"].as<JsonArray>()) {
+        ExtraCommand cmd;
+        if (ex["type"].is<const char *>()) {
+          cmd.type = extraTypeFromString(String(ex["type"].as<const char *>()));
+        }
+        cmd.label = ex["label"] | "";
+        if (ex["lines"].is<JsonArray>()) {
+          for (JsonVariant v : ex["lines"].as<JsonArray>()) {
+            if (v.is<const char *>()) {
+              cmd.lines.push_back(String(v.as<const char *>()));
+            }
+          }
+        }
+        step.extras.push_back(cmd);
+      }
+    }
+
     out.steps.push_back(step);
   }
   return true;
@@ -114,6 +135,18 @@ bool ProgramStore::saveProgram(const ProgramData &program, const std::vector<Axi
     for (size_t i = 0; i < axes_cfg.size(); i++) {
       float v = i < s.axes.size() ? s.axes[i] : 0.0f;
       axes[axes_cfg[i].name] = v;
+    }
+    if (!s.extras.empty()) {
+      JsonArray extras = so["extras"].to<JsonArray>();
+      for (const ExtraCommand &ex : s.extras) {
+        JsonObject eo = extras.add<JsonObject>();
+        eo["type"] = extraTypeToString(ex.type);
+        eo["label"] = ex.label;
+        JsonArray lines = eo["lines"].to<JsonArray>();
+        for (const String &line : ex.lines) {
+          lines.add(line);
+        }
+      }
     }
   }
 

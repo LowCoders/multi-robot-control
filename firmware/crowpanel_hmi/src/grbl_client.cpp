@@ -19,9 +19,18 @@ bool GrblClient::isMotionCommand(const String &line) const {
   return false;
 }
 
-void GrblClient::begin(HardwareSerial *serial, GrblParser *parser) {
-  _serial = serial;
+void GrblClient::begin(IGrblTransport *transport, GrblParser *parser) {
+  _transport = transport;
   _parser = parser;
+}
+
+void GrblClient::setTransport(IGrblTransport *transport) {
+  // Reset RX/queue bookkeeping when swapping transports so a stale half-line
+  // or pending OK from the previous link doesn't leak across.
+  _transport = transport;
+  _rx_line = "";
+  _awaiting_ok = false;
+  _awaiting_line = "";
 }
 
 bool GrblClient::queueLine(const String &line) {
@@ -44,17 +53,17 @@ void GrblClient::clearQueue() {
 }
 
 void GrblClient::sendRealtime(uint8_t cmd) {
-  if (!_serial) {
+  if (!_transport || !_transport->connected()) {
     return;
   }
-  _serial->write(cmd);
+  _transport->write(cmd);
 }
 
 void GrblClient::requestStatus() {
-  if (!_serial) {
+  if (!_transport || !_transport->connected()) {
     return;
   }
-  _serial->write('?');
+  _transport->write(static_cast<uint8_t>('?'));
 }
 
 bool GrblClient::isIdle() const {
@@ -93,12 +102,21 @@ void GrblClient::processLine(const String &line) {
 }
 
 void GrblClient::update() {
-  if (!_serial) {
+  if (!_transport) {
     return;
   }
 
-  while (_serial->available()) {
-    char c = static_cast<char>(_serial->read());
+  if (!_transport->connected()) {
+    if (_awaiting_ok) {
+      _last_error = String("link down: ") + _awaiting_line;
+      _awaiting_ok = false;
+      _awaiting_line = "";
+    }
+    return;
+  }
+
+  while (_transport->available()) {
+    char c = static_cast<char>(_transport->read());
     if (c == '\r') {
       continue;
     }
@@ -129,7 +147,7 @@ void GrblClient::update() {
     Serial.printf("[GRBL] %lu ms: TX [%s] q=%u\n",
                   millis(), line.c_str(),
                   static_cast<unsigned>(_queue.size()));
-    _serial->println(line);
+    _transport->println(line);
     _recent_tx.push_back(line);
     if (_recent_tx.size() > kRecentTxCap) {
       _recent_tx.pop_front();

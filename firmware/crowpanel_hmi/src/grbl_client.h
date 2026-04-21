@@ -4,10 +4,14 @@
 #include <deque>
 
 #include "grbl_parser.h"
+#include "transport.h"
 
 class GrblClient {
 public:
-  void begin(HardwareSerial *serial, GrblParser *parser);
+  void begin(IGrblTransport *transport, GrblParser *parser);
+  void setTransport(IGrblTransport *transport);
+  IGrblTransport *transport() const { return _transport; }
+
   void update();
 
   bool queueLine(const String &line);
@@ -18,6 +22,7 @@ public:
   bool hasPending() const { return !_queue.empty() || _awaiting_ok; }
   size_t queuedCount() const { return _queue.size(); }
   bool awaitingOk() const { return _awaiting_ok; }
+  bool linkUp() const { return _transport && _transport->connected(); }
   const String &lastError() const { return _last_error; }
   void clearError() { _last_error = ""; }
   void clearQueue();
@@ -33,7 +38,7 @@ private:
 
   static constexpr size_t kRecentTxCap = 16;
 
-  HardwareSerial *_serial = nullptr;
+  IGrblTransport *_transport = nullptr;
   GrblParser *_parser = nullptr;
   std::deque<String> _queue;
   std::deque<String> _recent_tx;

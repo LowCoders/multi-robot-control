@@ -36,6 +36,16 @@ const ProgramStep *ProgramEngine::activeStep() const {
 }
 
 bool ProgramEngine::queueStep(const ProgramStep &step, GrblClient &client, const std::vector<AxisConfig> &axes_cfg) {
+  // Extras run before the motion so the user can e.g. open a gripper or
+  // turn on a laser while the previous move is still settling.  Failure on
+  // any extra line leaves the engine paused so the operator can investigate.
+  for (const ExtraCommand &ex : step.extras) {
+    for (const String &extraLine : ex.lines) {
+      if (extraLine.isEmpty()) continue;
+      if (!client.queueLine(extraLine)) return false;
+    }
+  }
+
   String line = "G1";
   const bool incremental = (step.mode == "step");
   for (size_t i = 0; i < axes_cfg.size(); i++) {

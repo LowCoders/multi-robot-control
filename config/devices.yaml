@@ -106,3 +106,14 @@ devices:
         serial_number: "5B8E071772"
       port: /dev/serial/by-id/usb-1a86_USB_Single_Serial_5B8E071772-if00
       baudrate: 115200
+      # Closed-loop feedback bekötés a grblHAL ESP32-S3 SERIAL2 portjára.
+      # A pozíció és státusz a `?` realtime status report kiterjesztéséből (|CL: és |CLst:)
+      # érkezik vissza, a grblHAL plugin (closed_loop_feedback.c) végzi a pollozást.
+      closed_loop_feedback:
+        topology: uart       # uart = Topológia A (közvetlen TTL); rs485 = Topológia B (RS485-CAN-TTL modul)
+        baudrate: 38400
+        poll_interval_ms: 100
+        axes:
+          X: { address: 1 }
+          Y: { address: 2 }
+          Z: { address: 3 }

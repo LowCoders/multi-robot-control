@@ -555,21 +555,27 @@ class GrblDeviceBase(SerialDeviceBase):
         except Exception:
             return {}
     
-    async def set_grbl_setting(self, setting: int, value: float) -> bool:
+    async def set_grbl_setting(self, setting: int, value) -> bool:
         """
         GRBL beállítás módosítása.
-        
+
         Args:
             setting: Beállítás száma (pl. 100 = steps/mm X)
-            value: Új érték
-            
+            value: Új érték — szám (float/int) vagy string. A grblHAL
+                networking pluginja string-értékű settingeket is használ
+                (pl. ``$71`` hostname, ``$73`` AP SSID, ``$74`` AP pass,
+                ``$75`` STA SSID, ``$76`` STA pass), amiket idézőjel nélkül
+                kell elküldeni: ``$73=tube_bender_1``.
+
         Returns:
             True ha sikeres
         """
         try:
-            # Integer-only settings must be sent without decimal point.
-            if setting in (1, 4):
-                command = f"${setting}={int(round(value))}"
+            if isinstance(value, str):
+                command = f"${setting}={value}"
+            elif setting in (1, 4):
+                # Integer-only settings must be sent without decimal point.
+                command = f"${setting}={int(round(float(value)))}"
             else:
                 command = f"${setting}={value}"
             response = await self._send_command(command)

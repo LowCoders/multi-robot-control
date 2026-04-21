@@ -1064,8 +1064,13 @@ export function createApiRoutes(
       return;
     }
 
+    // Accept either numeric or string values: numeric covers $1/$4/$100…
+    // (axis/limit/etc.), string covers networking parameters such as
+    // $71 (hostname), $73 (AP SSID), $74 (AP password), $75 (STA SSID),
+    // $76 (STA password), which grblHAL stores as strings.
     for (const [key, value] of Object.entries(settings as Record<string, unknown>)) {
-      if (!/^\d+$/.test(key) || !validateNumber(value)) {
+      const isStringValue = typeof value === 'string';
+      if (!/^\d+$/.test(key) || (!validateNumber(value) && !isStringValue)) {
         res.status(400).json({ error: `Érvénytelen GRBL setting: ${key}` });
         return;
       }
@@ -1073,7 +1078,7 @@ export function createApiRoutes(
 
     const success = await deviceManager.setGrblSettingsBatch(
       req.params.id,
-      settings as Record<string, number>
+      settings as Record<string, number | string>
     );
     if (!success) {
       res.status(500).json({ success: false, error: 'GRBL settings mentés sikertelen' });

@@ -399,7 +399,7 @@ class ControlLockDecorator(DeviceDriver):
             return await self._inner.get_grbl_settings()
         return {}
 
-    async def set_grbl_setting(self, setting: int, value: float) -> bool:
+    async def set_grbl_setting(self, setting: int, value) -> bool:
         if not self._host_command_allowed():
             return False
         if hasattr(self._inner, "set_grbl_setting"):

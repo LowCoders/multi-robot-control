@@ -901,7 +901,7 @@ export class DeviceManager {
     }
   }
 
-  async setGrblSettingsBatch(deviceId: string, settings: Record<string, number>): Promise<boolean> {
+  async setGrblSettingsBatch(deviceId: string, settings: Record<string, number | string>): Promise<boolean> {
     try {
       const response = await this.http.post(`/devices/${deviceId}/grbl-settings/batch`, {
         settings,
