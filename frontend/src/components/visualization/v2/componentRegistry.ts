@@ -394,11 +394,14 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       //                            és a #18 tengelyel).
       //
       // A pinion bore (Ø8) függőlegesen átmegy az egész fogaskeréken; a #8 driven
-      // gear bore-jával PONTOSAN egy tengelyen (bracket X=0, Z=-12.76, az apex
-      // függőleges vonalán). A második furat +Z-ben (+40 mm world-X) és a #19
-      // másolat külön — az eredeti #6 itt marad X=0-nál.
+      // gear bore-jával eredetileg PONTOSAN egy tengelyen volt (bracket X=0,
+      // Z=-12.76, az apex függőleges vonalán), de a felhasználói kérésre
+      // ÁTHELYEZVE +40 mm-rel +X-be (bracket X=+40), ahol a 16. elem oldalain
+      // található MÁSIK Ø8 furat van. A #8 (driven bevel) ÉRINTETLEN az X=0-on
+      // — a meshing így megszűnik, de a kísérlet célja a fizikai illeszkedés
+      // ellenőrzése a második furathoz.
       position: [
-        0,
+        +40,
         GEAR_BRACKET_DIMENSIONS.outerHeightY / 2 -
           PINION_GEAR_15M_17T_DIMENSIONS.gearFaceWidth +
           GEAR_BRACKET_DIMENSIONS.armYOffset,
@@ -1062,17 +1065,21 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
   {
     id: 'pinion-gear-2',
     num: 19,
-    nameHu: 'fogaskerék 1.5M 17T (másolat, 2. furat: +Z40, X−6)',
-    nameEn: 'pinion gear 1.5M 17T (copy, 2nd hole: +Z40, X−6)',
+    nameHu: 'fogaskerék 1.5M 17T (másolat, +40 mm world-X-ben)',
+    nameEn: 'pinion gear 1.5M 17T (copy, +40 mm world-X)',
     color: generatePartColor(18),
     parentId: 'gear-bracket-1',
     assemblyId: 'x-axis-drive',
     transform: {
-      // A #6 (`pinion-gear-1`) MÁSOLATA, ugyanazon a bracket-en (#16), a 2. Ø8
-      // furaton: bracket-lokális (X, Z) = (shaftHoleX2, shaftHoleZ2).
-      // A többi paraméter (Y, rotation) változatlan a #6-hoz képest.
+      // A #6 (`pinion-gear-1`) MÁSOLATA, ugyanazon a bracket-en (#16), de a 2.
+      // Ø8 furatra illesztve: bracket-lokális Z = SHAFT_HOLE_Z_2 = +27.24
+      // (= az 1. furattol +40 mm-rel +Z bracket-lokálisban = +40 mm world-X-ben).
+      // A többi paraméter (X = 0, Y = +18.2, rotation [π/2, 0, 0]) változatlan
+      // a #6-hoz képest. Ez a másolt példány a 2. furatra szerelt fix fogaskerék —
+      // a #8 driven bevel (Z=-12.76) NEM kapcsolódik vele, ez egy önálló pinion
+      // a 2. tengelyen.
       position: [
-        GEAR_BRACKET_DIMENSIONS.shaftHoleX2,
+        0,
         GEAR_BRACKET_DIMENSIONS.outerHeightY / 2 -
           PINION_GEAR_15M_17T_DIMENSIONS.gearFaceWidth +
           GEAR_BRACKET_DIMENSIONS.armYOffset,
@@ -1094,26 +1101,27 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
     },
     description:
       'A `pinion-gear-1` (#6) MÁSOLATA — azonos geometriával, ugyanazon a ' +
-      '`gear-bracket-1`-en (#16), a bracket arm-jain lévő 2. Ø8 furaton ' +
-      '(bracket-lokális Z = +27.24 az 1.-től +40 mm world-X-ben, X = -6 mm). ' +
-      'A másolt #20 tengelyen forog. A #8 driven bevel-lel NEM mesh-el.',
+      '`gear-bracket-1`-en (#16), de a bracket arm-jain lévő 2. Ø8 furatra ' +
+      'illesztve (+40 mm world-X-ben az eredetihez képest). A másolt #20 ' +
+      'tengelyen forog. Az eredetit (#6) NEM mozgattuk — ez egy KÜLÖN példány ' +
+      'a bracket másik furat-pozícióján. A #8 driven bevel-lel NEM mesh-el (mert ' +
+      'a #8 a Z=-12.76 furaton van, ez pedig a Z=+27.24-en).',
   },
   {
     id: 'shaft-pinion-bevel-2',
     num: 20,
-    nameHu: 'tengely Ø8 (másolat, 2. furat: +Z40, X−6)',
-    nameEn: 'shaft Ø8 (copy, 2nd hole: +Z40, X−6)',
+    nameHu: 'tengely Ø8 (másolat, +40 mm world-X-ben)',
+    nameEn: 'shaft Ø8 (copy, +40 mm world-X)',
     color: generatePartColor(19),
     parentId: 'gear-bracket-1',
     assemblyId: 'x-axis-drive',
     transform: {
-      // A #18 (`shaft-pinion-bevel-1`) MÁSOLATA, a 2. Ø8 furaton: (X, Z) =
-      // (shaftHoleX2, shaftHoleZ2). Y és rotation a #18-hoz igazítva.
-      position: [
-        GEAR_BRACKET_DIMENSIONS.shaftHoleX2,
-        +10.0,
-        GEAR_BRACKET_DIMENSIONS.shaftHoleZ2,
-      ],
+      // A #18 (`shaft-pinion-bevel-1`) MÁSOLATA, ugyanazon bracket-en, de a 2.
+      // Ø8 furatra illesztve: bracket-lokális Z = SHAFT_HOLE_Z_2 = +27.24.
+      // X, Y, rotation (identity) változatlan a #18-hoz képest. Hossza 96.4 mm
+      // marad, így alja Y = -38.2, teteje Y = +58.2 — a leeresztett arm-ok
+      // mindkét furatán átmegy.
+      position: [0, +10.0, GEAR_BRACKET_DIMENSIONS.shaftHoleZ2],
       rotation: [0, 0, 0],
     },
     bbox: {
@@ -1130,8 +1138,11 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
     },
     description:
       'A `shaft-pinion-bevel-1` (#18) MÁSOLATA — azonos Ø8 × 96.4 mm acéltengely, ' +
-      'ugyanazon a `gear-bracket-1`-en (#16), a 2. Ø8 furaton (Z = +27.24, X = -6). ' +
-      'A `pinion-gear-2` (#19) másolt fogaskereket tartja.',
+      'ugyanazon a `gear-bracket-1`-en (#16), de a bracket arm-jain lévő 2. Ø8 ' +
+      'furatra illesztve (+40 mm world-X-ben az eredetihez képest, vagyis ' +
+      'bracket-lokálisan Z = +27.24). A `pinion-gear-2` (#19) másolt fogaskereket ' +
+      'tartja. Az eredetit (#18) NEM mozgattuk — ez egy KÜLÖN példány a 2. ' +
+      'furat-pozíción.',
   },
 ]
 

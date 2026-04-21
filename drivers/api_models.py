@@ -15,9 +15,9 @@ megmaradt másolatait is változtatnád — a bridge_server csak importálja
 őket innen, hogy egy helyen legyen a definíció.
 """
 
-from typing import Any, Dict, List, Optional, Union, Annotated, Literal
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 # =========================================
@@ -182,45 +182,3 @@ class GrblSettingsBatchRequest(BaseModel):
     """
 
     settings: Dict[int, Union[float, str]]
-
-
-# =========================================
-# WebSocket (discriminated union on `type`)
-# =========================================
-
-
-class WsPingMsg(BaseModel):
-    """Kliens ping."""
-
-    type: Literal["ping"]
-
-
-class WsGetStatusMsg(BaseModel):
-    """Állapot lekérés egy eszközhöz."""
-
-    type: Literal["get_status"]
-    device_id: str
-
-
-class WsJogMsg(BaseModel):
-    """Egyszeri jog."""
-
-    type: Literal["jog"]
-    device_id: str
-    axis: str = "X"
-    distance: float = 1.0
-    feed_rate: float = 1000.0
-
-
-class WsCommandMsg(BaseModel):
-    """Vezérlő parancs (run/pause/...)."""
-
-    type: Literal["command"]
-    device_id: str
-    command: str
-
-
-WsIncoming = Annotated[
-    Union[WsPingMsg, WsGetStatusMsg, WsJogMsg, WsCommandMsg],
-    Field(discriminator="type"),
-]

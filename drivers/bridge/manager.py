@@ -91,7 +91,7 @@ class DeviceManager:
                 continue
             await self.add_device(DeviceConfig(**device_conf))
 
-    async def add_device(self, config: DeviceConfig) -> bool:
+    async def add_device(self, config: DeviceConfig) -> bool:  # noqa: C901
         """Új eszköz hozzáadása."""
         try:
             driver = config.driver.lower()
@@ -282,7 +282,27 @@ class DeviceManager:
                 connection_info=connection_info,
             )
 
-            self._wire_device_callbacks(config.id, device)
+            device_id = config.id
+            device.on_state_change = lambda old, new, d_id=device_id: asyncio.create_task(
+                self._broadcast_state_change(d_id, old, new)
+            )
+            device.on_position_update = lambda pos, d_id=device_id: asyncio.create_task(
+                self._broadcast_position(d_id, pos)
+            )
+            device.on_error = lambda msg, d_id=device_id: asyncio.create_task(
+                self._broadcast_error(d_id, msg)
+            )
+            device.on_job_complete = lambda file, d_id=device_id: asyncio.create_task(
+                self._broadcast_job_complete(d_id, file)
+            )
+            device.on_job_progress = lambda progress, line, total, d_id=device_id: asyncio.create_task(
+                self._broadcast_job_progress(d_id, progress, line, total)
+            )
+
+            if hasattr(device, "on_control_change"):
+                device.on_control_change = lambda control, d_id=device_id: asyncio.create_task(
+                    self._broadcast_control_state(d_id, control)
+                )
 
             self.devices[config.id] = device
             logger.info(f"Eszköz hozzáadva: {config.id} ({config.name})")
@@ -291,29 +311,6 @@ class DeviceManager:
         except Exception as exc:
             logger.error(f"Eszköz hozzáadási hiba ({config.id}): {str(exc)}")
             return False
-
-    def _wire_device_callbacks(self, device_id: str, device: DeviceDriver) -> None:
-        """Közös callback-regisztráció minden driver-típushoz."""
-        device.on_state_change = lambda old, new, d_id=device_id: asyncio.create_task(
-            self._broadcast_state_change(d_id, old, new)
-        )
-        device.on_position_update = lambda pos, d_id=device_id: asyncio.create_task(
-            self._broadcast_position(d_id, pos)
-        )
-        device.on_error = lambda msg, d_id=device_id: asyncio.create_task(
-            self._broadcast_error(d_id, msg)
-        )
-        device.on_job_complete = lambda file, d_id=device_id: asyncio.create_task(
-            self._broadcast_job_complete(d_id, file)
-        )
-        device.on_job_progress = lambda progress, line, total, d_id=device_id: asyncio.create_task(
-            self._broadcast_job_progress(d_id, progress, line, total)
-        )
-
-        if hasattr(device, "on_control_change"):
-            device.on_control_change = lambda control, d_id=device_id: asyncio.create_task(
-                self._broadcast_control_state(d_id, control)
-            )
 
     def _resolve_device_port(self, config: DeviceConfig) -> Optional[str]:
         """

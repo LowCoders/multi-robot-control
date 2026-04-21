@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 try:
     from api_models import GrblSettingRequest, GrblSettingsBatchRequest
 except ImportError:
     from ...api_models import GrblSettingRequest, GrblSettingsBatchRequest
 
-from ..dependencies import DeviceDriverDep
+from ..state import device_manager
 
 router = APIRouter()
 
 
 @router.get("/devices/{device_id}/grbl-settings")
-async def get_grbl_settings(device: DeviceDriverDep):
+async def get_grbl_settings(device_id: str):
     """GRBL beállítások lekérdezése ($$)."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
     if not hasattr(device, "get_grbl_settings"):
         raise HTTPException(status_code=400, detail="Device does not support GRBL settings")
 
@@ -28,8 +32,12 @@ async def get_grbl_settings(device: DeviceDriverDep):
 
 
 @router.post("/devices/{device_id}/grbl-settings")
-async def set_grbl_setting(request: GrblSettingRequest, device: DeviceDriverDep):
+async def set_grbl_setting(device_id: str, request: GrblSettingRequest):
     """GRBL beállítás módosítása ($N=value)."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
     if not hasattr(device, "set_grbl_setting"):
         raise HTTPException(status_code=400, detail="Device does not support GRBL settings")
 
@@ -45,10 +53,12 @@ async def set_grbl_setting(request: GrblSettingRequest, device: DeviceDriverDep)
 
 
 @router.post("/devices/{device_id}/grbl-settings/batch")
-async def set_grbl_settings_batch(
-    request: GrblSettingsBatchRequest, device: DeviceDriverDep
-):
+async def set_grbl_settings_batch(device_id: str, request: GrblSettingsBatchRequest):
     """Több GRBL beállítás módosítása egyszerre."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
     if not hasattr(device, "set_grbl_setting"):
         raise HTTPException(status_code=400, detail="Device does not support GRBL settings")
 

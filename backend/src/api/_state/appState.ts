@@ -18,7 +18,6 @@ export { automationRules } from './automationState.js';
 
 export type { Job, ExecutionMode } from './jobQueueState.js';
 export {
-  jobRepository,
   jobQueue,
   executionModeRef,
   getExecutionMode,

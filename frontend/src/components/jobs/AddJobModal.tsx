@@ -74,14 +74,12 @@ export default function AddJobModal({
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    if (devices.length === 0) return
-    setFormData((prev) => {
-      if (prev.deviceId && devices.some((d) => d.id === prev.deviceId)) return prev
+    if (devices.length > 0 && !formData.deviceId) {
       const lastId = loadLastDevice()
-      const validId = devices.find((d) => d.id === lastId)?.id ?? devices[0]!.id
-      return { ...prev, deviceId: validId }
-    })
-  }, [devices])
+      const validId = devices.find((d) => d.id === lastId)?.id || devices[0].id
+      setFormData((prev) => ({ ...prev, deviceId: validId }))
+    }
+  }, [devices, formData.deviceId])
 
   const handleDeviceChange = (deviceId: string) => {
     setFormData({ ...formData, deviceId })
@@ -103,15 +101,14 @@ export default function AddJobModal({
     e.preventDefault()
     setIsSubmitting(true)
 
-    const name = formData.name || formData.filepath.split('/').pop() || 'Új Job'
-    const estimatedParsed = formData.estimatedTime
-      ? parseInt(formData.estimatedTime, 10)
-      : undefined
-    const payload =
-      estimatedParsed !== undefined
-        ? { name, deviceId: formData.deviceId, filepath: formData.filepath, estimatedTime: estimatedParsed }
-        : { name, deviceId: formData.deviceId, filepath: formData.filepath }
-    await onSubmit(payload)
+    await onSubmit({
+      name: formData.name || formData.filepath.split('/').pop() || 'Új Job',
+      deviceId: formData.deviceId,
+      filepath: formData.filepath,
+      estimatedTime: formData.estimatedTime
+        ? parseInt(formData.estimatedTime, 10)
+        : undefined,
+    })
 
     setIsSubmitting(false)
     setFormData({

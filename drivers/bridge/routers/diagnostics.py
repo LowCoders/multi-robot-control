@@ -5,19 +5,34 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 try:
     from log_config import get_logger
+    from robot_arm_driver import RobotArmDevice
 except ImportError:
     from ...log_config import get_logger
+    from ...robot_arm_driver import RobotArmDevice
 
-from ..dependencies import get_robot_arm_or_400
-from ..state import active_test_events, active_test_progress
+from ..state import active_test_events, active_test_progress, device_manager
 from ._runner import run_serial_test
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+def _get_robot_arm_or_400(device_id: str, kind: str):
+    """Visszaadja a (device, metadata) tuple-t robotkar eszközhöz, vagy 4xx."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    metadata = device_manager.device_metadata.get(device_id)
+    if not isinstance(device, RobotArmDevice):
+        raise HTTPException(
+            status_code=400,
+            detail=f"A {kind} jelenleg csak robotkar eszközökhöz érhető el.",
+        )
+    return device, metadata
 
 
 async def _ensure_serial_or_reconnect(device, device_id: str) -> None:
@@ -40,13 +55,9 @@ async def _ensure_serial_or_reconnect(device, device_id: str) -> None:
 
 
 @router.post("/devices/{device_id}/diagnostics")
-async def run_diagnostics(
-    device_id: str,
-    move_test: bool = False,
-    pair=Depends(get_robot_arm_or_400),
-):
+async def run_diagnostics(device_id: str, move_test: bool = False):
     """Board diagnosztika futtatása a meglévő serial kapcsolaton."""
-    device, metadata = pair
+    device, metadata = _get_robot_arm_or_400(device_id, "diagnosztika")
 
     if metadata and metadata.simulated:
         from board_diagnostics import DiagnosticsReport, TestResult
@@ -112,9 +123,9 @@ async def run_diagnostics(
 
 
 @router.post("/devices/{device_id}/firmware-probe")
-async def run_firmware_probe(device_id: str, pair=Depends(get_robot_arm_or_400)):
+async def run_firmware_probe(device_id: str):
     """Firmware paraméterek felderítése – különböző parancsok kipróbálása."""
-    device, metadata = pair
+    device, metadata = _get_robot_arm_or_400(device_id, "firmware felderítés")
 
     if metadata and metadata.simulated:
         return {
@@ -158,10 +169,9 @@ async def run_endstop_test(
     step_size: float = 5.0,
     speed: int = 15,
     max_angle: float = 200.0,
-    pair=Depends(get_robot_arm_or_400),
 ):
     """Végállás teszt – minden tengely végállásig mozgatása."""
-    device, metadata = pair
+    device, metadata = _get_robot_arm_or_400(device_id, "végállás teszt")
 
     if metadata and metadata.simulated:
         return {
@@ -196,9 +206,9 @@ async def run_endstop_test(
 
 
 @router.get("/devices/{device_id}/endstops")
-async def get_endstop_states(pair=Depends(get_robot_arm_or_400)):
+async def get_endstop_states(device_id: str):
     """Végállás érzékelők aktuális állapotának lekérdezése (M119)."""
-    device, metadata = pair
+    device, metadata = _get_robot_arm_or_400(device_id, "végállás állapot")
 
     if metadata and metadata.simulated:
         return {"endstops": {"X": False, "Y": False, "Z": False}}
@@ -219,13 +229,9 @@ async def get_endstop_states(pair=Depends(get_robot_arm_or_400)):
 
 
 @router.post("/devices/{device_id}/motion-test")
-async def run_motion_test(
-    device_id: str,
-    test_angle: float = 30.0,
-    pair=Depends(get_robot_arm_or_400),
-):
+async def run_motion_test(device_id: str, test_angle: float = 30.0):
     """Mozgásminőség teszt – különböző sebességekkel."""
-    device, metadata = pair
+    device, metadata = _get_robot_arm_or_400(device_id, "mozgásteszt")
 
     if metadata and metadata.simulated:
         return {

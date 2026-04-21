@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 try:
     from log_config import get_logger
@@ -13,7 +13,6 @@ except ImportError:
     from ...log_config import get_logger
     from ...robot_arm_driver import RobotArmDevice
 
-from ..dependencies import DeviceDriverDep
 from ..helpers import auto_claim_host_if_supported
 from ..manager import CONNECT_TIMEOUT_SECONDS
 from ..state import device_manager
@@ -23,8 +22,12 @@ router = APIRouter()
 
 
 @router.post("/devices/{device_id}/connect")
-async def connect_device(device_id: str, device: DeviceDriverDep):
+async def connect_device(device_id: str):
     """Csatlakozás az eszközhöz."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
     try:
         device_port = getattr(device, "port", "n/a")
         logger.info(f"[CONNECT_API:{device_id}] begin port={device_port}")
@@ -77,15 +80,23 @@ async def connect_device(device_id: str, device: DeviceDriverDep):
 
 
 @router.post("/devices/{device_id}/disconnect")
-async def disconnect_device(device: DeviceDriverDep):
+async def disconnect_device(device_id: str):
     """Lecsatlakozás az eszközről."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
     await device.disconnect()
     return {"success": True}
 
 
 @router.post("/devices/{device_id}/reconnect")
-async def reconnect_device(device_id: str, device: DeviceDriverDep):
+async def reconnect_device(device_id: str):
     """Újracsatlakozás az eszközhöz (USB disconnect/reconnect után)."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
     if isinstance(device, RobotArmDevice):
         result = await device.reconnect()
     else:

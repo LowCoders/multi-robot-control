@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useJobsPolling } from '../hooks/useJobsPolling'
-import { hostGet, hostPost, hostDelete } from '../utils/hostApi'
 import { Link } from 'react-router-dom'
 import {
   Play,
@@ -263,21 +261,47 @@ export default function JobManager() {
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-
-  const jobsRef = useRef<Job[]>([])
-  jobsRef.current = jobs
-
-  const getStoredExecutionMode = useCallback(
-    () => loadFromStorage(STORAGE_KEYS.EXECUTION_MODE, 'sequential'),
-    []
-  )
-
-  useJobsPolling<Job>({
-    setJobs,
-    setIsLoading,
-    jobsRef,
-    getStoredExecutionMode,
-  })
+  
+  // Load jobs from API and sync mode from backend on first load
+  useEffect(() => {
+    let isFirstLoad = true
+    
+    const loadJobs = async () => {
+      try {
+        const response = await fetch('/api/jobs')
+        if (response.ok) {
+          const data = await response.json()
+          setJobs(data.jobs)
+          
+          // On first load, sync localStorage mode with backend
+          if (isFirstLoad && data.executionMode) {
+            // If localStorage has a different mode, update backend
+            const storedMode = loadFromStorage(STORAGE_KEYS.EXECUTION_MODE, 'sequential')
+            if (storedMode !== data.executionMode) {
+              // Update backend to match localStorage
+              fetch('/api/jobs/mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: storedMode }),
+              }).catch((err) => log.error(err))
+            }
+            isFirstLoad = false
+          }
+        }
+      } catch (error) {
+        log.error('Failed to load jobs:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadJobs()
+    
+    // Poll faster when jobs are running
+    const hasRunningJobs = jobs.some(j => j.status === 'running')
+    const pollInterval = hasRunningJobs ? 500 : 2000
+    const interval = setInterval(loadJobs, pollInterval)
+    return () => clearInterval(interval)
+  }, [jobs.some(j => j.status === 'running')])
   
   // Sync execution mode with backend and localStorage
   const handleModeChange = async (mode: typeof executionMode) => {
@@ -285,7 +309,11 @@ export default function JobManager() {
     saveToStorage(STORAGE_KEYS.EXECUTION_MODE, mode)
     
     try {
-      await hostPost('/jobs/mode', { mode })
+      await fetch('/api/jobs/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      })
     } catch (error) {
       log.error('Failed to update mode:', error)
     }
@@ -293,8 +321,16 @@ export default function JobManager() {
   
   const handleAddJob = async (jobData: { name: string; deviceId: string; filepath: string; estimatedTime?: number }) => {
     try {
-      const newJob = (await hostPost('/jobs', jobData)) as Job
-      setJobs((prev) => [...prev, newJob])
+      const response = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobData),
+      })
+      
+      if (response.ok) {
+        const newJob = await response.json()
+        setJobs([...jobs, newJob])
+      }
     } catch (error) {
       log.error('Failed to add job:', error)
     }
@@ -302,8 +338,14 @@ export default function JobManager() {
   
   const handleRunJob = async (jobId: string) => {
     try {
-      const data = (await hostPost(`/jobs/${jobId}/run`)) as { job: Job }
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? data.job : j)))
+      const response = await fetch(`/api/jobs/${jobId}/run`, {
+        method: 'POST',
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setJobs(jobs.map(j => j.id === jobId ? data.job : j))
+      }
     } catch (error) {
       log.error('Failed to run job:', error)
     }
@@ -311,8 +353,14 @@ export default function JobManager() {
   
   const handlePauseJob = async (jobId: string) => {
     try {
-      const data = (await hostPost(`/jobs/${jobId}/pause`)) as { job: Job }
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? data.job : j)))
+      const response = await fetch(`/api/jobs/${jobId}/pause`, {
+        method: 'POST',
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setJobs(jobs.map(j => j.id === jobId ? data.job : j))
+      }
     } catch (error) {
       log.error('Failed to pause job:', error)
     }
@@ -322,12 +370,18 @@ export default function JobManager() {
     if (!confirm('Biztosan törölni szeretnéd ezt a job-ot?')) return
     
     try {
-      await hostDelete(`/jobs/${jobId}`)
-      setJobs((prev) => prev.filter((j) => j.id !== jobId))
-      setExpandedViews((prev) => {
-        const { [jobId]: _, ...rest } = prev
-        return rest
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        method: 'DELETE',
       })
+      
+      if (response.ok) {
+        setJobs(jobs.filter(j => j.id !== jobId))
+        // Clean up expanded views state
+        setExpandedViews(prev => {
+          const { [jobId]: _, ...rest } = prev
+          return rest
+        })
+      }
     } catch (error) {
       log.error('Failed to delete job:', error)
     }
@@ -336,9 +390,20 @@ export default function JobManager() {
   const handleRunAll = async () => {
     setIsRunningAll(true)
     try {
-      await hostPost('/jobs/run-all', { mode: executionMode })
-      const data = (await hostGet('/jobs')) as { jobs: Job[] }
-      setJobs(data.jobs)
+      const response = await fetch('/api/jobs/run-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: executionMode }),
+      })
+      
+      if (response.ok) {
+        // Refresh jobs list
+        const jobsResponse = await fetch('/api/jobs')
+        if (jobsResponse.ok) {
+          const data = await jobsResponse.json()
+          setJobs(data.jobs)
+        }
+      }
     } catch (error) {
       log.error('Failed to run all jobs:', error)
     } finally {
@@ -351,10 +416,6 @@ export default function JobManager() {
   
   const handleDragStart = (e: React.DragEvent, index: number) => {
     const job = jobs[index]
-    if (job === undefined) {
-      e.preventDefault()
-      return
-    }
     if (!canDrag(job)) {
       e.preventDefault()
       return
@@ -385,18 +446,17 @@ export default function JobManager() {
     
     // Reorder locally first for instant feedback
     const newJobs = [...jobs]
-    const draggedJob = newJobs.splice(draggedIndex, 1)[0]
-    if (draggedJob === undefined) {
-      setDraggedIndex(null)
-      setDragOverIndex(null)
-      return
-    }
+    const [draggedJob] = newJobs.splice(draggedIndex, 1)
     newJobs.splice(dropIndex, 0, draggedJob)
     setJobs(newJobs)
     
     // Send reorder to backend
     try {
-      await hostPost('/jobs/reorder', { order: newJobs.map((j) => j.id) })
+      await fetch('/api/jobs/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: newJobs.map(j => j.id) }),
+      })
     } catch (error) {
       log.error('Failed to reorder jobs:', error)
     }

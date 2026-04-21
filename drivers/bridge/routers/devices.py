@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 try:
     from api_models import DeviceConfig
 except ImportError:
     from ...api_models import DeviceConfig
 
-from ..dependencies import DeviceDriverDep
 from ..state import device_manager
 
 router = APIRouter()
@@ -60,20 +59,32 @@ async def add_device(config: DeviceConfig):
 
 
 @router.get("/devices/{device_id}")
-async def get_device(device: DeviceDriverDep):
+async def get_device(device_id: str):
     """Eszköz részletek."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
     return device.get_info()
 
 
 @router.get("/devices/{device_id}/status")
-async def get_device_status(device: DeviceDriverDep):
+async def get_device_status(device_id: str):
     """Eszköz állapot lekérdezése."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
     status = await device.get_status()
     return status.to_dict()
 
 
 @router.get("/devices/{device_id}/capabilities")
-async def get_device_capabilities(device: DeviceDriverDep):
+async def get_device_capabilities(device_id: str):
     """Eszköz képességek lekérdezése."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+
     capabilities = await device.get_capabilities()
     return capabilities.to_dict()

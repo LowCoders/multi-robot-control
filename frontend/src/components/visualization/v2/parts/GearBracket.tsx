@@ -77,9 +77,10 @@ const CENTER_HOLE_DIAM = 40
 /** Ø8 átmenő furat-pár MINDKÉT arm-on (felső + alsó):
  *  - 1. furat (Z = SHAFT_HOLE_Z = -12.76): a `pinion-gear-1` (#6) ↔
  *    `bevel-gear-driven-1` (#8) közös függőleges acéltengelye (#18) halad át.
- *  - 2. furat (X = SHAFT_HOLE_X_2 = -6, Z = SHAFT_HOLE_Z_2 = +27.24): az 1.-től
- *    +40 mm bracket-lokális +Z-ben (world +X), és -6 mm bracket-lokális -X-ben;
- *    a `pinion-gear-2` (#19) és `shaft-pinion-bevel-2` (#20) itt illeszkedik. */
+ *  - 2. furat (Z = SHAFT_HOLE_Z_2 = +27.24, vagyis 40 mm-rel +X irányba az
+ *    eredetitől world-ben, ami bracket-lokálisan +Z irány): a `pinion-gear-2`
+ *    (#19) másolata és annak `shaft-pinion-bevel-2` (#20) tengelye halad át.
+ *  Mindkét furat (X=0) a bracket szélességében centrált. */
 const SHAFT_HOLE_DIAM = 8
 /** Az 1. tengely-furat Z-pozíciója bracket-lokálisan = a #8 (driven bevel) axisa
  *  = pitch cone apex Z. Lásd a `bevel-gear-driven-1` MESHING SZÁMÍTÁSA blokkot
@@ -90,8 +91,6 @@ const SHAFT_HOLE_Z = -12.76
  *  A `pinion-gear-2` (#19) és `shaft-pinion-bevel-2` (#20) másolt elemek
  *  ezen a furaton illeszkednek. */
 const SHAFT_HOLE_Z_2 = SHAFT_HOLE_Z + 40 // = +27.24
-/** A 2. tengely-furat bracket-lokális X-pozíciója (#19 / #20 finomhangolás). */
-const SHAFT_HOLE_X_2 = -6
 
 /**
  * A 2 arm (felső + alsó) Y-irányú LEFELÉ tolása a bracket szimmetrikus
@@ -263,8 +262,7 @@ export function GearBracketRealistic({ componentId }: PartBuilderProps) {
   const upperArmY = +armCenterY + ARM_Y_OFFSET // = +23.2
   const lowerArmY = -armCenterY + ARM_Y_OFFSET // = -43.2
 
-  // Arm geometria furattal — mindkét arm-on 2 db Ø8: (0, SHAFT_HOLE_Z) és
-  // (SHAFT_HOLE_X_2, SHAFT_HOLE_Z_2).
+  // Arm geometria furattal — mindkét arm-on Ø8 a (X=0, Z=SHAFT_HOLE_Z) ponton.
   const armGeom = useMemo(() => buildArmGeometry(armCenterZ), [armCenterZ])
   useEffect(() => {
     return () => {
@@ -355,8 +353,6 @@ export const GEAR_BRACKET_DIMENSIONS = {
   /** A 2. tengely-furat bracket-lokális Z-pozíciója (#20 másolt tengely),
    *  +40 mm world-X-ben az 1.-től. */
   shaftHoleZ2: SHAFT_HOLE_Z_2,
-  /** A 2. tengely-furat bracket-lokális X-pozíciója (#19 / #20). */
-  shaftHoleX2: SHAFT_HOLE_X_2,
   /** A 2 arm Y-irányú LEFELÉ tolása a szimmetrikus pozícióhoz képest (negatív
    *  szám = lefelé). A registry-ben a #6 fogaskerék és #18 tengely position.Y-t
    *  ugyanennyivel kell csúsztatni, hogy együtt mozogjanak az arm-okkal. */

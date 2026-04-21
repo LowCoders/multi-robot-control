@@ -13,9 +13,8 @@ import { NotFoundError, ValidationError, ConflictError } from '../../errors/AppE
 import { createLogger } from '../../utils/logger.js';
 import {
   jobQueue,
-  jobRepository,
-  type Job,
-  type ExecutionMode,
+  Job,
+  ExecutionMode,
   getExecutionMode,
   setExecutionMode,
   startNextPendingJob,
@@ -41,7 +40,7 @@ const ReorderSchema = z.object({
 });
 
 function findJobOr404(jobId: string): Job {
-  const job = jobRepository.findById(jobId);
+  const job = jobQueue.find((j) => j.id === jobId);
   if (!job) throw new NotFoundError('Job nem található');
   return job;
 }
@@ -163,7 +162,7 @@ export function createJobsRouter(deviceManager: DeviceManager): Router {
         ...(estimatedTime !== undefined ? { estimatedTime } : {}),
       };
 
-      jobRepository.push(newJob);
+      jobQueue.push(newJob);
       res.status(201).json(newJob);
     })
   );
@@ -212,14 +211,15 @@ export function createJobsRouter(deviceManager: DeviceManager): Router {
     '/jobs/:id',
     asyncHandler(async (req: Request, res: Response) => {
       const id = requireParam(req, 'id');
-      const job = jobRepository.findById(id);
-      if (!job) throw new NotFoundError('Job nem található');
+      const jobIndex = jobQueue.findIndex((j) => j.id === id);
+      if (jobIndex === -1) throw new NotFoundError('Job nem található');
 
-      if (job.status === 'running') {
+      const job = jobQueue[jobIndex];
+      if (job && job.status === 'running') {
         await deviceManager.stop(job.deviceId);
       }
 
-      jobRepository.removeById(id);
+      jobQueue.splice(jobIndex, 1);
       res.json({ success: true });
     })
   );
@@ -274,7 +274,24 @@ export function createJobsRouter(deviceManager: DeviceManager): Router {
     validateBody(ReorderSchema),
     (req: Request, res: Response) => {
       const { order } = req.body as z.infer<typeof ReorderSchema>;
-      jobRepository.reorderByIds(order);
+
+      const jobMap = new Map(jobQueue.map((j) => [j.id, j]));
+      const newQueue: Job[] = [];
+
+      for (const id of order) {
+        const job = jobMap.get(id);
+        if (job) {
+          newQueue.push(job);
+          jobMap.delete(id);
+        }
+      }
+      for (const job of jobMap.values()) {
+        newQueue.push(job);
+      }
+
+      jobQueue.length = 0;
+      jobQueue.push(...newQueue);
+
       res.json({ success: true, jobs: jobQueue });
     }
   );

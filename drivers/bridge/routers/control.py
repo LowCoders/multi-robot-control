@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 try:
     from log_config import get_logger
@@ -13,7 +13,6 @@ except ImportError:
     from ...log_config import get_logger
     from ...api_models import ControlRequest, ControlReleaseRequest
 
-from ..dependencies import DeviceDriverDep
 from ..helpers import (
     RT_OWN_CLAIM_HOST,
     RT_OWN_QUERY,
@@ -28,12 +27,15 @@ router = APIRouter()
 
 
 @router.get("/devices/{device_id}/control/state")
-async def get_device_control_state(device: DeviceDriverDep):
+async def get_device_control_state(device_id: str):
     """Ownership lock állapot lekérdezése.
 
     Ha az eszköz nem támogat lockot, neutrális default állapotot adunk
     vissza (nem 400-at), hogy a backend periodikus lekérdezése ne zajongjon.
     """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
     if not hasattr(device, "get_control_state"):
         return {
             "owner": "host",
@@ -49,17 +51,16 @@ async def get_device_control_state(device: DeviceDriverDep):
 
 
 @router.post("/devices/{device_id}/control/request")
-async def request_device_control(
-    device_id: str,
-    request: ControlRequest,
-    device: DeviceDriverDep,
-):
+async def request_device_control(device_id: str, request: ControlRequest):
     """Ownership kérés (host|panel).
 
     Ha az eszköz támogat realtime ownership parancsokat (firmware oldali
     lock), akkor azt használjuk forrásként; egyébként a decorator szintű
     request_control()-t hívjuk fallback-ként.
     """
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
     if not hasattr(device, "request_control"):
         raise HTTPException(status_code=400, detail="Az eszköz nem támogat ownership lockot")
 
@@ -136,11 +137,12 @@ async def request_device_control(
 
 @router.post("/devices/{device_id}/control/release")
 async def release_device_control(
-    device_id: str,
-    device: DeviceDriverDep,
-    request: Optional[ControlReleaseRequest] = None,
+    device_id: str, request: Optional[ControlReleaseRequest] = None
 ):
     """Ownership elengedése."""
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
     if not hasattr(device, "release_control"):
         raise HTTPException(status_code=400, detail="Az eszköz nem támogat ownership lockot")
 
