@@ -1,7 +1,11 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { flushSync } from 'react-dom'
 import { io, Socket } from 'socket.io-client'
 import type { Device, DeviceStatus, Position, DeviceCapabilities, DeviceControlState } from '../types/device'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('devices')
 
 interface Notification {
   id: string
@@ -12,6 +16,14 @@ interface Notification {
   count?: number
 }
 
+export interface JogSession {
+  axis: string
+  direction: number
+  feedRate: number
+  startPos: Position | null
+  startedAt: number
+}
+
 interface DeviceStore {
   // State
   devices: Device[]
@@ -19,6 +31,9 @@ interface DeviceStore {
   connected: boolean
   socket: Socket | null
   notifications: Notification[]
+  // Active continuous jog sessions per deviceId. Populated on jogStart so
+  // that consumers (e.g. MdiConsole) can compute the moved delta after stop.
+  jogSessions: Record<string, JogSession | null>
   
   // Actions
   connect: () => void
@@ -32,6 +47,7 @@ interface DeviceStore {
   selectDevice: (deviceId: string | null) => void
   addNotification: (deviceId: string, message: string, severity?: 'info' | 'warning' | 'error') => void
   clearNotification: (id: string) => void
+  consumeJogSession: (deviceId: string) => JogSession | null
   
   // Commands
   sendCommand: (deviceId: string, command: string, params?: Record<string, unknown>) => void
@@ -87,6 +103,7 @@ export const useDeviceStore = create<DeviceStore>()(
     connected: false,
     socket: null,
     notifications: [],
+    jogSessions: {},
     
     connect: () => {
       // Prevent duplicate connections
@@ -94,7 +111,7 @@ export const useDeviceStore = create<DeviceStore>()(
       if (existingSocket) {
         // If already connected or connecting, don't create new connection
         if (existingSocket.connected || existingSocket.active) {
-          console.log('WebSocket already connected or connecting')
+          log.debug('WebSocket already connected or connecting')
           return
         }
         // Clean up existing socket before creating new one
@@ -111,12 +128,12 @@ export const useDeviceStore = create<DeviceStore>()(
       })
       
       socket.on('connect', () => {
-        console.log('WebSocket connected')
+        log.info('WebSocket connected')
         set((state) => { state.connected = true })
       })
       
       socket.on('disconnect', () => {
-        console.log('WebSocket disconnected')
+        log.info('WebSocket disconnected')
         set((state) => { state.connected = false })
       })
       
@@ -156,28 +173,33 @@ export const useDeviceStore = create<DeviceStore>()(
       })
       
       socket.on('device:error', (data: { deviceId: string; message: string }) => {
-        console.error(`Device error (${data.deviceId}):`, data.message)
+        log.error(`Device error (${data.deviceId}):`, data.message)
         get().addNotification(data.deviceId, data.message, 'error')
       })
       
-      socket.on('job:progress', (data: { 
-        deviceId: string; 
-        progress: number; 
-        currentLine: number; 
-        totalLines: number 
+      socket.on('job:progress', (data: {
+        deviceId: string;
+        progress: number;
+        currentLine: number;
+        totalLines: number
       }) => {
-        set((state) => {
-          const device = state.devices.find(d => d.id === data.deviceId)
-          if (device && device.status) {
-            device.status.progress = data.progress
-            device.status.current_line = data.currentLine
-            device.status.total_lines = data.totalLines
-          }
+        // flushSync: a futás közbeni gyors egymás utáni job:progress
+        // üzeneteket nem szabad batchelni, különben csak az utolsó render
+        // látszik, és a felhasználó nem tudja követni az aktuális sort.
+        flushSync(() => {
+          set((state) => {
+            const device = state.devices.find(d => d.id === data.deviceId)
+            if (device && device.status) {
+              device.status.progress = data.progress
+              device.status.current_line = data.currentLine
+              device.status.total_lines = data.totalLines
+            }
+          })
         })
       })
       
       socket.on('job:complete', (data: { deviceId: string; file: string }) => {
-        console.log(`Job complete (${data.deviceId}): ${data.file}`)
+        log.info(`Job complete (${data.deviceId}): ${data.file}`)
         get().addNotification(data.deviceId, `Munka kész: ${data.file}`, 'info')
       })
       
@@ -240,7 +262,17 @@ export const useDeviceStore = create<DeviceStore>()(
         }
       })
     },
-    
+
+    consumeJogSession: (deviceId) => {
+      const session = get().jogSessions[deviceId] ?? null
+      if (session) {
+        set((state) => {
+          state.jogSessions[deviceId] = null
+        })
+      }
+      return session
+    },
+
     setDevices: (devices) => set((state) => { state.devices = devices }),
     
     updateDeviceStatus: (deviceId, status) => {
@@ -339,7 +371,20 @@ export const useDeviceStore = create<DeviceStore>()(
     },
 
     jogStart: (deviceId, axis, direction, feedRate, mode, heartbeatTimeout = 0.5, tickMs = 40) => {
-      const { socket } = get()
+      const { socket, devices } = get()
+      // Snapshot current work position so consumers can compute the delta
+      // moved during the upcoming continuous jog session.
+      const device = devices.find((d) => d.id === deviceId)
+      const startPos = device?.status?.work_position ?? device?.status?.position ?? null
+      set((state) => {
+        state.jogSessions[deviceId] = {
+          axis,
+          direction,
+          feedRate,
+          startPos: startPos ? { ...startPos } : null,
+          startedAt: Date.now(),
+        }
+      })
       if (socket) {
         socket.emit('device:jog:start', {
           deviceId,

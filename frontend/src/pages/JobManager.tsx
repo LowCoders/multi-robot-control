@@ -21,6 +21,9 @@ import {
 import { useDeviceStore } from '../stores/deviceStore'
 import { MachineVisualization, GcodePanel, RobotArmVisualization, TubeBenderVisualization } from '../components/visualization'
 import { useMachineConfig } from '../hooks/useMachineConfig'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('jobs')
 
 interface Job {
   id: string
@@ -400,7 +403,7 @@ const saveToStorage = <T,>(key: string, value: T): void => {
   try {
     localStorage.setItem(key, JSON.stringify(value))
   } catch (error) {
-    console.error('Failed to save to localStorage:', error)
+    log.error('Failed to save to localStorage:', error)
   }
 }
 
@@ -465,13 +468,13 @@ export default function JobManager() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: storedMode }),
-              }).catch(console.error)
+              }).catch((err) => log.error(err))
             }
             isFirstLoad = false
           }
         }
       } catch (error) {
-        console.error('Failed to load jobs:', error)
+        log.error('Failed to load jobs:', error)
       } finally {
         setIsLoading(false)
       }
@@ -497,7 +500,7 @@ export default function JobManager() {
         body: JSON.stringify({ mode }),
       })
     } catch (error) {
-      console.error('Failed to update mode:', error)
+      log.error('Failed to update mode:', error)
     }
   }
   
@@ -514,7 +517,7 @@ export default function JobManager() {
         setJobs([...jobs, newJob])
       }
     } catch (error) {
-      console.error('Failed to add job:', error)
+      log.error('Failed to add job:', error)
     }
   }
   
@@ -529,7 +532,7 @@ export default function JobManager() {
         setJobs(jobs.map(j => j.id === jobId ? data.job : j))
       }
     } catch (error) {
-      console.error('Failed to run job:', error)
+      log.error('Failed to run job:', error)
     }
   }
   
@@ -544,7 +547,7 @@ export default function JobManager() {
         setJobs(jobs.map(j => j.id === jobId ? data.job : j))
       }
     } catch (error) {
-      console.error('Failed to pause job:', error)
+      log.error('Failed to pause job:', error)
     }
   }
   
@@ -565,7 +568,7 @@ export default function JobManager() {
         })
       }
     } catch (error) {
-      console.error('Failed to delete job:', error)
+      log.error('Failed to delete job:', error)
     }
   }
   
@@ -587,7 +590,7 @@ export default function JobManager() {
         }
       }
     } catch (error) {
-      console.error('Failed to run all jobs:', error)
+      log.error('Failed to run all jobs:', error)
     } finally {
       setIsRunningAll(false)
     }
@@ -640,7 +643,7 @@ export default function JobManager() {
         body: JSON.stringify({ order: newJobs.map(j => j.id) }),
       })
     } catch (error) {
-      console.error('Failed to reorder jobs:', error)
+      log.error('Failed to reorder jobs:', error)
     }
     
     setDraggedIndex(null)

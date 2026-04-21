@@ -9,15 +9,20 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('settings')
 
 export default function Settings() {
   const [settings, setSettings] = useState({
     bridgeHost: 'localhost',
     bridgePort: '4002',
-    gcodeDirectory: '/home/user/nc_files',
     positionUpdateRate: '10',
     statusUpdateRate: '5',
   })
+  // A G-code gyökérkönyvtár csak olvasható: a backend `.env` (GCODE_ROOT_DIR)
+  // alapján adja vissza, a UI nem módosíthatja.
+  const [gcodeRoot, setGcodeRoot] = useState<string>('')
   
   const [isSaving, setIsSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -61,13 +66,15 @@ export default function Settings() {
           setSettings({
             bridgeHost: data.bridgeHost || 'localhost',
             bridgePort: String(data.bridgePort || 4002),
-            gcodeDirectory: data.gcodeDirectory || '/home/user/nc_files',
             positionUpdateRate: String(data.positionUpdateRate || 10),
             statusUpdateRate: String(data.statusUpdateRate || 5),
           })
+          if (typeof data.gcodeRoot === 'string') {
+            setGcodeRoot(data.gcodeRoot)
+          }
         }
       } catch (error) {
-        console.error('Failed to load settings:', error)
+        log.error('Failed to load settings:', error)
       }
     }
     loadSettings()
@@ -90,7 +97,6 @@ export default function Settings() {
         body: JSON.stringify({
           bridgeHost: settings.bridgeHost,
           bridgePort: parseInt(settings.bridgePort, 10),
-          gcodeDirectory: settings.gcodeDirectory,
           positionUpdateRate: parseInt(settings.positionUpdateRate, 10),
           statusUpdateRate: parseInt(settings.statusUpdateRate, 10),
         }),
@@ -196,14 +202,20 @@ export default function Settings() {
         <div className="card-body">
           <div>
             <label className="block text-sm text-steel-400 mb-1">
-              G-code Könyvtár
+              G-code gyökérkönyvtár (csak olvasható)
             </label>
             <input
               type="text"
-              value={settings.gcodeDirectory}
-              onChange={(e) => handleChange('gcodeDirectory', e.target.value)}
-              className="input w-full"
+              value={gcodeRoot}
+              readOnly
+              className="input w-full bg-steel-900 text-steel-400 cursor-not-allowed"
             />
+            <p className="text-xs text-steel-500 mt-1">
+              A gyökérkönyvtárt a backend <code className="text-machine-400">.env</code> fájljának{' '}
+              <code className="text-machine-400">GCODE_ROOT_DIR</code> változója határozza meg.
+              Minden G-code művelet (megnyitás, mentés, létrehozás, törlés) erre a könyvtárra
+              van korlátozva, a symlink-escape ellen is védve.
+            </p>
           </div>
         </div>
       </div>

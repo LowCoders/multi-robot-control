@@ -52,6 +52,9 @@ import type {
 import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, getDefaultConfigForType } from '../../types/machine-config'
 import type { DeviceCapabilities } from '../../types/device'
 import { effectiveCapabilities } from '../../utils/capabilities'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('machine-config')
 
 const AXIS_COLORS: Record<AxisName, string> = {
   X: '#ef4444',
@@ -481,7 +484,7 @@ export default function MachineConfigTab({
           setOriginalConfig(null)
         }
       } catch (err) {
-        console.error('Failed to load config:', err)
+        log.error('Failed to load config:', err)
         const defaultConfig = { ...DEFAULT_3AXIS_CNC, id: deviceId }
         setConfig(defaultConfig)
       } finally {
@@ -533,7 +536,7 @@ export default function MachineConfigTab({
         setError(data.error || 'Mentés sikertelen')
       }
     } catch (err) {
-      console.error('Save error:', err)
+      log.error('Save error:', err)
       setError('Mentés sikertelen - szerver hiba')
     } finally {
       setSaving(false)

@@ -12,6 +12,9 @@ import {
   Save,
   Power,
 } from 'lucide-react'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('calibration')
 
 interface CalibrationResults {
   completed: boolean
@@ -110,7 +113,7 @@ export default function CalibrationPanel({ deviceId, onApplyResults }: Calibrati
         pollingRef.current = null
       }
     } catch (err) {
-      console.error('Failed to stop calibration:', err)
+      log.error('Failed to stop calibration:', err)
     }
   }
 

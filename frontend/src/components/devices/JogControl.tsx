@@ -487,8 +487,9 @@ export default function JogControl({
         </div>
       )}
 
-      {/* Axis Controls */}
-      <div className="flex items-center gap-8">
+      {/* Axis Controls — extra padding-bottom adds breathing room before the
+          step-size / endstop sections (space-y-4 alone gave only ~16px). */}
+      <div className="flex items-center gap-8 pb-6">
         {/* XY Pad */}
         <div className="grid grid-cols-3 gap-1">
           <div />

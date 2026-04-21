@@ -11,6 +11,9 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useDeviceStore } from '../stores/deviceStore'
+import { createLogger } from '../utils/logger'
+
+const log = createLogger('automation')
 
 interface Rule {
   id: string
@@ -239,7 +242,7 @@ export default function Automation() {
           setRules(data.rules)
         }
       } catch (error) {
-        console.error('Failed to load rules:', error)
+        log.error('Failed to load rules:', error)
       } finally {
         setIsLoading(false)
       }
@@ -257,7 +260,7 @@ export default function Automation() {
         setRules(rules.map(r => r.id === ruleId ? updatedRule : r))
       }
     } catch (error) {
-      console.error('Failed to toggle rule:', error)
+      log.error('Failed to toggle rule:', error)
     }
   }
   
@@ -272,7 +275,7 @@ export default function Automation() {
         setRules(rules.filter(r => r.id !== ruleId))
       }
     } catch (error) {
-      console.error('Failed to delete rule:', error)
+      log.error('Failed to delete rule:', error)
     }
   }
   
@@ -302,7 +305,7 @@ export default function Automation() {
         }
       }
     } catch (error) {
-      console.error('Failed to save rule:', error)
+      log.error('Failed to save rule:', error)
     }
   }
   
