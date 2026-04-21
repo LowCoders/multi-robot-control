@@ -1,9 +1,18 @@
-import { AlertCircle, FileCode, GripVertical, Wind } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertCircle, Download, FileCode, GripVertical, Wind } from 'lucide-react'
 import type { MachineConfig } from '../../types/machine-config'
 import type { DeviceStatus, Position } from '../../types/device'
 import MachineVisualization from './MachineVisualization'
 import RobotArmVisualization from './RobotArmVisualization'
 import TubeBenderVisualization from './TubeBenderVisualization'
+import {
+  ComponentTable,
+  LOD_LABELS_HU,
+  LOD_LEVELS,
+  TubeBenderVisualizationV2,
+  exportStl,
+  useHighlightStore,
+} from './v2'
 
 interface Props {
   config: MachineConfig
@@ -13,6 +22,28 @@ interface Props {
   showDebugInfo?: boolean
   showHeader?: boolean
   headerExtra?: React.ReactNode
+}
+
+/** Bool olvasás localStorage-ból; SSR / kivétel esetén a default érték. */
+function readLocalBool(key: string, defaultValue: boolean): boolean {
+  if (typeof window === 'undefined') return defaultValue
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (raw === null) return defaultValue
+    return raw === '1' || raw === 'true'
+  } catch {
+    return defaultValue
+  }
+}
+
+/** Bool írás localStorage-ba; hibát csendben elnyel (privát mód, kvóta, stb). */
+function writeLocalBool(key: string, value: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    // ignore
+  }
 }
 
 export default function VisualizationPanel({
@@ -26,6 +57,22 @@ export default function VisualizationPanel({
 }: Props) {
   const currentFile = status?.current_file
   const filename = currentFile?.split('/').pop()
+
+  // V2 (új tube bender modell) opcionális engedélyezése — csak tube_bender-nél jelenik meg.
+  // A kapcsolók állapota localStorage-ban perzisztál, így lapfrissítés után is megmarad.
+  // Default: useV2 = true (új modell aktív), showTable = true.
+  const [useV2, setUseV2] = useState<boolean>(() => readLocalBool('mrc-tb-useV2', true))
+  const [showTable, setShowTable] = useState<boolean>(() => readLocalBool('mrc-tb-showTable', true))
+  useEffect(() => writeLocalBool('mrc-tb-useV2', useV2), [useV2])
+  useEffect(() => writeLocalBool('mrc-tb-showTable', showTable), [showTable])
+  const isTubeBender = config.type === 'tube_bender'
+  const lodLevel = useHighlightStore((s) => s.lodLevel)
+  const setLodLevel = useHighlightStore((s) => s.setLodLevel)
+  const colorMode = useHighlightStore((s) => s.colorMode)
+  const setColorMode = useHighlightStore((s) => s.setColorMode)
+  const fadeOthers = useHighlightStore((s) => s.fadeOthers)
+  const setFadeOthers = useHighlightStore((s) => s.setFadeOthers)
+  const selectedId = useHighlightStore((s) => s.selectedId)
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
@@ -50,40 +97,146 @@ export default function VisualizationPanel({
               </span>
             )}
           </div>
-          {headerExtra}
+          <div className="flex items-center gap-2">
+            {headerExtra}
+          </div>
         </div>
       )}
-      
-      {/* 3D Visualization */}
-      <div className="flex-1 min-h-0 relative">
-        {config.type === 'robot_arm' ? (
-          <RobotArmVisualization
-            config={config}
-            position={position}
-            status={status}
-          />
-        ) : config.type === 'tube_bender' ? (
-          <TubeBenderVisualization
-            config={config}
-            position={position}
-            status={status}
-          />
-        ) : (
-          <MachineVisualization
-            config={config}
-            position={position}
-            status={status}
-          />
-        )}
-        
-        {/* Debug overlay - show position updates */}
-        {showDebugInfo && (
-          <div className="absolute top-2 left-2 bg-black/80 text-xs font-mono p-2 rounded text-green-400">
-            <div>POS: X={position?.x?.toFixed(2) ?? '?'} Y={position?.y?.toFixed(2) ?? '?'} Z={position?.z?.toFixed(2) ?? '?'}</div>
-            <div>STATE: {status?.state ?? 'unknown'}</div>
-            <div>LINE: {status?.current_line ?? 0} / {status?.total_lines ?? 0}</div>
-            <div>FILE: {status?.current_file?.split('/').pop() ?? 'none'}</div>
+
+      {/* V2 alapsáv: az 'Új modell (béta)' kapcsoló MINDIG látszik tube_bender-nél,
+          akkor is, ha a header rejtve van (showHeader=false). */}
+      {isTubeBender && (
+        <div className="bg-steel-900/95 border-b border-steel-700 px-3 py-1 flex items-center gap-3 text-xs">
+          <label className="flex items-center gap-1 text-steel-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useV2}
+              onChange={(e) => setUseV2(e.target.checked)}
+              className="accent-blue-500"
+            />
+            Új modell (béta)
+          </label>
+          {!useV2 && (
+            <span className="text-steel-500 italic">
+              kapcsold be a részletesség / szín / STL export vezérlőket
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* V2 vezérlő sáv (LOD, színmód, táblázat toggle, STL export) */}
+      {isTubeBender && useV2 && (
+        <div className="bg-steel-900/95 border-b border-steel-700 px-3 py-1.5 flex items-center gap-3 flex-wrap text-xs">
+          <div className="flex items-center gap-1">
+            <span className="text-steel-400">Részletesség:</span>
+            <select
+              value={lodLevel}
+              onChange={(e) => setLodLevel(e.target.value as typeof lodLevel)}
+              className="bg-steel-800 text-steel-100 border border-steel-700 rounded px-1.5 py-0.5"
+            >
+              {LOD_LEVELS.map((lvl) => (
+                <option key={lvl} value={lvl}>{LOD_LABELS_HU[lvl]}</option>
+              ))}
+            </select>
           </div>
+          <div className="flex items-center gap-1">
+            <span className="text-steel-400">Szín:</span>
+            <select
+              value={colorMode}
+              onChange={(e) => setColorMode(e.target.value as typeof colorMode)}
+              className="bg-steel-800 text-steel-100 border border-steel-700 rounded px-1.5 py-0.5"
+            >
+              <option value="pbr">PBR (anyagok)</option>
+              <option value="registry">Egyedi színek (közös nyelv)</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-1 text-steel-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={fadeOthers}
+              onChange={(e) => setFadeOthers(e.target.checked)}
+              className="accent-blue-500"
+            />
+            Többi áttetsző kiemeléskor
+          </label>
+          <label className="flex items-center gap-1 text-steel-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showTable}
+              onChange={(e) => setShowTable(e.target.checked)}
+              className="accent-blue-500"
+            />
+            Táblázat panel
+          </label>
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              type="button"
+              onClick={() => exportStl()}
+              className="inline-flex items-center gap-1 px-2 py-0.5 bg-steel-800 hover:bg-steel-700 text-steel-100 border border-steel-700 rounded"
+              title="A teljes szerelvény bbox-ainak exportja STL-ben"
+            >
+              <Download className="w-3.5 h-3.5" />
+              STL
+            </button>
+            <button
+              type="button"
+              disabled={!selectedId}
+              onClick={() => selectedId && exportStl({ rootId: selectedId })}
+              className="inline-flex items-center gap-1 px-2 py-0.5 bg-steel-800 hover:bg-steel-700 disabled:opacity-40 disabled:cursor-not-allowed text-steel-100 border border-steel-700 rounded"
+              title={selectedId ? `STL: csak '${selectedId}'` : 'Kijelölés szükséges'}
+            >
+              <Download className="w-3.5 h-3.5" />
+              STL (kiemelt)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 3D Visualization */}
+      <div className="flex-1 min-h-0 relative flex">
+        <div className="flex-1 min-w-0 relative">
+          {config.type === 'robot_arm' ? (
+            <RobotArmVisualization
+              config={config}
+              position={position}
+              status={status}
+            />
+          ) : config.type === 'tube_bender' ? (
+            useV2 ? (
+              <TubeBenderVisualizationV2
+                config={config}
+                position={position}
+                status={status}
+              />
+            ) : (
+              <TubeBenderVisualization
+                config={config}
+                position={position}
+                status={status}
+              />
+            )
+          ) : (
+            <MachineVisualization
+              config={config}
+              position={position}
+              status={status}
+            />
+          )}
+
+          {/* Debug overlay - show position updates */}
+          {showDebugInfo && (
+            <div className="absolute top-2 left-2 bg-black/80 text-xs font-mono p-2 rounded text-green-400">
+              <div>POS: X={position?.x?.toFixed(2) ?? '?'} Y={position?.y?.toFixed(2) ?? '?'} Z={position?.z?.toFixed(2) ?? '?'}</div>
+              <div>STATE: {status?.state ?? 'unknown'}</div>
+              <div>LINE: {status?.current_line ?? 0} / {status?.total_lines ?? 0}</div>
+              <div>FILE: {status?.current_file?.split('/').pop() ?? 'none'}</div>
+            </div>
+          )}
+        </div>
+
+        {/* V2 alkatrész-táblázat oldalsáv */}
+        {isTubeBender && useV2 && showTable && (
+          <ComponentTable className="w-72 shrink-0 border-l border-steel-700" />
         )}
       </div>
       
