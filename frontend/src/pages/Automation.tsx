@@ -39,9 +39,22 @@ const TRIGGER_VALUES = [
   'position',
   'timer',
   'manual',
+  'gcode_comment',
 ] as const
 
-const ACTION_VALUES = ['run', 'pause', 'stop', 'home', 'send_gcode', 'notify'] as const
+const ACTION_VALUES = [
+  'run',
+  'pause',
+  'stop',
+  'home',
+  'send_gcode',
+  'notify',
+  'load_file',
+  'resume',
+  'set_flag',
+  'check_sync',
+  'check_connection',
+] as const
 
 interface RuleEditorProps {
   rule: Rule | null
@@ -243,6 +256,13 @@ export default function Automation() {
   const [editingRule, setEditingRule] = useState<Rule | null>(null)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
   const { devices } = useDeviceStore()
+
+  const resolveDeviceLabel = (deviceId?: string) => {
+    if (!deviceId) return ''
+    if (deviceId === 'all') return t('automation.editor.all_devices')
+    const d = devices.find((x) => x.id === deviceId)
+    return d?.name || deviceId
+  }
   
   // Load rules from API
   useEffect(() => {
@@ -330,6 +350,10 @@ export default function Automation() {
     String(t(`automation.triggers.${trigger.type}`, { defaultValue: trigger.type }))
   const getActionLabel = (action: Rule['actions'][0]) =>
     String(t(`automation.actions.${action.type}`, { defaultValue: action.type }))
+  const getRuleDisplayName = (rule: Rule) =>
+    String(t(`automation.builtin.${rule.id}.name`, { defaultValue: rule.name }))
+  const getRuleDisplayDescription = (rule: Rule) =>
+    String(t(`automation.builtin.${rule.id}.description`, { defaultValue: rule.description }))
   
   return (
     <div className="space-y-6">
@@ -405,22 +429,26 @@ export default function Automation() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <Zap className={`w-4 h-4 ${rule.enabled ? 'text-amber-400' : 'text-steel-500'}`} />
-                      <span className="font-medium text-white">{rule.name}</span>
+                      <span className="font-medium text-white">{getRuleDisplayName(rule)}</span>
                     </div>
-                    <p className="text-sm text-steel-400 mt-1">{rule.description}</p>
+                    <p className="text-sm text-steel-400 mt-1">{getRuleDisplayDescription(rule)}</p>
                     
                     <div className="flex items-center gap-4 mt-3 text-sm">
                       <div>
                         <span className="text-steel-500">{t('automation.when_prefix')} </span>
                         <span className="text-steel-300">
                           {getTriggerLabel(rule.trigger)}
-                          {rule.trigger.device && ` (${rule.trigger.device})`}
+                          {rule.trigger.device && ` (${resolveDeviceLabel(rule.trigger.device)})`}
                         </span>
                       </div>
                       <div>
                         <span className="text-steel-500">{t('automation.then_prefix')} </span>
                         <span className="text-steel-300">
-                          {rule.actions.map(a => getActionLabel(a)).join(', ')}
+                          {rule.actions
+                            .map((a) =>
+                              `${getActionLabel(a)}${a.device ? ` (${resolveDeviceLabel(a.device)})` : ''}`,
+                            )
+                            .join(', ')}
                         </span>
                       </div>
                     </div>

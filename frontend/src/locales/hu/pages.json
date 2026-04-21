@@ -142,8 +142,22 @@
     "active_count": "{{count}} aktív",
     "loading": "Betöltés...",
     "empty": "Nincsenek automatizálási szabályok. Hozz létre egyet.",
-    "when_prefix": "AMIKOR:",
-    "then_prefix": "AKKOR:",
+    "when_prefix": "Ha:",
+    "then_prefix": "Akkor:",
+    "builtin": {
+      "1": {
+        "name": "CNC után lézer",
+        "description": "A CNC munka befejezése után automatikusan elindítja a lézert."
+      },
+      "2": {
+        "name": "Hiba — mindent leállít",
+        "description": "Bármely eszköz ALARM állapotánál minden eszközt leállít."
+      },
+      "3": {
+        "name": "Pozíció trigger",
+        "description": "CNC Z pozíció alapján lézer bekapcsolás."
+      }
+    },
     "editor": {
       "target_default": "Alapértelmezett",
       "new_rule": "Új Szabály",
@@ -164,19 +178,25 @@
       "saving": "Mentés…"
     },
     "triggers": {
-      "job_complete": "Job Befejezés",
-      "state_change": "Állapot Változás",
-      "position": "Pozíció Elérés",
+      "job_complete": "Munka befejezése",
+      "state_change": "Állapotváltozás",
+      "position": "Pozíció elérése",
       "timer": "Időzítő",
-      "manual": "Manuális"
+      "manual": "Kézi indítás",
+      "gcode_comment": "G-code megjegyzés illeszkedés"
     },
     "actions": {
-      "run": "Indítás",
+      "run": "Futtatás",
       "pause": "Szünet",
       "stop": "Leállítás",
-      "home": "Homing",
-      "send_gcode": "G-code Küldés",
-      "notify": "Értesítés"
+      "home": "Referencia (Home)",
+      "send_gcode": "G-code küldése",
+      "notify": "Értesítés",
+      "load_file": "Fájl betöltése",
+      "resume": "Folytatás",
+      "set_flag": "Jelző beállítása",
+      "check_sync": "Szinkronra várás",
+      "check_connection": "Kapcsolat ellenőrzése"
     }
   },
   "add_job": {

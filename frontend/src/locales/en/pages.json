@@ -142,8 +142,22 @@
     "active_count": "{{count}} active",
     "loading": "Loading…",
     "empty": "No automation rules yet. Create one.",
-    "when_prefix": "WHEN:",
-    "then_prefix": "THEN:",
+    "when_prefix": "When:",
+    "then_prefix": "Then:",
+    "builtin": {
+      "1": {
+        "name": "After CNC → laser",
+        "description": "Starts the laser automatically when the CNC job finishes."
+      },
+      "2": {
+        "name": "Fault — stop everything",
+        "description": "When any device enters ALARM, stops all devices."
+      },
+      "3": {
+        "name": "Position trigger",
+        "description": "Turns on the laser based on CNC Z position."
+      }
+    },
     "editor": {
       "target_default": "Default",
       "new_rule": "New rule",
@@ -168,7 +182,8 @@
       "state_change": "State change",
       "position": "Position reached",
       "timer": "Timer",
-      "manual": "Manual"
+      "manual": "Manual",
+      "gcode_comment": "G-code comment match"
     },
     "actions": {
       "run": "Run",
@@ -176,7 +191,12 @@
       "stop": "Stop",
       "home": "Homing",
       "send_gcode": "Send G-code",
-      "notify": "Notify"
+      "notify": "Notify",
+      "load_file": "Load file",
+      "resume": "Resume",
+      "set_flag": "Set flag",
+      "check_sync": "Wait for sync",
+      "check_connection": "Check connection"
     }
   },
   "add_job": {
