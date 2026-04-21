@@ -44,7 +44,7 @@ export default function Settings() {
     try {
       const resp = await fetch('/api/config/devices-yaml')
       if (!resp.ok) {
-        throw new Error(`Hiba (${resp.status})`)
+        throw new Error(t('settings.error_http', { status: resp.status }))
       }
       const data = await resp.json()
       setDevicesYaml(typeof data.raw === 'string' ? data.raw : '')

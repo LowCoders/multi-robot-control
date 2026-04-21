@@ -546,7 +546,7 @@ export default function MachineConfigTab({
               }`}
             >
               <Layers className="w-3 h-3" />
-              Vizuális
+              {t('machine_config.toolbar.visual')}
             </button>
             <button
               onClick={() => {
@@ -559,18 +559,18 @@ export default function MachineConfigTab({
               }`}
             >
               <Code className="w-3 h-3" />
-              JSON
+              {t('machine_config.toolbar.json')}
             </button>
           </div>
 
           <label className="btn btn-secondary btn-sm flex items-center gap-1 cursor-pointer">
             <Upload className="w-3 h-3" />
-            <span className="hidden sm:inline">Import</span>
+            <span className="hidden sm:inline">{t('machine_config.toolbar.import')}</span>
             <input type="file" accept=".json" onChange={handleImport} className="hidden" />
           </label>
           <button onClick={handleExport} className="btn btn-secondary btn-sm flex items-center gap-1">
             <Download className="w-3 h-3" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">{t('machine_config.toolbar.export')}</span>
           </button>
         </div>
 
@@ -581,7 +581,7 @@ export default function MachineConfigTab({
             className="btn btn-secondary btn-sm flex items-center gap-1 disabled:opacity-50"
           >
             <RotateCcw className="w-3 h-3" />
-            Visszaállítás
+            {t('machine_config.toolbar.reset')}
           </button>
           <button
             onClick={handleSave}
@@ -589,7 +589,7 @@ export default function MachineConfigTab({
             className="btn btn-primary btn-sm flex items-center gap-1 disabled:opacity-50"
           >
             <Save className="w-3 h-3" />
-            {saving ? 'Mentés...' : 'Mentés'}
+            {saving ? t('machine_config.toolbar.saving') : t('machine_config.toolbar.save')}
           </button>
         </div>
       </div>
@@ -650,7 +650,7 @@ export default function MachineConfigTab({
                   className="btn btn-primary btn-sm flex items-center gap-1"
                 >
                   <CheckCircle className="w-3 h-3" />
-                  Alkalmaz
+                  {t('machine_config.json.apply')}
                 </button>
               </div>
             </div>
@@ -660,23 +660,25 @@ export default function MachineConfigTab({
               <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
                 <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Settings2 className="w-4 h-4" />
-                  Alapadatok
+                  {t('machine_config.basic_info')}
                   <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
                 </summary>
                 <div className="px-3 pb-3 space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-steel-500 mb-1">Gép neve</label>
+                      <label className="block text-xs text-steel-500 mb-1">
+                        {t('machine_config.machine_name')}
+                      </label>
                       <input
                         type="text"
                         value={config.name}
                         onChange={(e) => setConfig({ ...config, name: e.target.value })}
                         className="input w-full text-sm"
-                        placeholder="CNC Maró"
+                        placeholder={t('machine_config.machine_name_placeholder')}
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-steel-500 mb-1">Típus</label>
+                      <label className="block text-xs text-steel-500 mb-1">{t('machine_config.type')}</label>
                       <select
                         value={config.type}
                         onChange={(e) => {
@@ -696,13 +698,13 @@ export default function MachineConfigTab({
                         }}
                         className="input w-full text-sm"
                       >
-                        <option value="cnc_mill">CNC Maró</option>
-                        <option value="cnc_lathe">CNC Eszterga</option>
-                        <option value="laser_cutter">Lézervágó</option>
-                        <option value="5axis">5 Tengelyes</option>
-                        <option value="robot_arm">Robotkar</option>
-                        <option value="tube_bender">Csőhajlító</option>
-                        <option value="custom">Egyedi</option>
+                        <option value="cnc_mill">{t('machine_config.types.cnc_mill')}</option>
+                        <option value="cnc_lathe">{t('machine_config.types.cnc_lathe')}</option>
+                        <option value="laser_cutter">{t('machine_config.types.laser_cutter')}</option>
+                        <option value="5axis">{t('machine_config.types.5axis')}</option>
+                        <option value="robot_arm">{t('machine_config.types.robot_arm')}</option>
+                        <option value="tube_bender">{t('machine_config.types.tube_bender')}</option>
+                        <option value="custom">{t('machine_config.types.custom')}</option>
                       </select>
                     </div>
                   </div>
@@ -713,7 +715,7 @@ export default function MachineConfigTab({
               <details className="bg-steel-900/50 rounded-lg border border-steel-700 group">
                 <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Server className="w-4 h-4" />
-                  Devices.yaml beállítások
+                  {t('machine_config.devices_yaml_section')}
                   <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
                 </summary>
                 <div className="px-3 pb-3">
@@ -725,15 +727,15 @@ export default function MachineConfigTab({
               <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
                 <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Sliders className="w-4 h-4" />
-                  Vezérlés
+                  {t('machine_config.control_section')}
                   <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
                 </summary>
                 <div className="px-3 pb-3">
                   <div className="flex items-center justify-between rounded bg-steel-800/40 px-3 py-2">
                     <div>
-                      <div className="text-xs text-steel-300">Panel controller támogatás</div>
+                      <div className="text-xs text-steel-300">{t('machine_config.panel_controller')}</div>
                       <div className="text-[11px] text-steel-500">
-                        Engedélyezve esetén ownership lock kezelhető host/panel között.
+                        {t('machine_config.panel_controller_hint')}
                       </div>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -760,15 +762,11 @@ export default function MachineConfigTab({
               <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
                 <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Sparkles className="w-4 h-4" />
-                  Eszköz képességek
+                  {t('machine_config.capabilities_section')}
                   <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
                 </summary>
                 <div className="px-3 pb-3 space-y-2">
-                  <div className="text-[11px] text-steel-500">
-                    Pipáld be, mit tud az eszköz. A kiválasztott képességekhez tartozó beállítópanelek
-                    az alábbi „Eszköz-specifikus beállítások” szekcióban jelennek meg, és az „Extra
-                    vezérlés” paneljéből futás-időben is használhatók.
-                  </div>
+                  <div className="text-[11px] text-steel-500">{t('machine_config.capabilities_intro')}</div>
                   <CapabilityToggles
                     declared={config.declaredCapabilities}
                     effective={effective}
@@ -777,15 +775,15 @@ export default function MachineConfigTab({
                   <div className="flex flex-wrap gap-3 text-[10px] text-steel-500 pt-1">
                     <span>
                       <span className="inline-block w-2 h-2 rounded-full bg-amber-500/60 mr-1" />
-                      manual = csak a konfigban deklarált
+                      {t('machine_config.cap_legend_manual')}
                     </span>
                     <span>
                       <span className="inline-block w-2 h-2 rounded-full bg-blue-500/60 mr-1" />
-                      runtime = a driver jelzi
+                      {t('machine_config.cap_legend_runtime')}
                     </span>
                     <span>
                       <span className="inline-block w-2 h-2 rounded-full bg-emerald-500/60 mr-1" />
-                      sync = mindkettő egyezik
+                      {t('machine_config.cap_legend_sync')}
                     </span>
                   </div>
                 </div>
@@ -796,7 +794,7 @@ export default function MachineConfigTab({
                 <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
                   <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                     <Wrench className="w-4 h-4" />
-                    Eszköz-specifikus beállítások
+                    {t('machine_config.device_specific_section')}
                     <span className="ml-auto text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
                   </summary>
                   <div className="px-3 pb-3 space-y-2">
@@ -844,7 +842,7 @@ export default function MachineConfigTab({
               <details open className="bg-steel-900/50 rounded-lg border border-steel-700 group">
                 <summary className="flex items-center gap-2 text-steel-300 text-sm font-medium p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                   <Move3D className="w-4 h-4" />
-                  Tengelyek ({config.axes.length})
+                  {t('machine_config.axes_section', { count: config.axes.length })}
                   <button
                     onClick={(e) => {
                       e.preventDefault()
@@ -855,7 +853,7 @@ export default function MachineConfigTab({
                     className="btn btn-primary btn-sm flex items-center gap-1 disabled:opacity-50 text-xs ml-auto"
                   >
                     <Plus className="w-3 h-3" />
-                    Új
+                    {t('machine_config.new_axis')}
                   </button>
                   <span className="text-steel-500 text-xs group-open:rotate-90 transition-transform">▶</span>
                 </summary>
@@ -930,11 +928,13 @@ export default function MachineConfigTab({
                 {/* Hold / Enable behavior for GRBL */}
                 {config.driverConfig?.protocol === 'grbl' && (
                   <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">
-                    <div className="text-steel-400 text-xs font-medium">Motor tartás (GRBL)</div>
+                    <div className="text-steel-400 text-xs font-medium">
+                      {t('machine_config.motor_hold_grbl')}
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs text-steel-500 mb-1">
-                          Step idle delay - $1 (255 = mindig tart)
+                          {t('machine_config.step_idle_delay')}
                         </label>
                         <input
                           type="number"
@@ -950,21 +950,19 @@ export default function MachineConfigTab({
                       </div>
                       <div>
                         <label className="block text-xs text-steel-500 mb-1">
-                          Enable invert - $4 (0/1)
+                          {t('machine_config.enable_invert')}
                         </label>
                         <select
                           value={String(getGrblSettingValue('4') ?? 0)}
                           onChange={(e) => setGrblSettingValue('4', parseInt(e.target.value, 10) || 0)}
                           className="input w-full text-xs py-1"
                         >
-                          <option value="0">0 - normal polarity</option>
-                          <option value="1">1 - inverted polarity</option>
+                          <option value="0">{t('machine_config.enable_opt0')}</option>
+                          <option value="1">{t('machine_config.enable_opt1')}</option>
                         </select>
                       </div>
                     </div>
-                    <div className="text-[11px] text-steel-500">
-                      Ha a motor nem tartja a pozíciót jog után, állítsd a $1 értéket 255-re.
-                    </div>
+                    <div className="text-[11px] text-steel-500">{t('machine_config.motor_hold_hint')}</div>
                   </div>
                 )}
 
@@ -972,10 +970,12 @@ export default function MachineConfigTab({
                 <div className="bg-steel-800/50 rounded-lg p-3 space-y-2">
                   <div className="flex items-center gap-2 text-steel-400 text-xs font-medium">
                     <Power className="w-3 h-3" />
-                    Home Pozíció
+                    {t('machine_config.home_position')}
                   </div>
                   <div>
-                    <label className="block text-xs text-steel-500 mb-1">Mód</label>
+                    <label className="block text-xs text-steel-500 mb-1">
+                      {t('machine_config.home_mode')}
+                    </label>
                     <select
                       value={config.driverConfig?.homePosition?.mode ?? 'absolute'}
                       onChange={(e) =>
@@ -992,11 +992,11 @@ export default function MachineConfigTab({
                       }
                       className="input w-full text-sm"
                     >
-                      <option value="absolute">Megadott pozíció</option>
-                      <option value="query">Firmware lekérdezés</option>
+                      <option value="absolute">{t('machine_config.home_mode_absolute')}</option>
+                      <option value="query">{t('machine_config.home_mode_query')}</option>
                     </select>
                     <div className="text-[11px] text-steel-500 mt-1">
-                      A tengelyenkénti home értékeket a Tengelyek szekcióban add meg.
+                      {t('machine_config.home_per_axis_hint')}
                     </div>
                   </div>
                 </div>
@@ -1007,7 +1007,7 @@ export default function MachineConfigTab({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-steel-400 text-xs font-medium">
                         <Gauge className="w-3 h-3" />
-                        Closed Loop
+                        {t('machine_config.closed_loop')}
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
@@ -1027,13 +1027,15 @@ export default function MachineConfigTab({
                           }
                           className="w-3 h-3 rounded bg-steel-700 border-steel-600"
                         />
-                        <span className="text-xs text-steel-400">Engedélyezve</span>
+                        <span className="text-xs text-steel-400">{t('machine_config.enabled')}</span>
                       </label>
                     </div>
                     {config.driverConfig?.closedLoop?.enabled && (
                       <>
                         <div>
-                          <label className="block text-xs text-steel-500 mb-1">Driver típus</label>
+                          <label className="block text-xs text-steel-500 mb-1">
+                            {t('machine_config.driver_type')}
+                          </label>
                           <select
                             value={config.driverConfig?.closedLoop?.driverType ?? 'servo'}
                             onChange={(e) =>
@@ -1051,14 +1053,20 @@ export default function MachineConfigTab({
                             }
                             className="input w-full text-xs"
                           >
-                            <option value="servo">Servo</option>
-                            <option value="stepper_encoder">Stepper + Encoder</option>
+                            <option value="servo">{t('machine_config.driver_servo')}</option>
+                            <option value="stepper_encoder">
+                              {t('machine_config.driver_stepper_encoder')}
+                            </option>
                           </select>
                         </div>
-                        <div className="text-xs text-steel-500">Stall Detection</div>
+                        <div className="text-xs text-steel-500">
+                          {t('machine_config.stall_detection')}
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="block text-xs text-steel-500 mb-1">Timeout (s)</label>
+                            <label className="block text-xs text-steel-500 mb-1">
+                              {t('machine_config.stall_timeout')}
+                            </label>
                             <input
                               type="number"
                               value={config.driverConfig?.closedLoop?.stallDetection?.timeout ?? 0.3}
@@ -1084,7 +1092,9 @@ export default function MachineConfigTab({
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-steel-500 mb-1">Tolerancia (°)</label>
+                            <label className="block text-xs text-steel-500 mb-1">
+                              {t('machine_config.stall_tolerance')}
+                            </label>
                             <input
                               type="number"
                               value={config.driverConfig?.closedLoop?.stallDetection?.tolerance ?? 0.5}
@@ -1110,7 +1120,9 @@ export default function MachineConfigTab({
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-steel-500 mb-1">Sebesség (°/min)</label>
+                            <label className="block text-xs text-steel-500 mb-1">
+                              {t('machine_config.stall_speed')}
+                            </label>
                             <input
                               type="number"
                               value={config.driverConfig?.closedLoop?.stallDetection?.speed ?? 150}
@@ -1135,7 +1147,9 @@ export default function MachineConfigTab({
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-steel-500 mb-1">Max keresés (°)</label>
+                            <label className="block text-xs text-steel-500 mb-1">
+                              {t('machine_config.stall_max_search')}
+                            </label>
                             <input
                               type="number"
                               value={config.driverConfig?.closedLoop?.stallDetection?.maxSearchAngle ?? 400}
@@ -1226,7 +1240,7 @@ export default function MachineConfigTab({
 
           {/* Preview position controls */}
           <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-2">
-            <div className="text-xs text-steel-400 font-medium">Teszt pozíció</div>
+            <div className="text-xs text-steel-400 font-medium">{t('machine_config.test_position')}</div>
             <div className="grid grid-cols-3 gap-2">
               {['X', 'Y', 'Z'].map((axisName) => {
                 const axis = config.axes.find((a) => a.name === axisName)
@@ -1257,20 +1271,20 @@ export default function MachineConfigTab({
                 onClick={() => setPreviewPosition({ x: 0, y: 0, z: 0 })}
                 className="btn btn-secondary btn-sm text-xs flex-1"
               >
-                Reset pozíció
+                {t('machine_config.reset_position')}
               </button>
               <button
                 onClick={handleCaptureCameraView}
                 className="btn btn-secondary btn-sm text-xs flex-1"
               >
-                Nézőpont rögzítése
+                {t('machine_config.capture_view')}
               </button>
             </div>
           </div>
 
           {/* Camera position controls */}
           <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-2">
-            <div className="text-xs text-steel-400 font-medium">Kamera pozíció</div>
+            <div className="text-xs text-steel-400 font-medium">{t('machine_config.camera_position')}</div>
             {(() => {
               const camPos = config.visuals?.cameraPosition
                 ?? liveCamera?.position
@@ -1300,7 +1314,9 @@ export default function MachineConfigTab({
               }
               return (
                 <>
-                  <div className="text-[10px] text-steel-500 uppercase tracking-wider">Pozíció</div>
+                  <div className="text-[10px] text-steel-500 uppercase tracking-wider">
+                    {t('machine_config.label_position')}
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     {(['x', 'y', 'z'] as const).map((axis) => (
                       <div key={`pos-${axis}`}>
@@ -1315,7 +1331,9 @@ export default function MachineConfigTab({
                       </div>
                     ))}
                   </div>
-                  <div className="text-[10px] text-steel-500 uppercase tracking-wider mt-1">Cél (target)</div>
+                  <div className="text-[10px] text-steel-500 uppercase tracking-wider mt-1">
+                    {t('machine_config.label_target')}
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     {(['x', 'y', 'z'] as const).map((axis) => (
                       <div key={`tgt-${axis}`}>
@@ -1357,9 +1375,9 @@ export default function MachineConfigTab({
                 }}
                 disabled={!liveCamera}
                 className="btn btn-secondary btn-sm text-xs flex-1 disabled:opacity-50"
-                title="Az aktuális (egérrel beállított) nézőpont számszerű értékeit átveszi"
+                title={t('machine_config.read_current_view_title')}
               >
-                Aktuális nézet beolvasása
+                {t('machine_config.read_current_view')}
               </button>
               <button
                 onClick={() => {
@@ -1371,9 +1389,9 @@ export default function MachineConfigTab({
                   setConfig(next)
                 }}
                 className="btn btn-secondary btn-sm text-xs flex-1"
-                title="Kamera pozíció / cél beállítások törlése (alaphelyzet)"
+                title={t('machine_config.reset_camera_title')}
               >
-                Reset kamera
+                {t('machine_config.reset_camera')}
               </button>
             </div>
           </div>
@@ -1382,11 +1400,13 @@ export default function MachineConfigTab({
           <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">
             <div className="flex items-center gap-2 text-steel-300 text-sm font-medium">
               <Palette className="w-4 h-4" />
-              Megjelenés
+              {t('machine_config.appearance')}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-steel-500 mb-1">Gépváz színe</label>
+                <label className="block text-xs text-steel-500 mb-1">
+                  {t('machine_config.frame_color')}
+                </label>
                 <input
                   type="color"
                   value={config.visuals?.frameColor ?? '#2d2d2d'}
@@ -1400,7 +1420,9 @@ export default function MachineConfigTab({
                 />
               </div>
               <div>
-                <label className="block text-xs text-steel-500 mb-1">Háttérszín</label>
+                <label className="block text-xs text-steel-500 mb-1">
+                  {t('machine_config.background_color')}
+                </label>
                 <input
                   type="color"
                   value={config.visuals?.backgroundColor ?? '#0a0a0f'}
@@ -1427,7 +1449,7 @@ export default function MachineConfigTab({
                   }
                   className="w-3 h-3 rounded bg-steel-800 border-steel-600"
                 />
-                <span className="text-xs text-steel-400">Rács</span>
+                <span className="text-xs text-steel-400">{t('machine_config.show_grid')}</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1441,7 +1463,7 @@ export default function MachineConfigTab({
                   }
                   className="w-3 h-3 rounded bg-steel-800 border-steel-600"
                 />
-                <span className="text-xs text-steel-400">Tengely jelölők</span>
+                <span className="text-xs text-steel-400">{t('machine_config.show_axes')}</span>
               </label>
             </div>
           </div>

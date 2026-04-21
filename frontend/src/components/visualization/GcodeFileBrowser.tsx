@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   ChevronUp,
   Loader2,
@@ -47,9 +48,9 @@ function formatSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(2)} MB`
 }
 
-function formatDate(ms: number): string {
+function formatDate(ms: number, localeTag: string): string {
   try {
-    return new Date(ms).toLocaleString('hu-HU')
+    return new Date(ms).toLocaleString(localeTag === 'hu' ? 'hu-HU' : 'en-US')
   } catch {
     return ''
   }
@@ -61,6 +62,7 @@ export default function GcodeFileBrowser({
   hideFiles = false,
   onCurrentDirChange,
 }: GcodeFileBrowserProps) {
+  const { t, i18n } = useTranslation('visualization')
   const [data, setData] = useState<ListResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -85,13 +87,13 @@ export default function GcodeFileBrowser({
         setData(json)
         onCurrentDirChange?.(json.dir)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Hiba a könyvtár betöltésekor')
+        setError(err instanceof Error ? err.message : t('file_browser.load_dir_error'))
         setData(null)
       } finally {
         setLoading(false)
       }
     },
-    [onCurrentDirChange]
+    [onCurrentDirChange, t]
   )
 
   useEffect(() => {
@@ -138,7 +140,7 @@ export default function GcodeFileBrowser({
       setNewFolderName('')
       await loadDir(data.dir)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Hiba a könyvtár létrehozásakor')
+      setError(err instanceof Error ? err.message : t('file_browser.mkdir_error'))
     } finally {
       setBusy(false)
     }
@@ -158,7 +160,7 @@ export default function GcodeFileBrowser({
         const j = await res.json().catch(() => ({}))
         if (res.status === 409 && target.isDir && !recursive) {
           // Ask for recursive confirmation
-          const ok = window.confirm('A könyvtár nem üres. Rekurzívan törlöd a teljes tartalmával együtt?')
+          const ok = window.confirm(t('file_browser.delete_recursive_confirm'))
           if (ok) {
             await handleDelete(target, true)
           }
@@ -170,7 +172,7 @@ export default function GcodeFileBrowser({
       setConfirmDelete(null)
       await loadDir(data.dir)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Törlési hiba')
+      setError(err instanceof Error ? err.message : t('file_browser.delete_error'))
     } finally {
       setBusy(false)
     }
@@ -183,7 +185,7 @@ export default function GcodeFileBrowser({
         <button
           onClick={() => loadDir(data?.root)}
           className="btn btn-secondary btn-sm flex items-center gap-1"
-          title="Gyökérkönyvtár"
+          title={t('file_browser.root_title')}
           disabled={loading || busy}
         >
           <Home className="w-4 h-4" />
@@ -191,7 +193,7 @@ export default function GcodeFileBrowser({
         <button
           onClick={() => data?.parent && loadDir(data.parent)}
           className="btn btn-secondary btn-sm flex items-center gap-1"
-          title="Egy szinttel feljebb"
+          title={t('file_browser.up_title')}
           disabled={!data?.parent || loading || busy}
         >
           <ChevronUp className="w-4 h-4" />
@@ -203,11 +205,11 @@ export default function GcodeFileBrowser({
             setNewFolderName('')
           }}
           className="btn btn-secondary btn-sm flex items-center gap-1"
-          title="Új könyvtár"
+          title={t('file_browser.new_folder_title')}
           disabled={loading || busy || !data}
         >
           <FolderPlus className="w-4 h-4" />
-          Új könyvtár
+          {t('file_browser.new_folder_btn')}
         </button>
       </div>
 
@@ -254,14 +256,14 @@ export default function GcodeFileBrowser({
                 setNewFolderName('')
               }
             }}
-            placeholder="Új könyvtár neve..."
+            placeholder={t('file_browser.placeholder_folder_name')}
             className="input input-sm flex-1 text-sm"
           />
           <button
             onClick={handleCreateFolder}
             disabled={!newFolderName.trim() || busy}
             className="btn btn-primary btn-sm"
-            title="Létrehozás"
+            title={t('file_browser.create_title')}
           >
             <Check className="w-4 h-4" />
           </button>
@@ -271,7 +273,7 @@ export default function GcodeFileBrowser({
               setNewFolderName('')
             }}
             className="btn btn-secondary btn-sm"
-            title="Mégse"
+            title={t('file_browser.cancel_title')}
           >
             <XIcon className="w-4 h-4" />
           </button>
@@ -282,7 +284,7 @@ export default function GcodeFileBrowser({
       {loading ? (
         <div className="flex items-center justify-center py-8 text-steel-400">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          Betöltés...
+          {t('file_browser.loading')}
         </div>
       ) : error ? (
         <div className="p-3 rounded border border-red-500/40 bg-red-500/10 text-sm text-red-200">
@@ -302,19 +304,19 @@ export default function GcodeFileBrowser({
                 </button>
                 {confirmDelete?.path === d.path ? (
                   <div className="flex items-center gap-1 pr-2">
-                    <span className="text-xs text-red-300 mr-1">Törlés?</span>
+                    <span className="text-xs text-red-300 mr-1">{t('file_browser.confirm_delete')}</span>
                     <button
                       onClick={() => handleDelete({ path: d.path, isDir: true })}
                       className="p-1 rounded hover:bg-red-500/30 text-red-300"
                       disabled={busy}
-                      title="Igen"
+                      title={t('file_browser.yes_title')}
                     >
                       <Check className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setConfirmDelete(null)}
                       className="p-1 rounded hover:bg-steel-700 text-steel-300"
-                      title="Mégse"
+                      title={t('file_browser.cancel_title')}
                     >
                       <XIcon className="w-4 h-4" />
                     </button>
@@ -323,7 +325,7 @@ export default function GcodeFileBrowser({
                   <button
                     onClick={() => setConfirmDelete({ path: d.path, isDir: true })}
                     className="opacity-0 group-hover:opacity-100 p-2 text-steel-500 hover:text-red-400"
-                    title="Törlés"
+                    title={t('file_browser.delete_title')}
                     disabled={busy}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -343,24 +345,24 @@ export default function GcodeFileBrowser({
                     <span className="truncate flex-1">{f.name}</span>
                     <span className="text-xs text-steel-500 tabular-nums">{formatSize(f.size)}</span>
                     <span className="text-xs text-steel-500 tabular-nums hidden sm:inline">
-                      {formatDate(f.mtime)}
+                      {formatDate(f.mtime, i18n.language)}
                     </span>
                   </button>
                   {confirmDelete?.path === f.path ? (
                     <div className="flex items-center gap-1 pr-2">
-                      <span className="text-xs text-red-300 mr-1">Törlés?</span>
+                      <span className="text-xs text-red-300 mr-1">{t('file_browser.confirm_delete')}</span>
                       <button
                         onClick={() => handleDelete({ path: f.path, isDir: false })}
                         className="p-1 rounded hover:bg-red-500/30 text-red-300"
                         disabled={busy}
-                        title="Igen"
+                        title={t('file_browser.yes_title')}
                       >
                         <Check className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setConfirmDelete(null)}
                         className="p-1 rounded hover:bg-steel-700 text-steel-300"
-                        title="Mégse"
+                        title={t('file_browser.cancel_title')}
                       >
                         <XIcon className="w-4 h-4" />
                       </button>
@@ -369,7 +371,7 @@ export default function GcodeFileBrowser({
                     <button
                       onClick={() => setConfirmDelete({ path: f.path, isDir: false })}
                       className="opacity-0 group-hover:opacity-100 p-2 text-steel-500 hover:text-red-400"
-                      title="Törlés"
+                      title={t('file_browser.delete_title')}
                       disabled={busy}
                     >
                       <Trash2 className="w-4 h-4" />
@@ -379,7 +381,7 @@ export default function GcodeFileBrowser({
               ))}
 
             {(data?.dirs.length ?? 0) === 0 && (hideFiles || (data?.files.length ?? 0) === 0) && (
-              <li className="px-3 py-6 text-center text-sm text-steel-500">Üres könyvtár</li>
+              <li className="px-3 py-6 text-center text-sm text-steel-500">{t('file_browser.empty_dir')}</li>
             )}
           </ul>
         </div>

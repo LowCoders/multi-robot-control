@@ -16,6 +16,7 @@ import {
   Box,
   GripHorizontal,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useDeviceStore } from '../stores/deviceStore'
 import { MachineVisualization, GcodePanel, RobotArmVisualization, TubeBenderVisualization } from '../components/visualization'
 import { useMachineConfig } from '../hooks/useMachineConfig'
@@ -46,6 +47,7 @@ interface JobVisualizationPanelProps {
 }
 
 function JobVisualizationPanel({ job, showGcode, show3D }: JobVisualizationPanelProps) {
+  const { t } = useTranslation('pages')
   const { devices } = useDeviceStore()
   const device = devices.find(d => d.id === job.deviceId)
   const { config: machineConfig, loading: configLoading } = useMachineConfig(
@@ -127,7 +129,7 @@ function JobVisualizationPanel({ job, showGcode, show3D }: JobVisualizationPanel
             {configLoading ? (
               <div className="flex items-center justify-center h-full text-steel-400">
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                <span>Konfiguráció betöltése...</span>
+                <span>{t('job_manager.viz_loading_config')}</span>
               </div>
             ) : machineConfig ? (
               machineConfig.type === 'robot_arm' ? (
@@ -154,7 +156,7 @@ function JobVisualizationPanel({ job, showGcode, show3D }: JobVisualizationPanel
               )
             ) : (
               <div className="flex items-center justify-center h-full text-steel-400">
-                <span>Nincs elérhető konfiguráció</span>
+                <span>{t('job_manager.viz_no_config')}</span>
               </div>
             )}
           </div>
@@ -223,6 +225,7 @@ const saveToStorage = <T,>(key: string, value: T): void => {
 }
 
 export default function JobManager() {
+  const { t } = useTranslation('pages')
   const { devices } = useDeviceStore()
   
   // Load initial values from localStorage
@@ -367,7 +370,7 @@ export default function JobManager() {
   }
   
   const handleDeleteJob = async (jobId: string) => {
-    if (!confirm('Biztosan törölni szeretnéd ezt a job-ot?')) return
+    if (!confirm(t('job_manager.confirm_delete_job'))) return
     
     try {
       const response = await fetch(`/api/jobs/${jobId}`, {
@@ -493,14 +496,8 @@ export default function JobManager() {
     }
   }
   
-  const getStatusLabel = (status: Job['status']) => {
-    switch (status) {
-      case 'completed': return 'Kész'
-      case 'running': return 'Fut'
-      case 'pending': return 'Várakozik'
-      case 'failed': return 'Sikertelen'
-    }
-  }
+  const getStatusLabel = (status: Job['status']) =>
+    String(t(`job_manager.status.${status}`, { defaultValue: status }))
   
   const pendingCount = jobs.filter(j => j.status === 'pending').length
   const runningCount = jobs.filter(j => j.status === 'running').length
@@ -510,8 +507,8 @@ export default function JobManager() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Job Manager</h1>
-          <p className="text-steel-400">Munkák kezelése és ütemezése</p>
+          <h1 className="text-2xl font-bold text-white">{t('job_manager.title')}</h1>
+          <p className="text-steel-400">{t('job_manager.subtitle')}</p>
         </div>
         
         <button 
@@ -519,7 +516,7 @@ export default function JobManager() {
           className="btn btn-primary flex items-center gap-2"
         >
           <Upload className="w-4 h-4" />
-          Fájl Feltöltés
+          {t('job_manager.upload_btn')}
         </button>
       </div>
       
@@ -534,13 +531,15 @@ export default function JobManager() {
       {/* Execution Mode */}
       <div className="card">
         <div className="card-body">
-          <label className="text-sm text-steel-400 mb-2 block">Végrehajtási Mód</label>
+          <label className="text-sm text-steel-400 mb-2 block">{t('job_manager.exec_mode_label')}</label>
           <div className="flex gap-2">
-            {[
-              { value: 'sequential', label: 'Szekvenciális', desc: 'Egymás után' },
-              { value: 'parallel', label: 'Párhuzamos', desc: 'Egyszerre' },
-              { value: 'manual', label: 'Manuális', desc: 'Kézi indítás' },
-            ].map(({ value, label, desc }) => (
+            {(
+              [
+                ['sequential', 'sequential', 'sequential_desc'],
+                ['parallel', 'parallel', 'parallel_desc'],
+                ['manual', 'manual', 'manual_desc'],
+              ] as const
+            ).map(([value, labelKey, descKey]) => (
               <button
                 key={value}
                 onClick={() => handleModeChange(value as typeof executionMode)}
@@ -552,8 +551,8 @@ export default function JobManager() {
                   }
                 `}
               >
-                <div>{label}</div>
-                <div className="text-xs opacity-70">{desc}</div>
+                <div>{t(`job_manager.modes.${labelKey}`)}</div>
+                <div className="text-xs opacity-70">{t(`job_manager.modes.${descKey}`)}</div>
               </button>
             ))}
           </div>
@@ -564,9 +563,9 @@ export default function JobManager() {
       <div className="card">
         <div className="card-header">
           <div>
-            <span className="font-medium">Job Queue</span>
+            <span className="font-medium">{t('job_manager.queue_title')}</span>
             <span className="text-sm text-steel-400 ml-2">
-              ({pendingCount} várakozik, {runningCount} fut)
+              {t('job_manager.queue_counts', { pending: pendingCount, running: runningCount })}
             </span>
           </div>
           <button 
@@ -579,24 +578,24 @@ export default function JobManager() {
             ) : (
               <Play className="w-3 h-3" />
             )}
-            Start All
+            {t('job_manager.start_all')}
           </button>
         </div>
         <div className="divide-y divide-steel-700">
           {isLoading ? (
             <div className="p-8 text-center text-steel-400">
               <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-              Betöltés...
+              {t('job_manager.loading')}
             </div>
           ) : jobs.length === 0 ? (
             <div className="p-8 text-center text-steel-400">
               <FileCode className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>Nincs job a queue-ban.</p>
+              <p>{t('job_manager.empty_title')}</p>
               <button 
                 onClick={() => setShowAddJob(true)}
                 className="text-machine-400 hover:text-machine-300 mt-2"
               >
-                Tölts fel G-code fájlokat
+                {t('job_manager.empty_cta')}
               </button>
             </div>
           ) : (
@@ -637,12 +636,12 @@ export default function JobManager() {
                         to={`/device/${job.deviceId}`}
                         className="text-steel-400 hover:text-machine-400 transition-colors"
                       >
-                        Eszköz: {getDeviceName(job.deviceId)}
+                        {t('job_manager.device_label', { name: getDeviceName(job.deviceId) })}
                       </Link>
                       {job.estimatedTime && (
                         <span className="flex items-center gap-1 text-steel-400">
                           <Clock className="w-3 h-3" />
-                          {job.estimatedTime} perc
+                          {t('job_manager.minutes', { n: job.estimatedTime })}
                         </span>
                       )}
                     </div>
@@ -673,7 +672,11 @@ export default function JobManager() {
                     <button 
                       onClick={() => toggleGcode(job.id)}
                       className={`btn-icon ${expandedViews[job.id]?.gcode ? 'text-machine-400 bg-machine-500/20' : 'text-steel-400 hover:text-steel-300'}`}
-                      title={expandedViews[job.id]?.gcode ? 'G-code elrejtése' : 'G-code megjelenítése'}
+                      title={
+                        expandedViews[job.id]?.gcode
+                          ? t('job_manager.titles.toggle_gcode_hide')
+                          : t('job_manager.titles.toggle_gcode_show')
+                      }
                     >
                       <Code className="w-4 h-4" />
                     </button>
@@ -682,7 +685,11 @@ export default function JobManager() {
                     <button 
                       onClick={() => toggle3D(job.id)}
                       className={`btn-icon ${expandedViews[job.id]?.viz3d ? 'text-blue-400 bg-blue-500/20' : 'text-steel-400 hover:text-steel-300'}`}
-                      title={expandedViews[job.id]?.viz3d ? '3D nézet elrejtése' : '3D nézet megjelenítése'}
+                      title={
+                        expandedViews[job.id]?.viz3d
+                          ? t('job_manager.titles.toggle_viz_hide')
+                          : t('job_manager.titles.toggle_viz_show')
+                      }
                     >
                       <Box className="w-4 h-4" />
                     </button>
@@ -698,7 +705,11 @@ export default function JobManager() {
                       <button 
                         onClick={() => handleRunJob(job.id)}
                         className="btn-icon text-machine-400 hover:text-machine-300"
-                        title={job.status === 'pending' ? 'Indítás' : 'Újraindítás'}
+                        title={
+                          job.status === 'pending'
+                            ? t('job_manager.titles.run')
+                            : t('job_manager.titles.restart')
+                        }
                       >
                         <Play className="w-4 h-4" />
                       </button>
@@ -707,7 +718,7 @@ export default function JobManager() {
                       <button 
                         onClick={() => handlePauseJob(job.id)}
                         className="btn-icon text-amber-400 hover:text-amber-300"
-                        title="Szünet"
+                        title={t('job_manager.titles.pause')}
                       >
                         <Pause className="w-4 h-4" />
                       </button>
@@ -715,7 +726,7 @@ export default function JobManager() {
                     <button 
                       onClick={() => handleDeleteJob(job.id)}
                       className="btn-icon text-red-400 hover:text-red-300"
-                      title="Törlés"
+                      title={t('job_manager.titles.delete')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
