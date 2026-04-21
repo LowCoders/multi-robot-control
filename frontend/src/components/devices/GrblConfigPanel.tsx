@@ -230,10 +230,10 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
         <table className="min-w-full text-sm">
           <thead className="bg-steel-900">
             <tr className="text-left text-steel-300">
-              <th className="px-3 py-2">Parameter</th>
-              <th className="px-3 py-2">Description (EN)</th>
-              <th className="px-3 py-2 w-52">Value</th>
-              <th className="px-3 py-2 w-24">State</th>
+              <th className="px-3 py-2">{t('grbl_config.col_parameter')}</th>
+              <th className="px-3 py-2">{t('grbl_config.col_description')}</th>
+              <th className="px-3 py-2 w-52">{t('grbl_config.col_value')}</th>
+              <th className="px-3 py-2 w-24">{t('grbl_config.col_state')}</th>
             </tr>
           </thead>
           <tbody>
@@ -274,9 +274,9 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
                   </td>
                   <td className="px-3 py-2">
                     {isDirty ? (
-                      <span className="text-amber-400 text-xs">modified</span>
+                      <span className="text-amber-400 text-xs">{t('grbl_config.state_modified')}</span>
                     ) : (
-                      <span className="text-steel-500 text-xs">saved</span>
+                      <span className="text-steel-500 text-xs">{t('grbl_config.state_saved')}</span>
                     )}
                   </td>
                 </tr>
@@ -286,8 +286,8 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
               <tr>
                 <td className="px-3 py-6 text-steel-400" colSpan={4}>
                   {orderedKeys.length === 0
-                    ? 'No GRBL settings were returned by the device.'
-                    : 'No settings match the active filter.'}
+                    ? t('grbl_config.empty_no_settings')
+                    : t('grbl_config.empty_filter')}
                 </td>
               </tr>
             )}

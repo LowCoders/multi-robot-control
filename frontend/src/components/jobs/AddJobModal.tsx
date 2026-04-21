@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react'
 import { createLogger } from '../../utils/logger'
+import { useTranslation } from 'react-i18next'
 
 const log = createLogger('jobs.add-modal')
 
@@ -65,6 +66,7 @@ export default function AddJobModal({
   onSubmit,
   devices,
 }: AddJobModalProps) {
+  const { t } = useTranslation('pages')
   const [formData, setFormData] = useState(() => ({
     name: '',
     deviceId: loadLastDevice(),
@@ -102,7 +104,7 @@ export default function AddJobModal({
     setIsSubmitting(true)
 
     await onSubmit({
-      name: formData.name || formData.filepath.split('/').pop() || 'Új Job',
+      name: formData.name || formData.filepath.split('/').pop() || t('job_manager.add_modal.default_name'),
       deviceId: formData.deviceId,
       filepath: formData.filepath,
       estimatedTime: formData.estimatedTime
@@ -124,7 +126,7 @@ export default function AddJobModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="card w-full max-w-lg mx-4">
         <div className="card-header flex items-center justify-between">
-          <span className="font-medium">Új Job Hozzáadása</span>
+          <span className="font-medium">{t('job_manager.add_modal.title')}</span>
           <button onClick={onClose} className="text-steel-400 hover:text-white">
             <X className="w-5 h-5" />
           </button>
@@ -153,37 +155,37 @@ export default function AddJobModal({
             </div>
           </div>
 
-          <div className="text-center text-steel-500 text-sm">vagy</div>
+          <div className="text-center text-steel-500 text-sm">{t('job_manager.add_modal.or_divider')}</div>
 
           <div>
             <label className="block text-sm text-steel-400 mb-1">
               <FolderOpen className="w-4 h-4 inline mr-1" />
-              Fájl útvonal
+              {t('job_manager.add_modal.filepath_label')}
             </label>
             <input
               type="text"
               value={formData.filepath}
               onChange={(e) => setFormData({ ...formData, filepath: e.target.value })}
               className="input w-full"
-              placeholder="/path/to/file.nc"
+              placeholder={t('job_manager.add_modal.filepath_placeholder')}
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm text-steel-400 mb-1">Job neve (opcionális)</label>
+            <label className="block text-sm text-steel-400 mb-1">{t('job_manager.add_modal.name_label')}</label>
             <input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="input w-full"
-              placeholder="Automatikus a fájlnév alapján"
+              placeholder={t('job_manager.add_modal.name_placeholder')}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-steel-400 mb-1">Cél eszköz</label>
+              <label className="block text-sm text-steel-400 mb-1">{t('job_manager.add_modal.target_device')}</label>
               <select
                 value={formData.deviceId}
                 onChange={(e) => handleDeviceChange(e.target.value)}
@@ -199,13 +201,13 @@ export default function AddJobModal({
             </div>
 
             <div>
-              <label className="block text-sm text-steel-400 mb-1">Becsült idő (perc)</label>
+              <label className="block text-sm text-steel-400 mb-1">{t('job_manager.add_modal.time_label')}</label>
               <input
                 type="number"
                 value={formData.estimatedTime}
                 onChange={(e) => setFormData({ ...formData, estimatedTime: e.target.value })}
                 className="input w-full"
-                placeholder="Opcionális"
+                placeholder={t('job_manager.add_modal.time_placeholder')}
                 min="1"
               />
             </div>
@@ -213,7 +215,7 @@ export default function AddJobModal({
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn btn-secondary flex-1">
-              Mégse
+              {t('job_manager.add_modal.cancel')}
             </button>
             <button
               type="submit"
@@ -225,7 +227,7 @@ export default function AddJobModal({
               ) : (
                 <Upload className="w-4 h-4" />
               )}
-              Hozzáadás
+              {t('job_manager.add_modal.add')}
             </button>
           </div>
         </form>

@@ -6,11 +6,11 @@
     "laser": "Lézer:",
     "sim_badge": "SZIM",
     "details": "Részletek →",
-    "title_home": "Home",
-    "title_start": "Start",
-    "title_pause": "Pause",
-    "title_resume": "Resume",
-    "title_stop": "Stop",
+    "title_home": "Referencia (Home)",
+    "title_start": "Indítás",
+    "title_pause": "Szünet",
+    "title_resume": "Folytatás",
+    "title_stop": "Leállítás",
     "title_reset": "Reset"
   },
   "device_config_tabs": {
@@ -328,7 +328,10 @@
     "badge_jog_step_title": "Lépésenkénti jog",
     "badge_jog_stop": "JOG STOP",
     "badge_jog_cont": "JOG·CONT",
-    "badge_jog": "JOG"
+    "badge_jog": "JOG",
+    "trace_raw": "nyers:",
+    "trace_detail": "részlet:",
+    "trace_debug": "debug:"
   },
   "capability_toggles": {
     "hasGripper": { "label": "Fogókar", "tooltip": "End effector (fogókar / vákuumos / nincs) — a típust a végszerszám szerkesztőben állítod" },
@@ -503,6 +506,14 @@
     "success_updated": "GRBL beállítások frissítve.",
     "invalid_number": "Érvénytelen szám",
     "integer_required": "Egész szám szükséges",
-    "unknown_error": "Ismeretlen hiba"
+    "unknown_error": "Ismeretlen hiba",
+    "col_parameter": "Paraméter",
+    "col_description": "Leírás (EN)",
+    "col_value": "Érték",
+    "col_state": "Állapot",
+    "state_modified": "módosítva",
+    "state_saved": "mentve",
+    "empty_no_settings": "Az eszköz nem adott vissza GRBL beállításokat.",
+    "empty_filter": "Egyik beállítás sem felel meg a szűrőnek."
   }
 }

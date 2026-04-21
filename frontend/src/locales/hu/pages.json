@@ -90,9 +90,9 @@
       "manual": "Manuális",
       "manual_desc": "Kézi indítás"
     },
-    "queue_title": "Job Queue",
+    "queue_title": "Munkasor",
     "queue_counts": "({{pending}} várakozik, {{running}} fut)",
-    "start_all": "Start All",
+    "start_all": "Összes indítása",
     "loading": "Betöltés...",
     "empty_title": "Nincs job a queue-ban.",
     "empty_cta": "Tölts fel G-code fájlokat",
@@ -116,6 +116,21 @@
       "running": "Fut",
       "pending": "Várakozik",
       "failed": "Sikertelen"
+    },
+    "add_modal": {
+      "title": "Új munka hozzáadása",
+      "quick_pick": "Gyors választás (tesztfájlok)",
+      "or_divider": "vagy",
+      "filepath_label": "Fájl útvonal",
+      "filepath_placeholder": "/path/to/file.nc",
+      "name_label": "Munka neve (opcionális)",
+      "name_placeholder": "Üresen: a fájlnévből",
+      "target_device": "Cél eszköz",
+      "time_label": "Becsült idő (perc)",
+      "time_placeholder": "Opcionális",
+      "cancel": "Mégse",
+      "add": "Hozzáadás",
+      "default_name": "Új munka"
     }
   },
   "automation": {

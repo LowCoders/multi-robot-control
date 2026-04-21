@@ -328,7 +328,10 @@
     "badge_jog_step_title": "Step jog",
     "badge_jog_stop": "JOG STOP",
     "badge_jog_cont": "JOG·CONT",
-    "badge_jog": "JOG"
+    "badge_jog": "JOG",
+    "trace_raw": "raw:",
+    "trace_detail": "detail:",
+    "trace_debug": "debug:"
   },
   "capability_toggles": {
     "hasGripper": {
@@ -506,6 +509,14 @@
     "success_updated": "GRBL settings updated.",
     "invalid_number": "Invalid number",
     "integer_required": "Integer required",
-    "unknown_error": "Unknown error"
+    "unknown_error": "Unknown error",
+    "col_parameter": "Parameter",
+    "col_description": "Description (EN)",
+    "col_value": "Value",
+    "col_state": "State",
+    "state_modified": "modified",
+    "state_saved": "saved",
+    "empty_no_settings": "No GRBL settings were returned by the device.",
+    "empty_filter": "No settings match the active filter."
   }
 }

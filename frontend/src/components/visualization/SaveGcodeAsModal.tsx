@@ -102,7 +102,7 @@ export default function SaveGcodeAsModal({
                 setConfirmingOverwrite(false)
               }}
               className="input w-full"
-              placeholder="program.nc"
+              placeholder={t('save_modal.filename_placeholder')}
               autoFocus
             />
             <p className="text-xs text-steel-500 mt-1">

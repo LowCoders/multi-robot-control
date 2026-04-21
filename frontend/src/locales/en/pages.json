@@ -116,6 +116,21 @@
       "running": "Running",
       "pending": "Pending",
       "failed": "Failed"
+    },
+    "add_modal": {
+      "title": "Add job",
+      "quick_pick": "Quick pick (test files)",
+      "or_divider": "or",
+      "filepath_label": "File path",
+      "filepath_placeholder": "/path/to/file.nc",
+      "name_label": "Job name (optional)",
+      "name_placeholder": "From filename if empty",
+      "target_device": "Target device",
+      "time_label": "Estimated time (minutes)",
+      "time_placeholder": "Optional",
+      "cancel": "Cancel",
+      "add": "Add",
+      "default_name": "New job"
     }
   },
   "automation": {

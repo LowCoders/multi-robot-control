@@ -514,7 +514,7 @@ export default function MdiConsole({ deviceId }: Props) {
                   )}
                   {showRaw && (
                     <div className="pl-4 text-steel-500 whitespace-pre-wrap break-all">
-                      <span className="text-steel-600">raw:</span> {entry.raw}
+                      <span className="text-steel-600">{t('mdi_console.trace_raw')}</span> {entry.raw}
                     </div>
                   )}
                   {showResponse && (
@@ -529,7 +529,7 @@ export default function MdiConsole({ deviceId }: Props) {
                   )}
                   {showDebug && (
                     <div className="pl-4 text-[11px] text-steel-500">
-                      <span className="text-steel-600">debug:</span> {debugLine}
+                      <span className="text-steel-600">{t('mdi_console.trace_debug')}</span> {debugLine}
                     </div>
                   )}
                 </div>

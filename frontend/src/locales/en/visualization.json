@@ -88,6 +88,7 @@
   },
   "save_modal": {
     "title": "Save as",
+    "filename_placeholder": "program.nc",
     "filename_label": "Filename",
     "save_error": "Save error",
     "overwrite_title": "File exists",

@@ -470,10 +470,10 @@ export default function ControlPanelContent({
                   onClick={() => handleCommand('home')}
                   disabled={!isIdle || hostLockedByPanel}
                   className="btn btn-secondary flex flex-col items-center gap-1 py-3"
-                  title="Home"
+                  title={t('deviceCard.title_home')}
                 >
                   <Home className="w-5 h-5" />
-                  <span className="text-xs">Home</span>
+                  <span className="text-xs">{t('deviceCard.title_home')}</span>
                 </button>
 
                 <button
@@ -496,30 +496,30 @@ export default function ControlPanelContent({
                   onClick={() => handleCommand('pause')}
                   disabled={!isRunning || hostLockedByPanel}
                   className="btn btn-warning flex flex-col items-center gap-1 py-3"
-                  title="Pause"
+                  title={t('deviceCard.title_pause')}
                 >
                   <Pause className="w-5 h-5" />
-                  <span className="text-xs">Pause</span>
+                  <span className="text-xs">{t('deviceCard.title_pause')}</span>
                 </button>
 
                 <button
                   onClick={handleStop}
                   disabled={!isRunning && !isPaused && !isJog}
                   className="btn btn-danger flex flex-col items-center gap-1 py-3"
-                  title="Stop"
+                  title={t('deviceCard.title_stop')}
                 >
                   <Square className="w-5 h-5" />
-                  <span className="text-xs">Stop</span>
+                  <span className="text-xs">{t('deviceCard.title_stop')}</span>
                 </button>
 
                 <button
                   onClick={() => handleCommand('reset')}
                   disabled={!isAlarm}
                   className="btn btn-secondary flex flex-col items-center gap-1 py-3"
-                  title="Reset"
+                  title={t('deviceCard.title_reset')}
                 >
                   <RotateCcw className="w-5 h-5" />
-                  <span className="text-xs">Reset</span>
+                  <span className="text-xs">{t('deviceCard.title_reset')}</span>
                 </button>
               </div>
               {runError && (

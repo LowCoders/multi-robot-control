@@ -88,6 +88,7 @@
   },
   "save_modal": {
     "title": "Mentés másként",
+    "filename_placeholder": "program.nc",
     "filename_label": "Fájlnév",
     "save_error": "Mentési hiba",
     "overwrite_title": "A fájl létezik",

@@ -47,7 +47,7 @@ export default function MainLayout({ children }: Props) {
               <Cpu className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="font-semibold text-white">Robot Hub</h1>
+              <h1 className="font-semibold text-white">{t('layout.brandTitle')}</h1>
               <p className="text-xs text-steel-400">{t('layout.brandSubtitle')}</p>
             </div>
           </div>

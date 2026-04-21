@@ -187,7 +187,7 @@ export default function DeviceCard({ device }: Props) {
             <button
               onClick={() => handleCommand('stop')}
               className="btn-icon text-red-400 hover:text-red-300"
-              title="Stop"
+              title={t('deviceCard.title_stop')}
             >
               <Square className="w-4 h-4" />
             </button>
