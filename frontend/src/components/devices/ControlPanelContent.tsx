@@ -13,12 +13,14 @@ import {
   GripVertical,
   MousePointer2,
   Repeat,
+  Loader2,
 } from 'lucide-react'
 import PositionDisplay from './PositionDisplay'
 import JogControl, { type JogMode } from './JogControl'
-import MdiConsole from './MdiConsole'
+import MdiConsole, { MdiConsoleHeaderControls } from './MdiConsole'
 import ExtraControlsPanel from './ExtraControlsPanel'
 import { VisualizationPanel, GcodePanel } from '../visualization'
+import { useGcodeBufferStore } from '../../stores/gcodeBufferStore'
 import type { Device, DeviceCapabilities } from '../../types/device'
 import type { MachineConfig } from '../../types/machine-config'
 
@@ -183,6 +185,107 @@ export default function ControlPanelContent({
   const isJog = device.state === 'jog'
   const supportsPanelController = capabilities?.supports_panel_controller === true
   const hostLockedByPanel = supportsPanelController && device.control?.owner === 'panel'
+
+  // === Run flow integration with the in-memory G-code buffer ===
+  //
+  // A futtatáshoz a G-code ablak aktuális tartalmát egyetlen atomi backend
+  // hívásban visszük át (`/api/devices/:id/run-buffer`):
+  //   1. Egyedi (timestamp-pel ellátott) scratch fájlba menti a tartalmat
+  //      a GCODE_ROOT/.scratch/ alatt.
+  //   2. Régi scratch fájlokat takarítja erre az eszközre.
+  //   3. Betölteti a scratch fájlt az eszközre (`loadFile`).
+  //   4. Elindítja a futást (`run`).
+  //
+  // Az egyedi név megakadályozza, hogy a bridge/driver fájl-cache miatt a
+  // korábbi (rövidebb) verziót futtassa. A felhasználó által nevesített
+  // mentett fájl nem kerül felülírásra, mert a futtatás független scratch
+  // útvonalon megy.
+  const buffer = useGcodeBufferStore((s) => s.buffers[device.id])
+  const setBufferEditing = useGcodeBufferStore((s) => s.setEditing)
+  const hasGcodeContent = (buffer?.lines.length ?? 0) > 0
+  const currentBackendFile = device.status?.current_file ?? null
+
+  const [preparingRun, setPreparingRun] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+
+  // Egyszerre csak egy Play folyamat fusson, akkor is ha a felhasználó
+  // gyorsan többször klikkel.
+  const runInFlightRef = useRef(false)
+
+  const handlePlay = useCallback(async () => {
+    if (runInFlightRef.current) return
+    setRunError(null)
+
+    if (isPaused) {
+      sendCommand(device.id, 'resume')
+      return
+    }
+
+    if (hasGcodeContent && buffer) {
+      runInFlightRef.current = true
+      setPreparingRun(true)
+      // Optimisztikusan átkapcsolunk read-only/futási nézetre, hogy a
+      // felhasználó azonnal lássa a sor-kiemelést — ne kelljen megvárni az
+      // 500ms-os backend status pollingot. Ha a futás nem indul el, a
+      // backend állapota később felülírja ezt.
+      setBufferEditing(device.id, false)
+      try {
+        const content = buffer.lines.join('\n')
+        const res = await fetch(`/api/devices/${device.id}/run-buffer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          setRunError(data.error || `Futtatás sikertelen (HTTP ${res.status})`)
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Ismeretlen hiba'
+        setRunError(`Futtatási hiba: ${msg}`)
+      } finally {
+        runInFlightRef.current = false
+        setPreparingRun(false)
+      }
+      return
+    }
+
+    // Fallback: nincs lokális tartalom, de a backend-en már be van töltve
+    // valamilyen fájl — futtassuk azt.
+    if (currentBackendFile) {
+      sendCommand(device.id, 'run')
+    }
+  }, [
+    isPaused,
+    hasGcodeContent,
+    buffer,
+    currentBackendFile,
+    device.id,
+    sendCommand,
+    setBufferEditing,
+  ])
+
+  // A Play gomb akkor aktív, ha (a) szüneteltetve van (Resume), (b) a
+  // lokális G-code bufferben van futtatható tartalom, vagy (c) a backend-en
+  // már be van töltve egy fájl.
+  const canPlay =
+    !isRunning &&
+    (isPaused || isIdle) &&
+    !hostLockedByPanel &&
+    !preparingRun &&
+    (hasGcodeContent || !!currentBackendFile)
+
+  const playTitle = isPaused
+    ? 'Folytatás'
+    : !canPlay
+      ? hostLockedByPanel
+        ? 'Panel vezérlés alatt nem indítható'
+        : isRunning
+          ? 'Már fut'
+          : !hasGcodeContent && !currentBackendFile
+            ? 'Nincs futtatható G-code'
+            : 'Indítás'
+      : 'Indítás (a G-code ablak aktuális tartalma)'
 
   const handleStop = () => {
     const hasActiveProgram = device.status?.current_file && (device.status?.progress ?? 0) > 0
@@ -350,12 +453,16 @@ export default function ControlPanelContent({
                 </button>
 
                 <button
-                  onClick={() => handleCommand(isPaused ? 'resume' : 'run')}
-                  disabled={isRunning || (!isIdle && !isPaused) || !device.status?.current_file || hostLockedByPanel}
+                  onClick={handlePlay}
+                  disabled={!canPlay}
                   className="btn btn-primary flex flex-col items-center gap-1 py-3"
-                  title={isPaused ? 'Resume' : 'Run'}
+                  title={playTitle}
                 >
-                  <Play className="w-5 h-5" />
+                  {preparingRun ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Play className="w-5 h-5" />
+                  )}
                   <span className="text-xs">{isPaused ? 'Resume' : 'Run'}</span>
                 </button>
 
@@ -389,6 +496,11 @@ export default function ControlPanelContent({
                   <span className="text-xs">Reset</span>
                 </button>
               </div>
+              {runError && (
+                <div className="mt-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-200">
+                  {runError}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -399,23 +511,19 @@ export default function ControlPanelContent({
             <span className="font-medium">Kézi Vezérlés (Jog)</span>
             <div className="flex gap-1">
               <button
+                type="button"
                 onClick={() => setJogMode('step')}
-                className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
-                  jogMode === 'step'
-                    ? 'bg-machine-600 text-white'
-                    : 'bg-steel-700 text-steel-300 hover:bg-steel-600'
-                }`}
+                aria-pressed={jogMode === 'step'}
+                className={`btn btn-xs ${jogMode === 'step' ? 'btn-primary' : 'btn-secondary'}`}
               >
                 <MousePointer2 className="w-3 h-3" />
                 Lépésköz
               </button>
               <button
+                type="button"
                 onClick={() => setJogMode('continuous')}
-                className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
-                  jogMode === 'continuous'
-                    ? 'bg-machine-600 text-white'
-                    : 'bg-steel-700 text-steel-300 hover:bg-steel-600'
-                }`}
+                aria-pressed={jogMode === 'continuous'}
+                className={`btn btn-xs ${jogMode === 'continuous' ? 'btn-primary' : 'btn-secondary'}`}
               >
                 <Repeat className="w-3 h-3" />
                 Folyamatos
@@ -438,11 +546,12 @@ export default function ControlPanelContent({
         </div>
 
         {/* Right Column - MDI */}
-        <div className="card">
-          <div className="card-header">
-            <span className="font-medium">MDI Konzol</span>
+        <div className="card flex flex-col h-full">
+          <div className="card-header flex items-center gap-3">
+            <span className="font-medium whitespace-nowrap">MDI Konzol</span>
+            <MdiConsoleHeaderControls deviceId={device.id} />
           </div>
-          <div className="card-body">
+          <div className="card-body flex-1 flex flex-col min-h-0">
             <MdiConsole deviceId={device.id} />
           </div>
         </div>
@@ -540,6 +649,7 @@ export default function ControlPanelContent({
           </div>
         </div>
       </div>
+
     </div>
   )
 }

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { FileCode, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import type { DeviceStatus } from '../../types/device'
+import { createLogger } from '../../utils/logger'
+
+const log = createLogger('gcode-overlay')
 
 interface GcodeData {
   lines: string[]
@@ -74,7 +77,7 @@ export default function GcodeOverlay({
           }
         }
       } catch (err) {
-        console.error('Failed to load G-code:', err)
+        log.error('Failed to load G-code:', err)
         // Even on error, show something if running
         if (isRunning || totalLines > 0) {
           setGcode({

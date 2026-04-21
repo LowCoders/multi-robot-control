@@ -1,0 +1,59 @@
+/* Background highlight for newly added / dirty lines */
+.gcode-line-new {
+  background-color: rgba(34, 197, 94, 0.10) !important;
+}
+
+/* Left gutter strip for new lines */
+.gcode-glyph-new {
+  background-color: rgb(34, 197, 94);
+  width: 3px !important;
+  margin-left: 3px;
+}
+
+/* Currently executing line (during running) — left as a subtle hint. */
+.gcode-line-current {
+  background-color: rgba(234, 179, 8, 0.10) !important;
+}
+
+.gcode-glyph-current {
+  background-color: rgba(234, 179, 8, 0.55);
+  width: 3px !important;
+  margin-left: 3px;
+}
+
+/* "Next to execute" line — the prominent look-ahead pointer. */
+.gcode-line-next {
+  background-color: rgba(234, 179, 8, 0.22) !important;
+  border-top: 1px solid rgba(234, 179, 8, 0.55);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.55);
+  box-sizing: border-box;
+}
+
+.gcode-glyph-next {
+  background-color: rgb(234, 179, 8);
+  width: 3px !important;
+  margin-left: 3px;
+}
+
+.gcode-glyph-next::before {
+  content: '▶';
+  color: rgb(234, 179, 8);
+  position: absolute;
+  left: -10px;
+  top: -2px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* End-of-program pointer (rendered as a Monaco view zone after the last line). */
+.gcode-end-pointer-zone {
+  background-color: rgba(234, 179, 8, 0.10);
+  border-top: 1px dashed rgba(234, 179, 8, 0.55);
+  color: rgb(234, 179, 8);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  padding-left: 64px;
+  letter-spacing: 0.02em;
+}
