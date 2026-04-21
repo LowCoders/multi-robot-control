@@ -12,6 +12,9 @@ import { DeviceManager } from './devices/DeviceManager.js';
 import { StateManager } from './state/StateManager.js';
 import { createApiRoutes } from './api/routes.js';
 import { setupWebSocket } from './websocket/server.js';
+import { createLogger } from './utils/logger.js';
+
+const log = createLogger('server');
 
 export interface ServerContext {
   server: Server;
@@ -80,7 +83,7 @@ export async function createServer(config: AppConfig): Promise<ServerContext> {
   // Error handler - forward bridge (axios) error status codes when available
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Error:', err.message || err);
+    log.error('Error:', err.message || err);
     const status = err?.response?.status || err?.status || 500;
     const detail = err?.response?.data?.detail || err.message || 'Internal server error';
     res.status(status).json({ error: detail });
@@ -93,7 +96,7 @@ export async function createServer(config: AppConfig): Promise<ServerContext> {
   
   // Cleanup function for graceful shutdown
   const cleanup = (): void => {
-    console.log('Cleaning up resources...');
+    log.info('Cleaning up resources...');
     deviceManager.cleanup();
     stateManager.cleanup();
     io.close();

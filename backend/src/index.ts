@@ -2,13 +2,30 @@
  * Multi-Robot Control System - Backend Entry Point
  */
 
+// .env betöltése MIELŐTT bármely más modul használná a process.env-et.
+// A workspace gyökérben (../.env) és a backend könyvtárban (./.env) is
+// keresünk, hogy mindkét deploy-elrendezés működjön.
+import { config as dotenvConfig } from 'dotenv';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+
+const envCandidates = [resolve(process.cwd(), '..', '.env'), resolve(process.cwd(), '.env')];
+for (const candidate of envCandidates) {
+  if (existsSync(candidate)) {
+    dotenvConfig({ path: candidate });
+  }
+}
+
 import { createServer, ServerContext } from './server.js';
 import { loadConfig } from './config/index.js';
+import { createLogger } from './utils/logger.js';
+
+const log = createLogger('startup');
 
 async function main(): Promise<void> {
-  console.log('========================================');
-  console.log('Multi-Robot Control System - Backend');
-  console.log('========================================');
+  log.info('========================================');
+  log.info('Multi-Robot Control System - Backend');
+  log.info('========================================');
   
   let serverContext: ServerContext | null = null;
   
@@ -24,26 +41,24 @@ async function main(): Promise<void> {
     const host = config.server?.backend?.host || '0.0.0.0';
     
     server.listen(port, host, () => {
-      console.log(`Backend szerver fut: http://${host}:${port}`);
-      console.log('');
-      console.log('Endpoints:');
-      console.log(`  REST API: http://${host}:${port}/api`);
-      console.log(`  WebSocket: ws://${host}:${port}`);
-      console.log('');
+      log.info(`Backend szerver fut: http://${host}:${port}`);
+      log.info('Endpoints:');
+      log.info(`  REST API: http://${host}:${port}/api`);
+      log.info(`  WebSocket: ws://${host}:${port}`);
     });
     
     // Graceful shutdown handler
     const handleShutdown = (signal: string) => {
-      console.log(`${signal} signal, shutting down...`);
+      log.info(`${signal} signal, shutting down...`);
       cleanup();
       server.close(() => {
-        console.log('Server closed');
+        log.info('Server closed');
         process.exit(0);
       });
       
       // Force exit after 10 seconds if graceful shutdown fails
       setTimeout(() => {
-        console.error('Forced shutdown after timeout');
+        log.error('Forced shutdown after timeout');
         process.exit(1);
       }, 10000);
     };
@@ -52,7 +67,7 @@ async function main(): Promise<void> {
     process.on('SIGINT', () => handleShutdown('SIGINT'));
     
   } catch (error) {
-    console.error('Startup error:', error);
+    log.error('Startup error:', error);
     process.exit(1);
   }
 }
