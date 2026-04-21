@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { 
   Play, 
   Pause, 
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export default function DeviceCard({ device }: Props) {
+  const { t } = useTranslation('devices')
   const { sendCommand } = useDeviceStore()
   const { config: machineConfig } = useMachineConfig(device.id, device.type)
   
@@ -78,7 +80,7 @@ export default function DeviceCard({ device }: Props) {
           {device.simulated && (
             <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded">
               <Gamepad2 className="w-3 h-3" />
-              SZIM
+              {t('deviceCard.sim_badge')}
             </span>
           )}
           <StatusBadge state={device.state} />
@@ -96,7 +98,7 @@ export default function DeviceCard({ device }: Props) {
         {isRunning && device.status && device.status.progress > 0 && (
           <div className="space-y-1">
             <div className="flex justify-between text-xs">
-              <span className="text-steel-400">Haladás</span>
+              <span className="text-steel-400">{t('deviceCard.progress')}</span>
               <span className="text-steel-300">{device.status.progress.toFixed(1)}%</span>
             </div>
             <div className="h-2 bg-steel-800 rounded-full overflow-hidden">
@@ -112,18 +114,18 @@ export default function DeviceCard({ device }: Props) {
         {device.status && (
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div>
-              <span className="text-steel-400">Feed: </span>
+              <span className="text-steel-400">{t('deviceCard.feed')} </span>
               <span className="text-steel-200">{device.status.feed_rate.toFixed(0)} mm/min</span>
             </div>
             {device.status.spindle_speed > 0 && (
               <div>
-                <span className="text-steel-400">Spindle: </span>
+                <span className="text-steel-400">{t('deviceCard.spindle')} </span>
                 <span className="text-steel-200">{device.status.spindle_speed.toFixed(0)} RPM</span>
               </div>
             )}
             {device.status.laser_power > 0 && (
               <div>
-                <span className="text-steel-400">Lézer: </span>
+                <span className="text-steel-400">{t('deviceCard.laser')} </span>
                 <span className="text-steel-200">{device.status.laser_power.toFixed(0)}%</span>
               </div>
             )}
@@ -145,7 +147,7 @@ export default function DeviceCard({ device }: Props) {
             onClick={() => handleCommand('home')}
             disabled={!isIdle}
             className="btn-icon"
-            title="Home"
+            title={t('deviceCard.title_home')}
           >
             <Home className="w-4 h-4" />
           </button>
@@ -155,7 +157,7 @@ export default function DeviceCard({ device }: Props) {
               onClick={() => handleCommand('run')}
               disabled={!isIdle || !device.status?.current_file}
               className="btn-icon text-machine-400 hover:text-machine-300"
-              title="Start"
+              title={t('deviceCard.title_start')}
             >
               <Play className="w-4 h-4" />
             </button>
@@ -165,7 +167,7 @@ export default function DeviceCard({ device }: Props) {
             <button
               onClick={() => handleCommand('pause')}
               className="btn-icon text-amber-400 hover:text-amber-300"
-              title="Pause"
+              title={t('deviceCard.title_pause')}
             >
               <Pause className="w-4 h-4" />
             </button>
@@ -175,7 +177,7 @@ export default function DeviceCard({ device }: Props) {
             <button
               onClick={() => handleCommand('resume')}
               className="btn-icon text-machine-400 hover:text-machine-300"
-              title="Resume"
+              title={t('deviceCard.title_resume')}
             >
               <Play className="w-4 h-4" />
             </button>
@@ -195,7 +197,7 @@ export default function DeviceCard({ device }: Props) {
             <button
               onClick={() => handleCommand('reset')}
               className="btn-icon text-amber-400 hover:text-amber-300"
-              title="Reset"
+              title={t('deviceCard.title_reset')}
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -205,7 +207,7 @@ export default function DeviceCard({ device }: Props) {
             to={`/device/${device.id}`}
             className="ml-auto text-sm text-steel-400 hover:text-machine-400 transition-colors"
           >
-            Részletek →
+            {t('deviceCard.details')}
           </Link>
         </div>
       </div>

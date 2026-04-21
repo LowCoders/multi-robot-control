@@ -1,0 +1,49 @@
+{
+  "languageSwitcher": {
+    "ariaLabel": "Interface language",
+    "title": {
+      "en": "English",
+      "hu": "Hungarian"
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "jobs": "Job Manager",
+    "automation": "Automation",
+    "settings": "Settings"
+  },
+  "layout": {
+    "brandSubtitle": "Multi-Robot Control",
+    "connection": {
+      "connected": "Connected",
+      "disconnected": "No connection"
+    },
+    "deviceCount": "{{active}}/{{total}} devices"
+  },
+  "statusBadge": {
+    "disconnected": "Offline",
+    "connecting": "Connecting…",
+    "idle": "Idle",
+    "running": "Running",
+    "paused": "Paused",
+    "alarm": "Alarm",
+    "homing": "Homing",
+    "probing": "Probing",
+    "jog": "Jog"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "generic": "Something went wrong"
+  },
+  "notifications": {
+    "close": "Close",
+    "jobComplete": "Job finished: {{file}}",
+    "controlDenied": {
+      "command_running": "Control takeover denied: a command or program is running. Try again after it finishes or reconnect.",
+      "estop": "Control takeover denied: E-STOP is active.",
+      "alarm": "Control takeover denied: alarm state.",
+      "fallback": "Control takeover denied: {{reason}}"
+    },
+    "transientStateWindow": "Transient firmware state window (error:8). The system will retry automatically."
+  }
+}

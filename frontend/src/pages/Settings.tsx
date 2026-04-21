@@ -10,10 +10,12 @@ import {
   Loader2,
 } from 'lucide-react'
 import { createLogger } from '../utils/logger'
+import { useTranslation } from 'react-i18next'
 
 const log = createLogger('settings')
 
 export default function Settings() {
+  const { t } = useTranslation('pages')
   // Az alapértékeket a backend `/api/settings` adja vissza (config/system.yaml-ből).
   // Itt csak üres placeholder, a useEffect tölti fel.
   const [settings, setSettings] = useState({
@@ -48,11 +50,11 @@ export default function Settings() {
       setDevicesYaml(typeof data.raw === 'string' ? data.raw : '')
       setDevicesYamlPath(typeof data.path === 'string' ? data.path : '')
     } catch (err) {
-      setDevicesYamlError(err instanceof Error ? err.message : 'Letöltési hiba')
+      setDevicesYamlError(err instanceof Error ? err.message : t('settings.download_error'))
     } finally {
       setDevicesYamlLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     loadDevicesYaml()
@@ -110,11 +112,11 @@ export default function Settings() {
       } else {
         const data = await response.json()
         setSaveStatus('error')
-        setErrorMessage(data.error || 'Mentési hiba')
+        setErrorMessage(data.error || t('settings.save_error_generic'))
       }
     } catch (error) {
       setSaveStatus('error')
-      setErrorMessage('Nem sikerült kapcsolódni a szerverhez')
+      setErrorMessage(t('settings.cannot_reach_server'))
     } finally {
       setIsSaving(false)
     }
@@ -125,15 +127,15 @@ export default function Settings() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Beállítások</h1>
-          <p className="text-steel-400">Rendszer konfiguráció</p>
+          <h1 className="text-2xl font-bold text-white">{t('settings.title')}</h1>
+          <p className="text-steel-400">{t('settings.subtitle')}</p>
         </div>
         
         <div className="flex items-center gap-3">
           {saveStatus === 'success' && (
             <div className="flex items-center gap-2 text-machine-400">
               <Check className="w-4 h-4" />
-              <span className="text-sm">Mentve!</span>
+              <span className="text-sm">{t('settings.saved')}</span>
             </div>
           )}
           {saveStatus === 'error' && (
@@ -152,7 +154,7 @@ export default function Settings() {
             ) : (
               <Save className="w-4 h-4" />
             )}
-            {isSaving ? 'Mentés...' : 'Mentés'}
+            {isSaving ? t('settings.save_loading') : t('settings.save')}
           </button>
         </div>
       </div>
@@ -162,14 +164,14 @@ export default function Settings() {
         <div className="card-header">
           <div className="flex items-center gap-2">
             <Server className="w-5 h-5 text-steel-400" />
-            <span className="font-medium">Szerver Beállítások</span>
+            <span className="font-medium">{t('settings.server_section')}</span>
           </div>
         </div>
         <div className="card-body space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-steel-400 mb-1">
-                Bridge Host
+                {t('settings.bridge_host')}
               </label>
               <input
                 type="text"
@@ -180,7 +182,7 @@ export default function Settings() {
             </div>
             <div>
               <label className="block text-sm text-steel-400 mb-1">
-                Bridge Port
+                {t('settings.bridge_port')}
               </label>
               <input
                 type="text"
@@ -198,13 +200,13 @@ export default function Settings() {
         <div className="card-header">
           <div className="flex items-center gap-2">
             <Folder className="w-5 h-5 text-steel-400" />
-            <span className="font-medium">Fájl Beállítások</span>
+            <span className="font-medium">{t('settings.file_section')}</span>
           </div>
         </div>
         <div className="card-body">
           <div>
             <label className="block text-sm text-steel-400 mb-1">
-              G-code gyökérkönyvtár (csak olvasható)
+              {t('settings.gcode_root_label')}
             </label>
             <input
               type="text"
@@ -212,12 +214,7 @@ export default function Settings() {
               readOnly
               className="input w-full bg-steel-900 text-steel-400 cursor-not-allowed"
             />
-            <p className="text-xs text-steel-500 mt-1">
-              A gyökérkönyvtárt a backend <code className="text-machine-400">.env</code> fájljának{' '}
-              <code className="text-machine-400">GCODE_ROOT_DIR</code> változója határozza meg.
-              Minden G-code művelet (megnyitás, mentés, létrehozás, törlés) erre a könyvtárra
-              van korlátozva, a symlink-escape ellen is védve.
-            </p>
+            <p className="text-xs text-steel-500 mt-1">{t('settings.gcode_root_hint')}</p>
           </div>
         </div>
       </div>
@@ -227,14 +224,14 @@ export default function Settings() {
         <div className="card-header">
           <div className="flex items-center gap-2">
             <RefreshCw className="w-5 h-5 text-steel-400" />
-            <span className="font-medium">Teljesítmény</span>
+            <span className="font-medium">{t('settings.performance_section')}</span>
           </div>
         </div>
         <div className="card-body space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-steel-400 mb-1">
-                Pozíció Frissítési Ráta (Hz)
+                {t('settings.position_rate')}
               </label>
               <input
                 type="number"
@@ -247,7 +244,7 @@ export default function Settings() {
             </div>
             <div>
               <label className="block text-sm text-steel-400 mb-1">
-                Státusz Frissítési Ráta (Hz)
+                {t('settings.status_rate')}
               </label>
               <input
                 type="number"
@@ -268,31 +265,29 @@ export default function Settings() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Cpu className="w-5 h-5 text-steel-400" />
-              <span className="font-medium">Eszközök</span>
+              <span className="font-medium">{t('settings.devices_section')}</span>
             </div>
             <button
               type="button"
               onClick={loadDevicesYaml}
               disabled={devicesYamlLoading}
               className="text-steel-400 hover:text-white disabled:opacity-50 flex items-center gap-1 text-xs"
-              title="Frissítés"
+              title={t('settings.devices_refresh_title')}
             >
               {devicesYamlLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <RefreshCw className="w-4 h-4" />
               )}
-              Frissítés
+              {t('settings.refresh_short')}
             </button>
           </div>
         </div>
         <div className="card-body space-y-3">
           <p className="text-sm text-steel-400">
-            Az eszközök konfigurációját a{' '}
-            <code className="bg-steel-800 px-1 rounded">
-              {devicesYamlPath || 'config/devices.yaml'}
-            </code>{' '}
-            fájlban módosíthatod. Itt az aktuális tartalom látható élőben.
+            {t('settings.devices_intro', {
+              path: devicesYamlPath || 'config/devices.yaml',
+            })}
           </p>
 
           {devicesYamlError && (
@@ -304,8 +299,8 @@ export default function Settings() {
           <div className="bg-steel-800/50 rounded-lg overflow-hidden border border-steel-700">
             <pre className="font-mono text-xs text-steel-300 p-3 overflow-auto max-h-96 leading-relaxed whitespace-pre">
               {devicesYamlLoading && !devicesYaml
-                ? 'Betöltés…'
-                : devicesYaml || '(üres devices.yaml)'}
+                ? t('settings.devices_loading')
+                : devicesYaml || t('settings.devices_empty')}
             </pre>
           </div>
         </div>

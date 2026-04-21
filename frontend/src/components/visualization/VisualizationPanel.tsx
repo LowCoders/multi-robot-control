@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertCircle, Download, FileCode, GripVertical, Wind } from 'lucide-react'
 import type { MachineConfig } from '../../types/machine-config'
 import type { DeviceStatus, Position } from '../../types/device'
@@ -7,6 +8,7 @@ import RobotArmVisualization from './RobotArmVisualization'
 import TubeBenderVisualization from './TubeBenderVisualization'
 import {
   ComponentTable,
+  LOD_LABELS_EN,
   LOD_LABELS_HU,
   LOD_LEVELS,
   TubeBenderVisualizationV2,
@@ -55,6 +57,8 @@ export default function VisualizationPanel({
   showHeader = true,
   headerExtra,
 }: Props) {
+  const { t, i18n } = useTranslation('visualization')
+  const lodLabels = i18n.language.startsWith('hu') ? LOD_LABELS_HU : LOD_LABELS_EN
   const currentFile = status?.current_file
   const filename = currentFile?.split('/').pop()
 
@@ -84,16 +88,16 @@ export default function VisualizationPanel({
             {filename ? (
               <span className="text-steel-200 font-medium">{filename}</span>
             ) : (
-              <span className="text-steel-500">Nincs futó program</span>
+              <span className="text-steel-500">{t('panel.no_program')}</span>
             )}
             {status?.state === 'running' && (
               <span className="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded">
-                Fut
+                {t('panel.running')}
               </span>
             )}
             {status?.state === 'paused' && (
               <span className="ml-2 px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded">
-                Szünet
+                {t('panel.paused')}
               </span>
             )}
           </div>
@@ -114,11 +118,11 @@ export default function VisualizationPanel({
               onChange={(e) => setUseV2(e.target.checked)}
               className="accent-blue-500"
             />
-            Új modell (béta)
+            {t('panel.beta_model')}
           </label>
           {!useV2 && (
             <span className="text-steel-500 italic">
-              kapcsold be a részletesség / szín / STL export vezérlőket
+              {t('panel.beta_hint')}
             </span>
           )}
         </div>
@@ -128,26 +132,26 @@ export default function VisualizationPanel({
       {isTubeBender && useV2 && (
         <div className="bg-steel-900/95 border-b border-steel-700 px-3 py-1.5 flex items-center gap-3 flex-wrap text-xs">
           <div className="flex items-center gap-1">
-            <span className="text-steel-400">Részletesség:</span>
+            <span className="text-steel-400">{t('panel.lod_label')}</span>
             <select
               value={lodLevel}
               onChange={(e) => setLodLevel(e.target.value as typeof lodLevel)}
               className="bg-steel-800 text-steel-100 border border-steel-700 rounded px-1.5 py-0.5"
             >
               {LOD_LEVELS.map((lvl) => (
-                <option key={lvl} value={lvl}>{LOD_LABELS_HU[lvl]}</option>
+                <option key={lvl} value={lvl}>{lodLabels[lvl]}</option>
               ))}
             </select>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-steel-400">Szín:</span>
+            <span className="text-steel-400">{t('panel.color_label')}</span>
             <select
               value={colorMode}
               onChange={(e) => setColorMode(e.target.value as typeof colorMode)}
               className="bg-steel-800 text-steel-100 border border-steel-700 rounded px-1.5 py-0.5"
             >
-              <option value="pbr">PBR (anyagok)</option>
-              <option value="registry">Egyedi színek (közös nyelv)</option>
+              <option value="pbr">{t('panel.color_pbr')}</option>
+              <option value="registry">{t('panel.color_registry')}</option>
             </select>
           </div>
           <label className="flex items-center gap-1 text-steel-300 cursor-pointer">
@@ -157,7 +161,7 @@ export default function VisualizationPanel({
               onChange={(e) => setFadeOthers(e.target.checked)}
               className="accent-blue-500"
             />
-            Többi áttetsző kiemeléskor
+            {t('panel.fade_others')}
           </label>
           <label className="flex items-center gap-1 text-steel-300 cursor-pointer">
             <input
@@ -166,14 +170,14 @@ export default function VisualizationPanel({
               onChange={(e) => setShowTable(e.target.checked)}
               className="accent-blue-500"
             />
-            Táblázat panel
+            {t('panel.show_table')}
           </label>
           <div className="flex items-center gap-1 ml-auto">
             <button
               type="button"
               onClick={() => exportStl()}
               className="inline-flex items-center gap-1 px-2 py-0.5 bg-steel-800 hover:bg-steel-700 text-steel-100 border border-steel-700 rounded"
-              title="A teljes szerelvény bbox-ainak exportja STL-ben"
+              title={t('panel.stl_full_title')}
             >
               <Download className="w-3.5 h-3.5" />
               STL
@@ -183,10 +187,12 @@ export default function VisualizationPanel({
               disabled={!selectedId}
               onClick={() => selectedId && exportStl({ rootId: selectedId })}
               className="inline-flex items-center gap-1 px-2 py-0.5 bg-steel-800 hover:bg-steel-700 disabled:opacity-40 disabled:cursor-not-allowed text-steel-100 border border-steel-700 rounded"
-              title={selectedId ? `STL: csak '${selectedId}'` : 'Kijelölés szükséges'}
+              title={
+                selectedId ? t('panel.stl_selected_title', { id: selectedId }) : t('panel.stl_pick_first')
+              }
             >
               <Download className="w-3.5 h-3.5" />
-              STL (kiemelt)
+              {t('panel.stl_selected_btn')}
             </button>
           </div>
         </div>
@@ -271,14 +277,18 @@ export default function VisualizationPanel({
               {status?.gripper_state && (
                 <span className={`flex items-center gap-1 ${status.gripper_state === 'closed' ? 'text-red-400' : 'text-green-400'}`}>
                   <GripVertical className="w-3 h-3" />
-                  {status.gripper_state === 'closed' ? 'Zárt' : status.gripper_state === 'open' ? 'Nyitott' : '?'}
+                  {status.gripper_state === 'closed'
+                    ? t('panel.gripper_closed')
+                    : status.gripper_state === 'open'
+                      ? t('panel.gripper_open')
+                      : t('panel.gripper_unknown')}
                 </span>
               )}
               {/* Szívó állapot */}
               {status?.sucker_state !== undefined && (
                 <span className={`flex items-center gap-1 ${status.sucker_state ? 'text-cyan-400' : 'text-steel-500'}`}>
                   <Wind className="w-3 h-3" />
-                  {status.sucker_state ? 'BE' : 'KI'}
+                  {status.sucker_state ? t('panel.sucker_on') : t('panel.sucker_off')}
                 </span>
               )}
             </div>
@@ -322,7 +332,7 @@ export default function VisualizationPanel({
           {!status && (
             <span className="flex items-center gap-1 text-amber-400">
               <AlertCircle className="w-3 h-3" />
-              Nincs kapcsolat
+              {t('panel.no_connection')}
             </span>
           )}
           

@@ -1,5 +1,6 @@
-import { ReactNode } from 'react'
+import { ReactNode, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { 
   LayoutDashboard, 
   Cpu, 
@@ -10,21 +11,27 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { useDeviceStore } from '../../stores/deviceStore'
+import LanguageSwitcher from '../common/LanguageSwitcher'
 
 interface Props {
   children: ReactNode
 }
 
-const navItems = [
-  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { path: '/jobs', icon: ListTodo, label: 'Job Manager' },
-  { path: '/automation', icon: Zap, label: 'Automatizálás' },
-  { path: '/settings', icon: Settings, label: 'Beállítások' },
-]
-
 export default function MainLayout({ children }: Props) {
   const location = useLocation()
   const { connected, devices } = useDeviceStore()
+  const { t } = useTranslation('common')
+
+  const navItems = useMemo(
+    () =>
+      [
+        { path: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' as const },
+        { path: '/jobs', icon: ListTodo, labelKey: 'nav.jobs' as const },
+        { path: '/automation', icon: Zap, labelKey: 'nav.automation' as const },
+        { path: '/settings', icon: Settings, labelKey: 'nav.settings' as const },
+      ] as const,
+    [],
+  )
   
   const activeDevices = devices.filter(d => d.connected).length
   const totalDevices = devices.length
@@ -41,7 +48,7 @@ export default function MainLayout({ children }: Props) {
             </div>
             <div>
               <h1 className="font-semibold text-white">Robot Hub</h1>
-              <p className="text-xs text-steel-400">Multi-Robot Control</p>
+              <p className="text-xs text-steel-400">{t('layout.brandSubtitle')}</p>
             </div>
           </div>
         </div>
@@ -66,7 +73,7 @@ export default function MainLayout({ children }: Props) {
                     `}
                   >
                     <Icon className="w-5 h-5" />
-                    <span>{item.label}</span>
+                    <span>{t(item.labelKey)}</span>
                   </Link>
                 </li>
               )
@@ -84,19 +91,22 @@ export default function MainLayout({ children }: Props) {
                 <WifiOff className="w-4 h-4 text-red-500" />
               )}
               <span className={connected ? 'text-machine-400' : 'text-red-400'}>
-                {connected ? 'Kapcsolódva' : 'Nincs kapcsolat'}
+                {connected ? t('layout.connection.connected') : t('layout.connection.disconnected')}
               </span>
             </div>
             <span className="text-steel-400">
-              {activeDevices}/{totalDevices} eszköz
+              {t('layout.deviceCount', { active: activeDevices, total: totalDevices })}
             </span>
           </div>
         </div>
       </aside>
       
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="p-6">
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="shrink-0 flex justify-end items-center px-6 pt-4 pb-2">
+          <LanguageSwitcher />
+        </div>
+        <div className="flex-1 overflow-auto p-6 pt-2">
           {children}
         </div>
       </main>

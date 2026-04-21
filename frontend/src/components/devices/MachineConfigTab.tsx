@@ -52,6 +52,7 @@ import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC } from '../../types/machine-config
 import type { DeviceCapabilities } from '../../types/device'
 import { effectiveCapabilities } from '../../utils/capabilities'
 import { createLogger } from '../../utils/logger'
+import { useTranslation } from 'react-i18next'
 import {
   buildMachineConfigForTypeSwitch,
   deriveWorkEnvelopeFromAxes,
@@ -106,6 +107,7 @@ export default function MachineConfigTab({
   deviceType: _deviceType,
   capabilities 
 }: MachineConfigTabProps) {
+  const { t } = useTranslation('devices')
   const [config, setConfig] = useState<MachineConfig>(DEFAULT_3AXIS_CNC)
   const [originalConfig, setOriginalConfig] = useState<MachineConfig | null>(null)
   const [loading, setLoading] = useState(true)
@@ -232,7 +234,7 @@ export default function MachineConfigTab({
           cameraTarget: liveCamera.target,
         },
       })
-      setSuccessMessage('Nézőpont rögzítve!')
+      setSuccessMessage(t('machine_config.success_view_captured'))
       setTimeout(() => setSuccessMessage(null), 2000)
     }
   }, [config, liveCamera])
@@ -300,22 +302,22 @@ export default function MachineConfigTab({
             method: 'POST',
           })
           if (reloadResponse.ok) {
-            setSuccessMessage('Konfiguráció mentve és alkalmazva!')
+            setSuccessMessage(t('machine_config.success_saved_applied'))
           } else {
-            setSuccessMessage('Konfiguráció mentve (újraindítás szükséges az alkalmazáshoz)')
+            setSuccessMessage(t('machine_config.success_saved_restart'))
           }
         } catch {
-          setSuccessMessage('Konfiguráció mentve (újraindítás szükséges az alkalmazáshoz)')
+          setSuccessMessage(t('machine_config.success_saved_restart'))
         }
         
         setTimeout(() => setSuccessMessage(null), 3000)
       } else {
         const data = await response.json()
-        setError(data.error || 'Mentés sikertelen')
+        setError(data.error || t('machine_config.error_save_failed'))
       }
     } catch (err) {
       log.error('Save error:', err)
-      setError('Mentés sikertelen - szerver hiba')
+      setError(t('machine_config.error_save_server'))
     } finally {
       setSaving(false)
     }
@@ -344,7 +346,7 @@ export default function MachineConfigTab({
     const nextName = availableNames.find((n) => !existingNames.includes(n))
 
     if (!nextName) {
-      setError('Maximum 6 tengely támogatott')
+      setError(t('machine_config.error_max_axes'))
       return
     }
 
@@ -499,13 +501,13 @@ export default function MachineConfigTab({
         const imported = JSON.parse(event.target?.result as string)
         if (imported.id && imported.axes && imported.workEnvelope) {
           setConfig({ ...imported, id: deviceId })
-          setSuccessMessage('Konfiguráció importálva!')
+          setSuccessMessage(t('machine_config.success_imported'))
           setTimeout(() => setSuccessMessage(null), 3000)
         } else {
-          setError('Érvénytelen konfiguráció formátum')
+          setError(t('machine_config.error_invalid_import'))
         }
       } catch {
-        setError('Hibás JSON fájl')
+        setError(t('machine_config.error_bad_json_file'))
       }
     }
     reader.readAsText(file)
@@ -514,7 +516,7 @@ export default function MachineConfigTab({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-steel-400">Konfiguráció betöltése...</div>
+        <div className="text-steel-400">{t('machine_config.loading')}</div>
       </div>
     )
   }
@@ -533,7 +535,7 @@ export default function MachineConfigTab({
                     setConfig(parsed)
                     setJsonError(null)
                   } catch {
-                    setJsonError('Érvénytelen JSON')
+                    setJsonError(t('machine_config.json.invalid'))
                     return
                   }
                 }
@@ -626,7 +628,7 @@ export default function MachineConfigTab({
                     JSON.parse(e.target.value)
                     setJsonError(null)
                   } catch {
-                    setJsonError('Érvénytelen JSON szintaxis')
+                    setJsonError(t('machine_config.json.syntax_invalid'))
                   }
                 }}
                 className="w-full h-[400px] bg-transparent text-steel-100 font-mono text-xs p-3 resize-none focus:outline-none"
@@ -639,10 +641,10 @@ export default function MachineConfigTab({
                       const parsed = JSON.parse(jsonText)
                       setConfig(parsed)
                       setJsonError(null)
-                      setSuccessMessage('JSON alkalmazva!')
+                      setSuccessMessage(t('machine_config.json.applied'))
                       setTimeout(() => setSuccessMessage(null), 2000)
                     } catch {
-                      setJsonError('Érvénytelen JSON')
+                      setJsonError(t('machine_config.json.invalid'))
                     }
                   }}
                   className="btn btn-primary btn-sm flex items-center gap-1"
@@ -681,7 +683,7 @@ export default function MachineConfigTab({
                           const newType = e.target.value as MachineType
                           if (newType === config.type) return
                           const confirmed = window.confirm(
-                            'A típus váltása felülírja a tengely- és driver-beállításokat. Folytatod?'
+                            t('machine_config.type_switch_confirm')
                           )
                           if (!confirmed) return
                           setConfig(
@@ -1183,7 +1185,7 @@ export default function MachineConfigTab({
                       return axis
                     })
                     setAxesAndSync(newAxes)
-                    setSuccessMessage('Kalibrációs eredmények alkalmazva!')
+                    setSuccessMessage(t('machine_config.success_calibration_applied'))
                     setTimeout(() => setSuccessMessage(null), 3000)
                   }}
                 />

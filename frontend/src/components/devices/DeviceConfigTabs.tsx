@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Monitor, Gauge, Activity, SlidersHorizontal, Wrench } from 'lucide-react'
 import { Tabs, TabPanel } from '../common/Tabs'
 import ControlPanelContent from './ControlPanelContent'
@@ -32,42 +33,45 @@ export default function DeviceConfigTabs({
   enabledTabs = ['control', 'motor-tuning', 'diagnostics', 'config'],
   defaultTab = 'control',
 }: DeviceConfigTabsProps) {
-  const [activeTab, setActiveTab] = useState<TabId>(
-    enabledTabs.includes(defaultTab) ? defaultTab : enabledTabs[0]
-  )
+  const { t } = useTranslation('devices')
+  const initialTab = enabledTabs.includes(defaultTab) ? defaultTab : enabledTabs[0]
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'control')
 
-  const allTabs = [
-    {
-      id: 'control' as const,
-      label: 'Vezérlőpanel',
-      icon: Monitor,
-      disabled: !enabledTabs.includes('control'),
-    },
-    { 
-      id: 'motor-tuning' as const, 
-      label: 'Motor Hangolás', 
-      icon: Gauge,
-      disabled: !enabledTabs.includes('motor-tuning'),
-    },
-    { 
-      id: 'diagnostics' as const, 
-      label: 'Diagnosztika', 
-      icon: Activity,
-      disabled: !enabledTabs.includes('diagnostics'),
-    },
-    {
-      id: 'grbl-config' as const,
-      label: 'GRBL Konfig',
-      icon: SlidersHorizontal,
-      disabled: !enabledTabs.includes('grbl-config'),
-    },
-    { 
-      id: 'config' as const, 
-      label: 'Gép Konfiguráció', 
-      icon: Wrench,
-      disabled: !enabledTabs.includes('config'),
-    },
-  ]
+  const allTabs = useMemo(
+    () => [
+      {
+        id: 'control' as const,
+        label: t('device_config_tabs.control'),
+        icon: Monitor,
+        disabled: !enabledTabs.includes('control'),
+      },
+      {
+        id: 'motor-tuning' as const,
+        label: t('device_config_tabs.motor_tuning'),
+        icon: Gauge,
+        disabled: !enabledTabs.includes('motor-tuning'),
+      },
+      {
+        id: 'diagnostics' as const,
+        label: t('device_config_tabs.diagnostics'),
+        icon: Activity,
+        disabled: !enabledTabs.includes('diagnostics'),
+      },
+      {
+        id: 'grbl-config' as const,
+        label: t('device_config_tabs.grbl_config'),
+        icon: SlidersHorizontal,
+        disabled: !enabledTabs.includes('grbl-config'),
+      },
+      {
+        id: 'config' as const,
+        label: t('device_config_tabs.machine_config'),
+        icon: Wrench,
+        disabled: !enabledTabs.includes('config'),
+      },
+    ],
+    [t, enabledTabs],
+  )
 
   const tabs = allTabs.filter(tab => enabledTabs.includes(tab.id))
 

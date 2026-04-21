@@ -3,9 +3,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
+import { screen, fireEvent } from '@testing-library/react';
 import DeviceCard from './DeviceCard';
+import { renderWithProviders } from '../../test/renderWithProviders';
 import type { Device, DeviceStatus } from '../../types/device';
 
 // Mock the device store
@@ -43,12 +43,6 @@ const createDevice = (overrides: Partial<Device> = {}): Device => ({
   ...overrides,
 });
 
-const renderWithRouter = (ui: React.ReactElement) => {
-  return render(
-    <BrowserRouter>{ui}</BrowserRouter>
-  );
-};
-
 describe('DeviceCard', () => {
   beforeEach(() => {
     mockSendCommand.mockClear();
@@ -56,25 +50,25 @@ describe('DeviceCard', () => {
 
   describe('Rendering', () => {
     it('should render device name', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       expect(screen.getByText('Main CNC')).toBeInTheDocument();
     });
 
     it('should render driver name', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       expect(screen.getByText('LINUXCNC')).toBeInTheDocument();
     });
 
     it('should render status badge', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'idle' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'idle' })} />);
       
       expect(screen.getByText('Idle')).toBeInTheDocument();
     });
 
     it('should render position display when status exists', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       expect(screen.getByText('100.000')).toBeInTheDocument();
       expect(screen.getByText('200.000')).toBeInTheDocument();
@@ -82,13 +76,13 @@ describe('DeviceCard', () => {
     });
 
     it('should render feed rate', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       expect(screen.getByText('1000 mm/min')).toBeInTheDocument();
     });
 
     it('should render spindle speed when greater than zero', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       expect(screen.getByText('5000 RPM')).toBeInTheDocument();
     });
@@ -98,15 +92,15 @@ describe('DeviceCard', () => {
         type: 'laser_cutter',
         status: { ...mockStatus, laser_power: 80, spindle_speed: 0 },
       });
-      renderWithRouter(<DeviceCard device={laserDevice} />);
+      renderWithProviders(<DeviceCard device={laserDevice} />);
       
       expect(screen.getByText('80%')).toBeInTheDocument();
     });
 
     it('should render details link', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
-      const link = screen.getByText('Részletek →');
+      const link = screen.getByText('Details →');
       expect(link).toHaveAttribute('href', '/device/cnc-main');
     });
   });
@@ -117,16 +111,16 @@ describe('DeviceCard', () => {
         state: 'running',
         status: { ...mockStatus, state: 'running', progress: 45 },
       });
-      renderWithRouter(<DeviceCard device={runningDevice} />);
+      renderWithProviders(<DeviceCard device={runningDevice} />);
       
-      expect(screen.getByText('Haladás')).toBeInTheDocument();
+      expect(screen.getByText('Progress')).toBeInTheDocument();
       expect(screen.getByText('45.0%')).toBeInTheDocument();
     });
 
     it('should not show progress bar when idle', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
-      expect(screen.queryByText('Haladás')).not.toBeInTheDocument();
+      expect(screen.queryByText('Progress')).not.toBeInTheDocument();
     });
   });
 
@@ -136,13 +130,13 @@ describe('DeviceCard', () => {
         state: 'alarm',
         status: { ...mockStatus, state: 'alarm', error_message: 'Emergency stop activated' },
       });
-      renderWithRouter(<DeviceCard device={alarmDevice} />);
+      renderWithProviders(<DeviceCard device={alarmDevice} />);
       
       expect(screen.getByText('Emergency stop activated')).toBeInTheDocument();
     });
 
     it('should not show error when not in alarm state', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       expect(screen.queryByText('Emergency stop activated')).not.toBeInTheDocument();
     });
@@ -150,55 +144,55 @@ describe('DeviceCard', () => {
 
   describe('Control buttons', () => {
     it('should render home button', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       expect(screen.getByTitle('Home')).toBeInTheDocument();
     });
 
     it('should enable home button when idle', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'idle' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'idle' })} />);
       
       expect(screen.getByTitle('Home')).not.toBeDisabled();
     });
 
     it('should disable home button when not idle', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'running' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'running' })} />);
       
       expect(screen.getByTitle('Home')).toBeDisabled();
     });
 
     it('should show play button when idle', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'idle' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'idle' })} />);
       
       expect(screen.getByTitle('Start')).toBeInTheDocument();
     });
 
     it('should show pause button when running', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'running' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'running' })} />);
       
       expect(screen.getByTitle('Pause')).toBeInTheDocument();
     });
 
     it('should show resume button when paused', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'paused' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'paused' })} />);
       
       expect(screen.getByTitle('Resume')).toBeInTheDocument();
     });
 
     it('should show stop button when running', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'running' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'running' })} />);
       
       expect(screen.getByTitle('Stop')).toBeInTheDocument();
     });
 
     it('should show stop button when paused', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'paused' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'paused' })} />);
       
       expect(screen.getByTitle('Stop')).toBeInTheDocument();
     });
 
     it('should show reset button when in alarm', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'alarm' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'alarm' })} />);
       
       expect(screen.getByTitle('Reset')).toBeInTheDocument();
     });
@@ -206,7 +200,7 @@ describe('DeviceCard', () => {
 
   describe('Command handling', () => {
     it('should call sendCommand with home when home button clicked', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       fireEvent.click(screen.getByTitle('Home'));
       
@@ -214,7 +208,7 @@ describe('DeviceCard', () => {
     });
 
     it('should call sendCommand with run when play button clicked', () => {
-      renderWithRouter(<DeviceCard device={createDevice()} />);
+      renderWithProviders(<DeviceCard device={createDevice()} />);
       
       fireEvent.click(screen.getByTitle('Start'));
       
@@ -222,7 +216,7 @@ describe('DeviceCard', () => {
     });
 
     it('should call sendCommand with pause when pause button clicked', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'running' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'running' })} />);
       
       fireEvent.click(screen.getByTitle('Pause'));
       
@@ -230,7 +224,7 @@ describe('DeviceCard', () => {
     });
 
     it('should call sendCommand with resume when resume button clicked', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'paused' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'paused' })} />);
       
       fireEvent.click(screen.getByTitle('Resume'));
       
@@ -238,7 +232,7 @@ describe('DeviceCard', () => {
     });
 
     it('should call sendCommand with stop when stop button clicked', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'running' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'running' })} />);
       
       fireEvent.click(screen.getByTitle('Stop'));
       
@@ -246,7 +240,7 @@ describe('DeviceCard', () => {
     });
 
     it('should call sendCommand with reset when reset button clicked', () => {
-      renderWithRouter(<DeviceCard device={createDevice({ state: 'alarm' })} />);
+      renderWithProviders(<DeviceCard device={createDevice({ state: 'alarm' })} />);
       
       fireEvent.click(screen.getByTitle('Reset'));
       
@@ -256,7 +250,7 @@ describe('DeviceCard', () => {
 
   describe('Visual state indicators', () => {
     it('should have blue glow when running', () => {
-      const { container } = renderWithRouter(
+      const { container } = renderWithProviders(
         <DeviceCard device={createDevice({ state: 'running' })} />
       );
       
@@ -264,7 +258,7 @@ describe('DeviceCard', () => {
     });
 
     it('should have red glow when in alarm', () => {
-      const { container } = renderWithRouter(
+      const { container } = renderWithProviders(
         <DeviceCard device={createDevice({ state: 'alarm' })} />
       );
       
@@ -272,7 +266,7 @@ describe('DeviceCard', () => {
     });
 
     it('should have amber glow when paused', () => {
-      const { container } = renderWithRouter(
+      const { container } = renderWithProviders(
         <DeviceCard device={createDevice({ state: 'paused' })} />
       );
       
@@ -283,7 +277,7 @@ describe('DeviceCard', () => {
   describe('Device type icons', () => {
     it('should show laser icon for laser_cutter type', () => {
       const laserDevice = createDevice({ type: 'laser_cutter' });
-      const { container } = renderWithRouter(<DeviceCard device={laserDevice} />);
+      const { container } = renderWithProviders(<DeviceCard device={laserDevice} />);
       
       // Check for purple styling which is for laser devices
       expect(container.querySelector('.bg-purple-500\\/20')).toBeInTheDocument();
@@ -291,7 +285,7 @@ describe('DeviceCard', () => {
 
     it('should show drill icon for cnc_mill type', () => {
       const cncDevice = createDevice({ type: 'cnc_mill' });
-      const { container } = renderWithRouter(<DeviceCard device={cncDevice} />);
+      const { container } = renderWithProviders(<DeviceCard device={cncDevice} />);
       
       // Check for blue styling which is for CNC devices
       expect(container.querySelector('.bg-blue-500\\/20')).toBeInTheDocument();

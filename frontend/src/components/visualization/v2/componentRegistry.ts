@@ -114,7 +114,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: BaseMedium,
       realistic: BaseRealistic,
     },
-    description:
+    descriptionEn:
+      'Base plate of the tube-bender frame. Holds the tube spindle bracket, roller infeed and bending unit.',
+    descriptionHu:
       'A csőhajlító keretének alaplemeze. Erre kerül a csőtengely-tartó, a görgős előtoló és a hajlító egység.',
   },
   {
@@ -172,7 +174,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: VerticalBracket1Medium,
       realistic: VerticalBracket1Realistic,
     },
-    description:
+    descriptionEn:
+      'Aluminium vertical bracket plate for mounting a NEMA 23 servo. Cuts the standard NEMA 23 outline with fastener holes; motor body passes through the cutout; shaft faces +X.',
+    descriptionHu:
       'Alumínium függőleges tartólemez egy NEMA 23 (23HS40-5004D-E1K-1M5) szervo motor felfogásához. ' +
       'A NEMA 23 (56.4×56.4) sarok-indent (R=4, 1 mm kifelé eltolt center) + R=2 fillet body-profilját ' +
       'kivágva, a 4 befelé álló fülön 1-1 Ø5.1 menetes-szár furattal. A motor body keresztülmegy a ' +
@@ -240,7 +244,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: Nema23MotorMedium,
       realistic: Nema23MotorRealistic,
     },
-    description:
+    descriptionEn:
+      'NEMA 23 closed-loop stepper with dual-profile body (56.4×56.4 mm), mounted for the X-axis drive.',
+    descriptionHu:
       'NEMA 23 closed-loop léptetőmotor két-profilos body-val (NEMA standard 56.4×56.4): ' +
       'front 5 mm mounting flange (lekerekített négyzet + 4 db Ø5.1 furat) + 98 mm iron main + ' +
       '19 mm plast cover sarok-indent (R=4, indent-center 1 mm kifelé eltolva) + R=2 fillet ' +
@@ -308,7 +314,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: VerticalBracket2Medium,
       realistic: VerticalBracket2Realistic,
     },
-    description:
+    descriptionEn:
+      'Rear aluminium bracket plate for the NEMA 23 back face with pockets for cabling and fasteners.',
+    descriptionHu:
       'Hátsó alumínium tartólemez a NEMA 23 motor hátlapjához. 4 mm mély zseb (motor ' +
       'body sarok-indent silhouette) fogadja a motor hátát + 4 db Ø5.1 átmenő furat a ' +
       'menetes szárak számára. A motor a flange előlapi anya és a bracket-2 hátsó vég-' +
@@ -350,7 +358,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: MountingRodsMedium,
       realistic: MountingRodsRealistic,
     },
-    description:
+    descriptionEn:
+      'Threaded rod assembly: four M5 rods clamp the NEMA 23 motor between the two vertical brackets.',
+    descriptionHu:
       'Menetes szár szerelvény: 4 db M5 szár fogja össze a NEMA 23 motort a két ' +
       'függőleges konzollal és a `gear-bracket-1`-gyel. A motor a bracket-1 ' +
       'cutout-ján átnyúlik, hátulja a bracket-2 4 mm-es zsebébe fekszik. ' +
@@ -422,7 +432,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: PinionGear15M17TMedium,
       realistic: PinionGear15M17TRealistic,
     },
-    description:
+    descriptionEn:
+      'Spur gear module 1.5, 17 teeth, Ø8 bore with hub/set screws. Pinion on motor shaft above the gear bracket.',
+    descriptionHu:
       'Spur fogaskerék: modul 1.5, 17 fog, Ø8 furat, set screw collar (hub). A ' +
       '`gear-bracket-1` U-bracket FELSŐ arm-jánál — az X körüli 180°-os fordítás ' +
       'után a gear face FELÜL (a bracket teteje SZINTJÉN), a hub LEFELÉ a bracket ' +
@@ -484,7 +496,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: BevelGear15M20T45degMedium,
       realistic: BevelGear15M20T45degRealistic,
     },
-    description:
+    descriptionEn:
+      'Bevel gear 1.5M 20T 45° — driver stage on the X motor.',
+    descriptionHu:
       'Kúpfogaskerék — 1.5M, 20T, 45° osztókúpszög, hajtó (driver) tag a NEMA 23 ' +
       'X-motor tengelyén. Hub a motor felé (boss fölött), fogazat a motortól el ' +
       'irányba (világ +X). Azonos építésű mint a `bevel-gear-driven-1` partner.',
@@ -541,7 +555,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: BevelGear15M20T45degMedium,
       realistic: BevelGear15M20T45degRealistic,
     },
-    description:
+    descriptionEn:
+      'Bevel gear 1.5M 20T 45° — driven stage with mesh/shaft geometry.',
+    descriptionHu:
       'Kúpfogaskerék — 1.5M, 20T, 45° osztókúpszög, fogazat + root cone + ' +
       'Ø24×10 mm hub cilinder Ø8 furattal. A `bevel-gear-driver-1` MESHELŐ ' +
       'partnere: gear-bracket-1 U-cavity-jében felfüggesztve, axisa függőleges ' +
@@ -594,7 +610,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: PlanetaryGearbox60Medium,
       realistic: PlanetaryGearbox60Realistic,
     },
-    description:
+    descriptionEn:
+      '60×60 mm planetary gearbox for NEMA 23, reduction about 20:1 (STEPPERONLINE-style).',
+    descriptionHu:
       'STEPPERONLINE NEMA 23-hoz tervezett bolygóhajtómű, 60×60 mm flange, ' +
       '20:1 áttétel, Ø8 input bore, Ø14 D-cut output shaft, M5 menetes motor-' +
       'rögzítő furatokkal. Egyfokozatú planetary speed reducer: a Z-motor ' +
@@ -656,7 +674,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: Nema23MotorZMedium,
       realistic: Nema23MotorZRealistic,
     },
-    description:
+    descriptionEn:
+      'Short NEMA 23 stepper (~81 mm body) for the Z bending axis.',
+    descriptionHu:
       'Z-tengelyes NEMA 23 léptetőmotor — 81 mm-es rövidebb törzs-variáns, a ' +
       'bolygóhajtómű (gearbox-1) alá szerelve, tengelye felfelé a gearbox input ' +
       'bore-jába nyúlik. A gearbox-szal együtt a Z-tengely léptetőhajtása.',
@@ -704,7 +724,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: EK20BearingMedium,
       realistic: EK20BearingRealistic,
     },
-    description:
+    descriptionEn:
+      'HIWIN EK20-type bearing block for Ø20 ball screw fixed side (BK–EK pair).',
+    descriptionHu:
       'HIWIN EK20-C5 csapágytartó blokk Ø20-as golyósorsóhoz (BK-EK sorozat, ' +
       'fixed oldal). Alaplemez (95×25×42 mm, H1=25 mm a bore-tengelyig) 2 db ' +
       'Ø6.6 átmenő furattal a P=75 pattern szerinti füleken (a 2 központi ' +
@@ -754,7 +776,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: SlipRingH2056_12chMedium,
       realistic: SlipRingH2056_12chRealistic,
     },
-    description:
+    descriptionEn:
+      'SENRING H2056-12 slip ring Ø20 bore / Ø56 OD, 12 channels for rotating electrical passes.',
+    descriptionHu:
       'SENRING H2056-12 átmenő furatos csúszógyűrű — Ø20 mm belső furat, Ø56 mm ' +
       'külső átmérő, 12 csatorna × 10 A. EGYSZERŰSÍTETT geometria: csak a központi ' +
       'henger (flange / vezetékek / csatornagyűrűk nélkül). Bore tengely világban ' +
@@ -800,7 +824,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: UGrooveBearingSG10Medium,
       realistic: UGrooveBearingSG10Realistic,
     },
-    description:
+    descriptionEn:
+      'SG10 U-groove track roller with M4×17 mounting hardware.',
+    descriptionHu:
       'SG10 U-hornyolatos (V-groove) görgőscsapágy a hozzá készített M4×17 mm ' +
       'vállas csavarral. Belső furat Ø4, külső Ø13, vastagság 6 mm, hornyolat ' +
       '4×1 mm. Vezetősíneken futó vezető-görgőként vagy U-profil mentén görgőzött ' +
@@ -841,7 +867,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: HtdPulley70T_25bMedium,
       realistic: HtdPulley70T_25bRealistic,
     },
-    description:
+    descriptionEn:
+      'HTD 5M timing pulley 70T, Ø25 bore, 15 mm belt, AF series.',
+    descriptionHu:
       'HTD 5M AF típusú fogasszíj-tárcsa 70 fogszámmal, Ø25 furattal, 15 mm ' +
       'szíjszélességhez. Külső Ø ≈ 110.65 mm, flange Ø ≈ 116.65 mm. A 15T ' +
       'társával együtt 4.67:1 lassító áttételt ad.',
@@ -881,7 +909,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: HtdPulley15T_8bMedium,
       realistic: HtdPulley15T_8bRealistic,
     },
-    description:
+    descriptionEn:
+      'HTD 5M timing pulley 15T, Ø8 bore, 15 mm belt with hub.',
+    descriptionHu:
       'HTD 5M AF típusú fogasszíj-tárcsa 15 fogszámmal, Ø8 furattal, 15 mm ' +
       'szíjszélességhez, kiemelt hub-bal (Ø14 × 8 mm) és 2 db M4 set screw-vel. ' +
       'Külső Ø ≈ 23.11 mm, flange Ø ≈ 28.11 mm. A 70T-vel együtt 4.67:1 lassító ' +
@@ -943,7 +973,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: GearBracketMedium,
       realistic: GearBracketRealistic,
     },
-    description:
+    descriptionEn:
+      'Aluminium U-frame gear bracket in front of the X motor holding pinion and driven gears.',
+    descriptionHu:
       'Alumínium U-tartó (gear konzol) a NEMA 23 X-motor flange előlapjához ' +
       'KÖZVETLENÜL felfekve, a 4 db M5 menetes száron felfűzve. Befoglaló méret: ' +
       '56.4 (X) × 76.4 (Y) × 90 (Z, a base wall 10 mm + 80 mm arm). 3 szakasz: ' +
@@ -992,7 +1024,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: ShaftSupportSHF20Medium,
       realistic: ShaftSupportSHF20Realistic,
     },
-    description:
+    descriptionEn:
+      'Shaft support block Ø20 (SHF20-style) upright with M5 clamp.',
+    descriptionHu:
       'Tengelytámasz blokk Ø20 mm-es fix tengelyhez (SHF20 / SK20 stílus). ' +
       'Méretek: A=60 (X) × H=50 (Y) × B=30 (Z) mm, tengely-magasság h=30, ' +
       'furattáv A1=42, 2 db Ø8.6 átmenő rögzítő furat (M8 clearance) + ' +
@@ -1051,7 +1085,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: Shaft8mmMedium,
       realistic: Shaft8mmRealistic,
     },
-    description:
+    descriptionEn:
+      'Hardened Ø8 × 96.4 mm steel shaft joining pinion and bevel gears.',
+    descriptionHu:
       'Edzett szénacél tengely Ø8 × 96.4 mm — a `pinion-gear-1` (#6) és a ' +
       '`bevel-gear-driven-1` (#8) közös függőleges forgástengelye. A ' +
       '`gear-bracket-1` (#16) MINDKÉT (leeresztett) szárán átmegy a Ø8 furatokon: ' +
@@ -1099,7 +1135,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: PinionGear15M17TMedium,
       realistic: PinionGear15M17TRealistic,
     },
-    description:
+    descriptionEn:
+      'Duplicate pinion gear — same geometry shifted +40 mm along world-X.',
+    descriptionHu:
       'A `pinion-gear-1` (#6) MÁSOLATA — azonos geometriával, ugyanazon a ' +
       '`gear-bracket-1`-en (#16), de a bracket arm-jain lévő 2. Ø8 furatra ' +
       'illesztve (+40 mm world-X-ben az eredetihez képest). A másolt #20 ' +
@@ -1136,7 +1174,9 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       medium: Shaft8mmMedium,
       realistic: Shaft8mmRealistic,
     },
-    description:
+    descriptionEn:
+      'Duplicate Ø8 shaft — copy of shaft #18 at +40 mm world-X.',
+    descriptionHu:
       'A `shaft-pinion-bevel-1` (#18) MÁSOLATA — azonos Ø8 × 96.4 mm acéltengely, ' +
       'ugyanazon a `gear-bracket-1`-en (#16), de a bracket arm-jain lévő 2. Ø8 ' +
       'furatra illesztve (+40 mm world-X-ben az eredetihez képest, vagyis ' +
@@ -1177,4 +1217,10 @@ export const LOD_LABELS_HU: Record<LodLevel, string> = {
   schematic: 'sematikus',
   medium: 'közepes',
   realistic: 'realisztikus',
+}
+
+export const LOD_LABELS_EN: Record<LodLevel, string> = {
+  schematic: 'Schematic',
+  medium: 'Medium',
+  realistic: 'Realistic',
 }

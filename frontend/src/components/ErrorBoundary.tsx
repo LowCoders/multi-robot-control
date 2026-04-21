@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { createLogger } from '../utils/logger'
+import i18n from '../i18n'
 
 const log = createLogger('ui:error-boundary')
 
@@ -36,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         this.props.fallback ?? (
           <div className="p-6 text-red-300 bg-steel-900 min-h-[40vh]">
-            <h1 className="text-lg font-semibold mb-2">Something went wrong</h1>
+            <h1 className="text-lg font-semibold mb-2">{i18n.t('common:errorBoundary.title')}</h1>
             <p className="text-sm opacity-90">{this.state.message}</p>
           </div>
         )

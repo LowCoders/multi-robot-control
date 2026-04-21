@@ -1,4 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { useDeviceStore } from '../stores/deviceStore'
 import StatusBadge from '../components/common/StatusBadge'
@@ -6,6 +7,7 @@ import DeviceConfigTabs from '../components/devices/DeviceConfigTabs'
 import { useMachineConfig } from '../hooks/useMachineConfig'
 
 export default function DeviceDetail() {
+  const { t } = useTranslation('pages')
   const { deviceId } = useParams<{ deviceId: string }>()
   const { devices, sendCommand, jogStop } = useDeviceStore()
 
@@ -18,9 +20,9 @@ export default function DeviceDetail() {
   if (!device) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <p className="text-steel-400 mb-4">Eszköz nem található</p>
+        <p className="text-steel-400 mb-4">{t('device_detail.not_found')}</p>
         <Link to="/" className="btn btn-primary">
-          Vissza a Dashboard-ra
+          {t('device_detail.back_dashboard')}
         </Link>
       </div>
     )
@@ -54,21 +56,22 @@ export default function DeviceDetail() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <h3 className="text-red-300 font-medium">Eszköz nem elérhető</h3>
+              <h3 className="text-red-300 font-medium">{t('device_detail.unavailable_title')}</h3>
               <p className="text-sm text-red-400/80 mt-1">
-                {device.lastError || 'Az eszköz nincs csatlakoztatva vagy nem válaszol.'}
+                {device.lastError || t('device_detail.unavailable_generic')}
               </p>
               {device.simulated === false && (
                 <p className="text-xs text-steel-500 mt-2">
-                  Ellenőrizd a soros port kapcsolatot ({device.connectionInfo || '/dev/ttyUSB*'}) és
-                  a hardver állapotát.
+                  {t('device_detail.check_hardware', {
+                    info: device.connectionInfo || '/dev/ttyUSB*',
+                  })}
                 </p>
               )}
               <button
                 onClick={handleReconnect}
                 className="mt-3 btn btn-sm bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30"
               >
-                Újracsatlakozás
+                {t('device_detail.reconnect')}
               </button>
             </div>
           </div>
@@ -88,7 +91,7 @@ export default function DeviceDetail() {
               <span className="text-sm text-steel-400">{device.driver.toUpperCase()}</span>
               {device.simulated && (
                 <span className="text-xs px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded">
-                  Szimulált
+                  {t('device_detail.simulated_badge')}
                 </span>
               )}
             </div>

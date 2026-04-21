@@ -12,5 +12,6 @@ export {
   getOrderedComponents,
   LOD_LEVELS,
   LOD_LABELS_HU,
+  LOD_LABELS_EN,
 } from './componentRegistry'
 export type { ComponentDef, LodLevel, PartBuilder, PartBuilderProps } from './types'

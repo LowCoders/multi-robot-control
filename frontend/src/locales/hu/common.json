@@ -1,0 +1,49 @@
+{
+  "languageSwitcher": {
+    "ariaLabel": "Felület nyelve",
+    "title": {
+      "en": "Angol",
+      "hu": "Magyar"
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "jobs": "Job Manager",
+    "automation": "Automatizálás",
+    "settings": "Beállítások"
+  },
+  "layout": {
+    "brandSubtitle": "Multi-Robot Control",
+    "connection": {
+      "connected": "Kapcsolódva",
+      "disconnected": "Nincs kapcsolat"
+    },
+    "deviceCount": "{{active}}/{{total}} eszköz"
+  },
+  "statusBadge": {
+    "disconnected": "Offline",
+    "connecting": "Csatlakozás...",
+    "idle": "Idle",
+    "running": "Fut",
+    "paused": "Szünet",
+    "alarm": "Alarm",
+    "homing": "Homing",
+    "probing": "Probing",
+    "jog": "Jog"
+  },
+  "errorBoundary": {
+    "title": "Valami hiba történt",
+    "generic": "Valami hiba történt"
+  },
+  "notifications": {
+    "close": "Bezárás",
+    "jobComplete": "Munka kész: {{file}}",
+    "controlDenied": {
+      "command_running": "Vezérlés átvétele elutasítva: futó parancs/program miatt. Próbáld újra a futás vége után vagy reconnect után.",
+      "estop": "Vezérlés átvétele elutasítva: E-STOP aktív.",
+      "alarm": "Vezérlés átvétele elutasítva: alarm állapot.",
+      "fallback": "Vezérlés átvétele elutasítva: {{reason}}"
+    },
+    "transientStateWindow": "Átmeneti firmware állapotablak (error:8). A rendszer automatikus újrapróbálkozást végez."
+  }
+}

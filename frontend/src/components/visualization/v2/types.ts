@@ -46,5 +46,8 @@ export interface ComponentDef {
   bbox?: { size: [number, number, number] }
   /** A 3 LOD-szint builder-ei. Ami hiányzik, arra a renderer fallback-et rajzol. */
   builders: Partial<Record<LodLevel, PartBuilder>>
-  description?: string
+  /** English description (primary in source). */
+  descriptionEn?: string
+  /** Hungarian description. */
+  descriptionHu?: string
 }

@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom'
 import { io, Socket } from 'socket.io-client'
 import type { Device, DeviceStatus, Position, DeviceCapabilities, DeviceControlState } from '../types/device'
 import { createLogger } from '../utils/logger'
+import i18n from '../i18n'
 
 const log = createLogger('devices')
 
@@ -164,11 +165,13 @@ export const useDeviceStore = create<DeviceStore>()(
       socket.on('device:control_denied', (data: { deviceId: string; reason: string; control: DeviceControlState }) => {
         get().updateDeviceControlState(data.deviceId, data.control)
         const reasonMap: Record<string, string> = {
-          command_running: 'Vezérlés átvétele elutasítva: futó parancs/program miatt. Próbáld újra a futás vége után vagy reconnect után.',
-          estop: 'Vezérlés átvétele elutasítva: E-STOP aktív.',
-          alarm: 'Vezérlés átvétele elutasítva: alarm állapot.',
+          command_running: i18n.t('common:notifications.controlDenied.command_running'),
+          estop: i18n.t('common:notifications.controlDenied.estop'),
+          alarm: i18n.t('common:notifications.controlDenied.alarm'),
         }
-        const text = reasonMap[data.reason] || `Vezérlés átvétele elutasítva: ${data.reason}`
+        const text =
+          reasonMap[data.reason] ??
+          i18n.t('common:notifications.controlDenied.fallback', { reason: data.reason })
         get().addNotification(data.deviceId, text, 'warning')
       })
       
@@ -200,7 +203,11 @@ export const useDeviceStore = create<DeviceStore>()(
       
       socket.on('job:complete', (data: { deviceId: string; file: string }) => {
         log.info(`Job complete (${data.deviceId}): ${data.file}`)
-        get().addNotification(data.deviceId, `Munka kész: ${data.file}`, 'info')
+        get().addNotification(
+          data.deviceId,
+          i18n.t('common:notifications.jobComplete', { file: data.file }),
+          'info'
+        )
       })
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -222,7 +229,7 @@ export const useDeviceStore = create<DeviceStore>()(
     
     addNotification: (deviceId, message, severity = 'info') => {
       const normalizedMessage = message.includes('transient state window')
-        ? 'Átmeneti firmware állapotablak (error:8). A rendszer automatikus újrapróbálkozást végez.'
+        ? i18n.t('common:notifications.transientStateWindow')
         : message
       const notification: Notification = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,

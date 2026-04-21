@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react'
 import { useDeviceStore } from '../../stores/deviceStore'
 
@@ -10,6 +11,7 @@ const DISPLAY_MS = 7000
 const FADE_MS = 500
 
 export default function NotificationOverlay() {
+  const { t } = useTranslation('common')
   const { notifications, clearNotification } = useDeviceStore()
   const [localState, setLocalState] = useState<Record<string, LocalNotificationState>>({})
   const fadeTimersRef = useRef<Record<string, number>>({})
@@ -39,7 +41,8 @@ export default function NotificationOverlay() {
       const next: Record<string, LocalNotificationState> = {}
       for (const id of Object.keys(prev)) {
         if (sortedIds.has(id)) {
-          next[id] = prev[id]
+          const st = prev[id]
+          if (st) next[id] = st
         }
       }
       return next
@@ -143,7 +146,7 @@ export default function NotificationOverlay() {
               <button
                 onClick={() => clearNotification(n.id)}
                 className="rounded p-1 text-current/80 hover:bg-white/10 hover:text-current"
-                title="Bezárás"
+                title={t('notifications.close')}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
