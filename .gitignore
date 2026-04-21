@@ -34,3 +34,8 @@ Thumbs.db
 *.tsbuildinfo
 .pids/
 firmware/grbl-4axis/grbl-source/
+
+# G-code futásidejű könyvtár (GCODE_ROOT default helye)
+# A felhasználó által írt/menthető .nc fájlok runtime-ban keletkeznek,
+# nem repository tartalom.
+/gcode/

@@ -9,6 +9,21 @@ import path from 'path';
 import { parseDocument, isMap, isSeq } from 'yaml';
 import { DeviceManager } from '../devices/DeviceManager.js';
 import { StateManager } from '../state/StateManager.js';
+import { createLogger } from '../utils/logger.js';
+import {
+  GCODE_ROOT,
+  GCODE_EXTENSIONS,
+  GCODE_MAX_FILE_SIZE,
+  GcodePathError,
+  isDirectory,
+  isFile,
+  isGcodeExtension,
+  relativeFromRoot,
+  safeResolve,
+  validateName,
+} from '../config/gcodeRoot.js';
+
+const log = createLogger('api');
 
 // Machine config directory
 const MACHINE_CONFIG_DIR = path.join(process.cwd(), '..', 'config', 'machines');
@@ -100,10 +115,12 @@ function asyncHandler(
 }
 
 // In-memory settings storage (in production, use a database or config file)
+// Megjegyzés: a G-code gyökérkönyvtár nem itt szerepel — azt a `.env`-ből
+// olvassuk (lásd `config/gcodeRoot.ts`), hogy ne legyen API-n keresztül
+// futásidőben módosítható.
 let appSettings = {
   bridgeHost: 'localhost',
   bridgePort: 4002,
-  gcodeDirectory: '/home/user/nc_files',
   positionUpdateRate: 10,
   statusUpdateRate: 5,
 };
@@ -186,7 +203,7 @@ async function startNextPendingJob(deviceManager: DeviceManager): Promise<boolea
       }
     }
   } catch (error) {
-    console.error('Error starting next job:', error);
+    log.error('Error starting next job:', error);
   }
   return false;
 }
@@ -203,12 +220,12 @@ export function createApiRoutes(
   
   // Get settings
   router.get('/settings', (_req: Request, res: Response) => {
-    res.json(appSettings);
+    res.json({ ...appSettings, gcodeRoot: GCODE_ROOT });
   });
   
   // Save settings
   router.post('/settings', asyncHandler(async (req: Request, res: Response) => {
-    const { bridgeHost, bridgePort, gcodeDirectory, positionUpdateRate, statusUpdateRate } = req.body;
+    const { bridgeHost, bridgePort, positionUpdateRate, statusUpdateRate } = req.body;
     
     // Validate settings
     if (bridgeHost && typeof bridgeHost === 'string') {
@@ -217,9 +234,6 @@ export function createApiRoutes(
     if (bridgePort && typeof bridgePort === 'number' && bridgePort > 0 && bridgePort < 65536) {
       appSettings.bridgePort = bridgePort;
     }
-    if (gcodeDirectory && typeof gcodeDirectory === 'string') {
-      appSettings.gcodeDirectory = gcodeDirectory;
-    }
     if (positionUpdateRate && typeof positionUpdateRate === 'number' && positionUpdateRate >= 1 && positionUpdateRate <= 50) {
       appSettings.positionUpdateRate = positionUpdateRate;
     }
@@ -227,7 +241,7 @@ export function createApiRoutes(
       appSettings.statusUpdateRate = statusUpdateRate;
     }
     
-    res.json({ success: true, settings: appSettings });
+    res.json({ success: true, settings: { ...appSettings, gcodeRoot: GCODE_ROOT } });
   }));
 
   // =========================================
@@ -272,7 +286,7 @@ export function createApiRoutes(
     } catch (err) {
       // YAML parse hiba esetén csak a raw-ot adjuk vissza, hogy a felhasználó láthassa
       entries = [];
-      console.error('devices.yaml parse hiba:', err);
+      log.error('devices.yaml parse hiba:', err);
     }
     res.json({ raw, path: DEVICES_YAML_PATH, devices: entries });
   }));
@@ -572,7 +586,7 @@ export function createApiRoutes(
             }
           }
         } catch (error) {
-          console.error(`Failed to sync job ${job.id} status:`, error);
+          log.error(`Failed to sync job ${job.id} status:`, error);
         }
       }
     }
@@ -733,7 +747,7 @@ export function createApiRoutes(
             }
           }
         } catch (error) {
-          console.error(`Error starting job ${job.id}:`, error);
+          log.error(`Error starting job ${job.id}:`, error);
         }
       }
     } else {
@@ -749,7 +763,7 @@ export function createApiRoutes(
           }
         }
       } catch (error) {
-        console.error('Error starting job:', error);
+        log.error('Error starting job:', error);
       }
     }
     
@@ -844,51 +858,403 @@ export function createApiRoutes(
         status: job.status,
       });
     } catch (error) {
-      console.error(`Failed to read G-code file for job ${job.id}:`, error);
+      log.error(`Failed to read G-code file for job ${job.id}:`, error);
       res.status(500).json({ error: 'Fájl olvasási hiba' });
     }
   }));
   
-  // Read G-code file from path
+  // ----- G-code fájl-rendszer (a GCODE_ROOT-on belül) ---------------------
+  //
+  // Biztonsági elvek:
+  //   * Minden bemeneti útvonalat a `safeResolve` szigorúan validál: a
+  //     megadott path-nak a GCODE_ROOT-on belülre kell esnie, és a symlink
+  //     escape-et is kizárjuk (realpath ellenőrzés).
+  //   * Új entitások (fájl, könyvtár) nevét külön validáljuk
+  //     (`validateName`), és a kiterjesztést whitelist-en ellenőrizzük.
+  //   * Mentésnél a tartalom mérete maximalizálva van (GCODE_MAX_FILE_SIZE).
+  //   * A `delete` művelet csak a GCODE_ROOT alatt enged törölni, és a
+  //     gyökérkönyvtárt magát nem engedi törölni.
+  //
+  // Hibakezelés: a `GcodePathError` saját HTTP státuszt hordoz, így a
+  // helper-rel közvetlenül választ tudunk adni.
+
+  function sendPathError(res: Response, err: unknown): boolean {
+    if (err instanceof GcodePathError) {
+      res.status(err.status).json({ error: err.message });
+      return true;
+    }
+    return false;
+  }
+
+  // Read G-code file
   router.get('/gcode/file', asyncHandler(async (req: Request, res: Response) => {
     const filepath = req.query.path as string;
-    
     if (!filepath) {
       res.status(400).json({ error: 'Fájl útvonal szükséges' });
       return;
     }
-    
-    // Security check - only allow certain directories
-    const allowedPrefixes = [
-      '/web/arduino/test_gcode',
-      '/home',
-      appSettings.gcodeDirectory,
-    ];
-    
-    const isAllowed = allowedPrefixes.some(prefix => filepath.startsWith(prefix));
-    if (!isAllowed) {
-      res.status(403).json({ error: 'Hozzáférés megtagadva ehhez az útvonalhoz' });
+
+    let resolved: string;
+    try {
+      resolved = safeResolve(filepath, { mustExist: true });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+
+    if (!isFile(resolved)) {
+      res.status(400).json({ error: 'A megadott útvonal nem fájl' });
       return;
     }
-    
+    if (!isGcodeExtension(resolved)) {
+      res.status(400).json({ error: `Nem engedélyezett fájlkiterjesztés (${GCODE_EXTENSIONS.join(', ')})` });
+      return;
+    }
+
     try {
-      if (!existsSync(filepath)) {
-        res.status(404).json({ error: 'Fájl nem található' });
-        return;
-      }
-      
-      const content = await fs.readFile(filepath, 'utf-8');
+      const content = await fs.readFile(resolved, 'utf-8');
       const lines = content.split('\n');
-      
+
       res.json({
-        filepath,
-        filename: path.basename(filepath),
+        filepath: resolved,
+        relpath: relativeFromRoot(resolved),
+        filename: path.basename(resolved),
         lines,
         totalLines: lines.length,
       });
     } catch (error) {
-      console.error(`Failed to read G-code file: ${filepath}`, error);
+      log.error(`Failed to read G-code file: ${resolved}`, error);
       res.status(500).json({ error: 'Fájl olvasási hiba' });
+    }
+  }));
+
+  // List G-code files in a directory
+  router.get('/gcode/list', asyncHandler(async (req: Request, res: Response) => {
+    const reqDir = (req.query.dir as string) || GCODE_ROOT;
+
+    let dir: string;
+    try {
+      dir = safeResolve(reqDir, { mustExist: false });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+
+    try {
+      if (!existsSync(dir)) {
+        res.json({
+          dir,
+          relpath: relativeFromRoot(dir),
+          root: GCODE_ROOT,
+          parent: null,
+          files: [],
+          dirs: [],
+        });
+        return;
+      }
+      if (!isDirectory(dir)) {
+        res.status(400).json({ error: 'A megadott útvonal nem könyvtár' });
+        return;
+      }
+
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      const files: Array<{ name: string; path: string; size: number; mtime: number }> = [];
+      const dirs: Array<{ name: string; path: string }> = [];
+
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name.startsWith('.')) continue;
+          dirs.push({ name: entry.name, path: full });
+        } else if (entry.isFile()) {
+          if (!isGcodeExtension(entry.name)) continue;
+          try {
+            const stat = await fs.stat(full);
+            files.push({
+              name: entry.name,
+              path: full,
+              size: stat.size,
+              mtime: stat.mtimeMs,
+            });
+          } catch {
+            // Ignore files we cannot stat
+          }
+        }
+      }
+
+      dirs.sort((a, b) => a.name.localeCompare(b.name));
+      files.sort((a, b) => b.mtime - a.mtime);
+
+      const parent = path.dirname(dir);
+      // A GCODE_ROOT-ról nem lehet "feljebb" navigálni
+      const canGoUp = dir !== GCODE_ROOT && (parent === GCODE_ROOT || parent.startsWith(GCODE_ROOT + path.sep));
+
+      res.json({
+        dir,
+        relpath: relativeFromRoot(dir),
+        root: GCODE_ROOT,
+        parent: canGoUp ? parent : null,
+        files,
+        dirs,
+      });
+    } catch (error) {
+      log.error(`Failed to list G-code dir: ${dir}`, error);
+      res.status(500).json({ error: 'Könyvtár olvasási hiba' });
+    }
+  }));
+
+  // Save G-code file
+  router.post('/gcode/file', asyncHandler(async (req: Request, res: Response) => {
+    const { path: filepath, content, overwrite } = req.body as {
+      path?: string;
+      content?: string;
+      overwrite?: boolean;
+    };
+
+    if (!filepath || typeof filepath !== 'string') {
+      res.status(400).json({ error: 'Fájl útvonal szükséges' });
+      return;
+    }
+    if (typeof content !== 'string') {
+      res.status(400).json({ error: 'Tartalom szükséges (string)' });
+      return;
+    }
+    if (Buffer.byteLength(content, 'utf-8') > GCODE_MAX_FILE_SIZE) {
+      res.status(413).json({ error: `Túl nagy tartalom (max ${GCODE_MAX_FILE_SIZE} bájt)` });
+      return;
+    }
+
+    let resolved: string;
+    try {
+      resolved = safeResolve(filepath, { mustExist: false });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+
+    // A fájlnevet külön szanitáljuk a kiterjesztés-ellenőrzés mellett.
+    const basename = path.basename(resolved);
+    try {
+      validateName(basename);
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+    if (!isGcodeExtension(basename)) {
+      res.status(400).json({ error: `Nem engedélyezett fájlkiterjesztés (${GCODE_EXTENSIONS.join(', ')})` });
+      return;
+    }
+
+    try {
+      const exists = existsSync(resolved);
+      if (exists) {
+        if (!isFile(resolved)) {
+          res.status(400).json({ error: 'A megadott útvonal nem fájl' });
+          return;
+        }
+        if (overwrite !== true) {
+          res.status(409).json({ error: 'A fájl már létezik (overwrite=true szükséges)' });
+          return;
+        }
+      }
+
+      const dir = path.dirname(resolved);
+      if (!existsSync(dir)) {
+        // Csak akkor hozzuk létre, ha a szülő is a GCODE_ROOT-on belül van.
+        // (a safeResolve már ellenőrizte) — recursive: true biztonságos.
+        await fs.mkdir(dir, { recursive: true });
+      }
+
+      const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      await fs.writeFile(resolved, normalized, 'utf-8');
+
+      const stat = await fs.stat(resolved);
+      res.json({
+        success: true,
+        filepath: resolved,
+        relpath: relativeFromRoot(resolved),
+        filename: path.basename(resolved),
+        size: stat.size,
+        mtime: stat.mtimeMs,
+      });
+    } catch (error) {
+      log.error(`Failed to save G-code file: ${resolved}`, error);
+      res.status(500).json({ error: 'Fájl mentési hiba' });
+    }
+  }));
+
+  // Új könyvtár létrehozása
+  router.post('/gcode/mkdir', asyncHandler(async (req: Request, res: Response) => {
+    const { parent, name } = req.body as { parent?: string; name?: string };
+
+    if (!parent || typeof parent !== 'string') {
+      res.status(400).json({ error: 'Szülő útvonal szükséges' });
+      return;
+    }
+    try {
+      validateName(name);
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+
+    let parentResolved: string;
+    try {
+      parentResolved = safeResolve(parent, { mustExist: true });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+    if (!isDirectory(parentResolved)) {
+      res.status(400).json({ error: 'A szülő útvonal nem könyvtár' });
+      return;
+    }
+
+    const target = path.join(parentResolved, name as string);
+    // A target-et is feloldjuk, hogy szigorúan a GCODE_ROOT-on belül maradjunk
+    let resolvedTarget: string;
+    try {
+      resolvedTarget = safeResolve(target, { mustExist: false });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+
+    if (existsSync(resolvedTarget)) {
+      res.status(409).json({ error: 'Már létezik egy ilyen nevű elem' });
+      return;
+    }
+
+    try {
+      await fs.mkdir(resolvedTarget);
+      res.status(201).json({
+        success: true,
+        path: resolvedTarget,
+        relpath: relativeFromRoot(resolvedTarget),
+        name,
+      });
+    } catch (error) {
+      log.error(`Failed to mkdir: ${resolvedTarget}`, error);
+      res.status(500).json({ error: 'Könyvtár létrehozási hiba' });
+    }
+  }));
+
+  // Fájl vagy üres / rekurzív könyvtár törlése
+  router.post('/gcode/delete', asyncHandler(async (req: Request, res: Response) => {
+    const { path: target, recursive } = req.body as { path?: string; recursive?: boolean };
+
+    if (!target || typeof target !== 'string') {
+      res.status(400).json({ error: 'Útvonal szükséges' });
+      return;
+    }
+
+    let resolved: string;
+    try {
+      resolved = safeResolve(target, { mustExist: true });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+
+    // Sem a GCODE_ROOT-ot, sem a workspace-ből kifelé mutató cuccokat nem engedjük
+    if (resolved === GCODE_ROOT) {
+      res.status(403).json({ error: 'A gyökérkönyvtár nem törölhető' });
+      return;
+    }
+
+    try {
+      if (isDirectory(resolved)) {
+        if (recursive !== true) {
+          // Csak üres könyvtárakat engedünk simán törölni
+          const entries = await fs.readdir(resolved);
+          if (entries.length > 0) {
+            res.status(409).json({ error: 'A könyvtár nem üres (recursive=true szükséges)' });
+            return;
+          }
+          await fs.rmdir(resolved);
+        } else {
+          await fs.rm(resolved, { recursive: true, force: false });
+        }
+      } else if (isFile(resolved)) {
+        if (!isGcodeExtension(resolved)) {
+          res.status(403).json({ error: 'Csak G-code fájlok törölhetők' });
+          return;
+        }
+        await fs.unlink(resolved);
+      } else {
+        res.status(400).json({ error: 'Ismeretlen fájltípus' });
+        return;
+      }
+
+      res.json({
+        success: true,
+        path: resolved,
+        relpath: relativeFromRoot(resolved),
+      });
+    } catch (error) {
+      log.error(`Failed to delete: ${resolved}`, error);
+      res.status(500).json({ error: 'Törlési hiba' });
+    }
+  }));
+
+  // Fájl vagy könyvtár átnevezése (csak ugyanazon szülőn belül)
+  router.post('/gcode/rename', asyncHandler(async (req: Request, res: Response) => {
+    const { path: target, newName } = req.body as { path?: string; newName?: string };
+
+    if (!target || typeof target !== 'string') {
+      res.status(400).json({ error: 'Útvonal szükséges' });
+      return;
+    }
+    try {
+      validateName(newName);
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+
+    let resolved: string;
+    try {
+      resolved = safeResolve(target, { mustExist: true });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+    if (resolved === GCODE_ROOT) {
+      res.status(403).json({ error: 'A gyökérkönyvtár nem nevezhető át' });
+      return;
+    }
+
+    const isFileTarget = isFile(resolved);
+    if (isFileTarget && !isGcodeExtension(newName as string)) {
+      res.status(400).json({ error: `Nem engedélyezett fájlkiterjesztés (${GCODE_EXTENSIONS.join(', ')})` });
+      return;
+    }
+
+    const newPath = path.join(path.dirname(resolved), newName as string);
+    let resolvedNew: string;
+    try {
+      resolvedNew = safeResolve(newPath, { mustExist: false });
+    } catch (err) {
+      if (sendPathError(res, err)) return;
+      throw err;
+    }
+    if (existsSync(resolvedNew)) {
+      res.status(409).json({ error: 'Már létezik egy ilyen nevű elem' });
+      return;
+    }
+
+    try {
+      await fs.rename(resolved, resolvedNew);
+      res.json({
+        success: true,
+        oldPath: resolved,
+        path: resolvedNew,
+        relpath: relativeFromRoot(resolvedNew),
+        name: newName,
+      });
+    } catch (error) {
+      log.error(`Failed to rename: ${resolved} -> ${resolvedNew}`, error);
+      res.status(500).json({ error: 'Átnevezési hiba' });
     }
   }));
   
@@ -1111,7 +1477,7 @@ export function createApiRoutes(
         res.json(defaultConfig);
       }
     } catch (error) {
-      console.error('Error reading machine config:', error);
+      log.error('Error reading machine config:', error);
       res.status(500).json({ error: 'Konfiguráció olvasási hiba' });
     }
   }));
@@ -1134,7 +1500,7 @@ export function createApiRoutes(
       await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
       res.json({ success: true, message: 'Konfiguráció mentve' });
     } catch (error) {
-      console.error('Error saving machine config:', error);
+      log.error('Error saving machine config:', error);
       res.status(500).json({ error: 'Konfiguráció mentési hiba' });
     }
   }));
@@ -1155,7 +1521,7 @@ export function createApiRoutes(
       
       res.json(result);
     } catch (error) {
-      console.error('Config reload error:', error);
+      log.error('Config reload error:', error);
       res.status(500).json({ error: 'Konfiguráció újratöltési hiba' });
     }
   }));
@@ -1189,7 +1555,7 @@ export function createApiRoutes(
         progress: status.progress || 0,
       });
     } catch (error) {
-      console.error(`Failed to read G-code file:`, error);
+      log.error(`Failed to read G-code file:`, error);
       res.status(500).json({ error: 'Fájl olvasási hiba' });
     }
   }));
@@ -1297,6 +1663,95 @@ export function createApiRoutes(
     
     const success = await deviceManager.run(req.params.id, fromLine);
     res.json({ success });
+  }));
+
+  /**
+   * Atomi „futtasd a buffer aktuális tartalmát" végpont.
+   *
+   * A frontend a G-code ablak aktuális tartalmát küldi (mindegy hogy
+   * mentett-e a felhasználó vagy sem). A végpont:
+   *   1. Egyedi nevű scratch fájlba menti a tartalmat
+   *      (`.scratch/<deviceId>-<timestamp>.nc` a GCODE_ROOT alatt).
+   *   2. Best-effort jelleggel törli a korábbi `.scratch/<deviceId>-*.nc`
+   *      fájlokat (a frissen kreáltat hagyja meg).
+   *   3. Betölteti a fájlt az eszközre (`deviceManager.loadFile`).
+   *   4. Elindítja a futást (`deviceManager.run`).
+   *
+   * Az egyedi név megakadályozza, hogy a bridge/driver oldalán bármilyen
+   * fájl-cache miatt a régi tartalmat futtassa: új path → biztosan újra
+   * olvas. A `.scratch` mappa el van rejtve a fájlböngészőben (a
+   * `gcode/list` kihagyja a `.`-prefixű könyvtárakat).
+   */
+  router.post('/devices/:id/run-buffer', asyncHandler(async (req: Request, res: Response) => {
+    const deviceId = req.params.id;
+    const { content, fromLine } = req.body as { content?: string; fromLine?: number };
+
+    if (typeof content !== 'string') {
+      res.status(400).json({ error: 'Tartalom szükséges (string)' });
+      return;
+    }
+    if (Buffer.byteLength(content, 'utf-8') > GCODE_MAX_FILE_SIZE) {
+      res.status(413).json({ error: `Túl nagy tartalom (max ${GCODE_MAX_FILE_SIZE} bájt)` });
+      return;
+    }
+    const fromLineNum = typeof fromLine === 'number' && fromLine >= 0 ? Math.floor(fromLine) : 0;
+
+    // Eszköz-id szanitálás: csak a SAFE_NAME_RE-vel kompatibilis karaktereket
+    // engedünk a fájlnévbe — a többit aláhúzásra cseréljük.
+    const safeId = deviceId.replace(/[^A-Za-z0-9._\-+]/g, '_') || 'device';
+    const scratchDir = path.join(GCODE_ROOT, '.scratch');
+    const scratchName = `${safeId}-${Date.now()}.nc`;
+    const scratchAbs = path.join(scratchDir, scratchName);
+
+    try {
+      // 1. Mentés
+      if (!existsSync(scratchDir)) {
+        await fs.mkdir(scratchDir, { recursive: true });
+      }
+      const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      await fs.writeFile(scratchAbs, normalized, 'utf-8');
+
+      // 2. Régi scratch fájlok takarítása (best-effort, hibát ignorálunk)
+      try {
+        const entries = await fs.readdir(scratchDir);
+        const prefix = `${safeId}-`;
+        await Promise.all(
+          entries
+            .filter((e) => e !== scratchName && e.startsWith(prefix) && e.endsWith('.nc'))
+            .map((e) =>
+              fs.unlink(path.join(scratchDir, e)).catch(() => {
+                // Ignoráljuk — csak takarítás
+              })
+            )
+        );
+      } catch {
+        // Olvasási hiba esetén sem akarunk megakadni
+      }
+
+      // 3. Betöltés az eszközre
+      const loadOk = await deviceManager.loadFile(deviceId, scratchAbs);
+      if (!loadOk) {
+        res.status(502).json({ error: 'A vezérlő nem tudta betölteni a scratch fájlt', filepath: scratchAbs });
+        return;
+      }
+
+      // 4. Indítás
+      const runOk = await deviceManager.run(deviceId, fromLineNum);
+      if (!runOk) {
+        res.status(502).json({ error: 'A vezérlő nem indította el a programot', filepath: scratchAbs });
+        return;
+      }
+
+      res.json({
+        success: true,
+        filepath: scratchAbs,
+        relpath: relativeFromRoot(scratchAbs),
+        size: Buffer.byteLength(normalized, 'utf-8'),
+      });
+    } catch (error) {
+      log.error(`run-buffer hiba (${deviceId}):`, error);
+      res.status(500).json({ error: 'Belső hiba a run-buffer feldolgozása során' });
+    }
   }));
   
   // Pause
