@@ -4555,6 +4555,29 @@ void loop() {
     }
   }
 
+  // Surface fresh grblHAL `error:` / `ALARM:` responses on the screens where
+  // the operator is most likely to issue a motion command but currently has
+  // no other channel to learn that the controller rejected it.  Without this
+  // mirror, e.g. an `error:9` (jog locked during alarm) would silently set
+  // `_last_error` and the user would just see "no movement, no feedback".
+  // Each error is consumed once: re-fires only when grblHAL emits a new
+  // distinct response, so we don't keep clobbering legitimate hints like
+  // "Feed set" or "Parallel move sent".
+  {
+    static String lastConsumedGrblError;
+    const String &cur = grblClient.lastError();
+    if (!cur.isEmpty() && cur != lastConsumedGrblError) {
+      const bool surfaceOnScreen =
+          (screen == Screen::Step || screen == Screen::StepActions ||
+           screen == Screen::Home || screen == Screen::Status);
+      if (surfaceOnScreen) {
+        infoLine = String("GRBL ") + cur;
+        uiDirty = true;
+      }
+      lastConsumedGrblError = cur;
+    }
+  }
+
   {
     const uint32_t statusInterval =
         (screen == Screen::Step || screen == Screen::StepActions) ? 500 : 200;
