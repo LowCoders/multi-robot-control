@@ -7,6 +7,9 @@ import { join } from 'path';
 import { parse } from 'yaml';
 import { DeviceManager } from '../devices/DeviceManager.js';
 import { StateManager } from '../state/StateManager.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('events');
 
 // =========================================
 // TYPES
@@ -92,7 +95,7 @@ export class EventEngine {
     const path = configPath || join(process.cwd(), '..', 'config', 'automation_rules.yaml');
     
     if (!existsSync(path)) {
-      console.log('Automatizálási szabályok nem találhatók:', path);
+      log.info('Automatizálási szabályok nem találhatók:', path);
       return;
     }
     
@@ -101,13 +104,13 @@ export class EventEngine {
       const config = parse(content) as { rules: Rule[] };
       
       this.rules = config.rules || [];
-      console.log(`${this.rules.length} automatizálási szabály betöltve`);
+      log.info(`${this.rules.length} automatizálási szabály betöltve`);
       
       // Timer triggerek indítása
       this.setupTimerTriggers();
       
     } catch (error) {
-      console.error('Szabályok betöltési hiba:', error);
+      log.error('Szabályok betöltési hiba:', error);
     }
   }
   
@@ -186,7 +189,7 @@ export class EventEngine {
         };
         
         if (await this.evaluateConditions(rule.conditions || [], context)) {
-          console.log(`Szabály aktiválva: ${rule.name}`);
+          log.info(`Szabály aktiválva: ${rule.name}`);
           await this.executeActions(rule.actions, context);
           
           // Broadcast

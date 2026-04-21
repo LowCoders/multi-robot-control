@@ -4,6 +4,9 @@
 
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DeviceStatus, DeviceControlState } from '../devices/DeviceManager.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('state');
 
 export interface ClientInfo {
   id: string;
@@ -41,12 +44,12 @@ export class StateManager {
     };
     
     this.clients.set(socket.id, clientInfo);
-    console.log(`Kliens csatlakozva: ${socket.id}`);
+    log.info(`Kliens csatlakozva: ${socket.id}`);
   }
   
   unregisterClient(socketId: string): void {
     this.clients.delete(socketId);
-    console.log(`Kliens lecsatlakozva: ${socketId}`);
+    log.info(`Kliens lecsatlakozva: ${socketId}`);
   }
   
   subscribeToDevice(socketId: string, deviceId: string): void {
@@ -193,7 +196,13 @@ export class StateManager {
     currentLine: number,
     totalLines: number
   ): void {
-    this.broadcastToDevice(deviceId, 'job:progress', {
+    // broadcastToAll, mert a frontend (deviceStore.ts) nem hív explicit
+    // device-subscribe-ot, és minden más event (status, state_change,
+    // position, job:complete) is broadcastToAll-on érkezik. A korábbi
+    // room-only broadcast volt az oka, hogy a job:progress esemény nem
+    // jutott el a frontendre, és a futás sor-számláló + sor-kiemelés
+    // a UI-on csak a végső state-en (pl. 6/6) látszott.
+    this.broadcastToAll('job:progress', {
       deviceId,
       progress,
       currentLine,
@@ -242,7 +251,7 @@ export class StateManager {
    * Flushes all pending updates and clears timers
    */
   cleanup(): void {
-    console.log('StateManager cleanup...');
+    log.info('StateManager cleanup...');
     
     // Clear all pending position timers
     for (const timer of this.positionTimers.values()) {

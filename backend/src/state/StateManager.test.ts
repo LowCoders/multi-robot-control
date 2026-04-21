@@ -201,10 +201,12 @@ describe('StateManager', () => {
       }));
     });
 
-    it('should broadcast job progress to device room', () => {
+    it('should broadcast job progress to all clients', () => {
       stateManager.broadcastJobProgress('device-cnc', 50, 100, 200);
 
-      expect(mockIO.to).toHaveBeenCalledWith('device:device-cnc');
+      // job:progress broadcastToAll-on megy, mert a frontend (deviceStore.ts)
+      // nem hív explicit device:subscribe-ot, ahogyan más globális
+      // device-event-ek (status, state_change, position, job:complete) sem.
       expect(mockIO.emit).toHaveBeenCalledWith('job:progress', expect.objectContaining({
         deviceId: 'device-cnc',
         progress: 50,

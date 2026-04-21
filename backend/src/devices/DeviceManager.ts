@@ -6,6 +6,9 @@ import axios, { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
 import { DeviceConfigEntry } from '../config/index.js';
 import { StateManager } from '../state/StateManager.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('devices');
 
 export interface DeviceStatus {
   state: string;
@@ -121,7 +124,7 @@ export class DeviceManager {
   }
   
   async initialize(deviceConfigs: DeviceConfigEntry[]): Promise<void> {
-    console.log('DeviceManager inicializálás...');
+    log.info('DeviceManager inicializálás...');
     
     // Eszközök inicializálása a konfigból
     for (const config of deviceConfigs) {
@@ -146,7 +149,7 @@ export class DeviceManager {
     // Start periodic status polling
     this.startStatusPolling();
     
-    console.log(`DeviceManager inicializálva, ${this.devices.size} eszköz`);
+    log.info(`DeviceManager inicializálva, ${this.devices.size} eszköz`);
   }
   
   /**
@@ -162,7 +165,7 @@ export class DeviceManager {
       await this.pollAllDeviceStatus();
     }, DeviceManager.STATUS_POLL_INTERVAL);
     
-    console.log('Status polling started');
+    log.info('Status polling started');
   }
   
   private async pollAllDeviceStatus(): Promise<void> {
@@ -226,7 +229,7 @@ export class DeviceManager {
         this.bridgeWs = new WebSocket(wsUrl);
         
         this.bridgeWs.on('open', () => {
-          console.log('Bridge WebSocket csatlakozva');
+          log.info('Bridge WebSocket csatlakozva');
           if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
@@ -239,22 +242,22 @@ export class DeviceManager {
             const message = JSON.parse(data.toString());
             this.handleBridgeMessage(message);
           } catch (e) {
-            console.error('Bridge message parse error:', e);
+            log.error('Bridge message parse error:', e);
           }
         });
         
         this.bridgeWs.on('close', () => {
-          console.log('Bridge WebSocket lecsatlakozva');
+          log.info('Bridge WebSocket lecsatlakozva');
           this.scheduleReconnect();
         });
         
         this.bridgeWs.on('error', (error) => {
-          console.error('Bridge WebSocket hiba:', error.message);
+          log.error('Bridge WebSocket hiba:', error.message);
           resolve(); // Ne blokkoljuk az inicializálást
         });
         
       } catch (error) {
-        console.error('Bridge WebSocket csatlakozási hiba:', error);
+        log.error('Bridge WebSocket csatlakozási hiba:', error);
         this.scheduleReconnect();
         resolve();
       }
@@ -269,7 +272,7 @@ export class DeviceManager {
     
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
-      console.log('Bridge újracsatlakozás...');
+      log.info('Bridge újracsatlakozás...');
       await this.connectToBridge();
     }, 5000);
   }
@@ -294,7 +297,7 @@ export class DeviceManager {
    * Cleanup method for graceful shutdown
    */
   cleanup(): void {
-    console.log('DeviceManager cleanup...');
+    log.info('DeviceManager cleanup...');
     
     // Cancel reconnect timer
     if (this.reconnectTimer) {
@@ -503,7 +506,7 @@ export class DeviceManager {
         await this.tryAutoClaimHost(bd.id, 'startup');
       }
     } catch (error) {
-      console.error('Eszközök frissítési hiba:', error);
+      log.error('Eszközök frissítési hiba:', error);
     }
   }
   
@@ -547,7 +550,7 @@ export class DeviceManager {
       }
       return false;
     } catch (error) {
-      console.error('Eszköz hozzáadási hiba:', error);
+      log.error('Eszköz hozzáadási hiba:', error);
       return false;
     }
   }
@@ -559,7 +562,7 @@ export class DeviceManager {
       this.updateDeviceStatus(deviceId, status);
       return status;
     } catch (error) {
-      console.error(`Státusz lekérdezési hiba (${deviceId}):`, error);
+      log.error(`Státusz lekérdezési hiba (${deviceId}):`, error);
       return null;
     }
   }
@@ -576,7 +579,7 @@ export class DeviceManager {
       
       return capabilities;
     } catch (error) {
-      console.error(`Capabilities lekérdezési hiba (${deviceId}):`, error);
+      log.error(`Capabilities lekérdezési hiba (${deviceId}):`, error);
       return null;
     }
   }
@@ -619,7 +622,7 @@ export class DeviceManager {
       }
       return result;
     } catch (error) {
-      console.error(`Control request hiba (${deviceId}):`, error);
+      log.error(`Control request hiba (${deviceId}):`, error);
       return null;
     }
   }
@@ -641,7 +644,7 @@ export class DeviceManager {
       }
       return result;
     } catch (error) {
-      console.error(`Control release hiba (${deviceId}):`, error);
+      log.error(`Control release hiba (${deviceId}):`, error);
       return null;
     }
   }
@@ -659,7 +662,7 @@ export class DeviceManager {
       await this.tryAutoClaimHost(deviceId, 'connect');
       return true;
     } catch (error) {
-      console.error(`Csatlakozási hiba (${deviceId}):`, error);
+      log.error(`Csatlakozási hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -669,7 +672,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/disconnect`);
       return response.data.success;
     } catch (error) {
-      console.error(`Lecsatlakozási hiba (${deviceId}):`, error);
+      log.error(`Lecsatlakozási hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -679,7 +682,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/home`, { axes, feed_rate: feedRate });
       return response.data.success;
     } catch (error) {
-      console.error(`Homing hiba (${deviceId}):`, error);
+      log.error(`Homing hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -700,7 +703,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Jog hiba (${deviceId}):`, error);
+      log.error(`Jog hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -710,7 +713,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/jog/stop`);
       return response.data.success;
     } catch (error) {
-      console.error(`Jog stop hiba (${deviceId}):`, error);
+      log.error(`Jog stop hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -735,7 +738,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Jog session start hiba (${deviceId}):`, error);
+      log.error(`Jog session start hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -756,7 +759,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Jog session beat hiba (${deviceId}):`, error);
+      log.error(`Jog session beat hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -768,17 +771,46 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Jog session stop hiba (${deviceId}):`, error);
+      log.error(`Jog session stop hiba (${deviceId}):`, error);
       return false;
     }
   }
   
+  async getJogDiagnostics(deviceId: string): Promise<{
+    grbl_version?: string | null;
+    protocol?: string;
+    streaming_error8_retries?: number;
+    last_jog_trace?: {
+      success?: boolean;
+      state_before?: string | null;
+      grbl_version?: string | null;
+      protocol?: string;
+      commands?: string[];
+      responses?: string[];
+      error_code?: number;
+      error_message?: string;
+      error?: string;
+    };
+  } | null> {
+    try {
+      const response = await this.http.get(`/devices/${deviceId}/jog/diagnostics`);
+      return response.data ?? null;
+    } catch (error) {
+      // 400 = device does not support diagnostics. Don't spam logs.
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status !== 400 && status !== 404) {
+        log.error(`Jog diagnostics hiba (${deviceId}):`, error);
+      }
+      return null;
+    }
+  }
+
   async sendGCode(deviceId: string, gcode: string): Promise<string> {
     try {
       const response = await this.http.post(`/devices/${deviceId}/gcode`, { gcode });
       return response.data.response;
     } catch (error) {
-      console.error(`G-code küldési hiba (${deviceId}):`, error);
+      log.error(`G-code küldési hiba (${deviceId}):`, error);
       return 'error';
     }
   }
@@ -788,7 +820,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/load`, { filepath });
       return response.data.success;
     } catch (error) {
-      console.error(`Fájl betöltési hiba (${deviceId}):`, error);
+      log.error(`Fájl betöltési hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -800,7 +832,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Futtatási hiba (${deviceId}):`, error);
+      log.error(`Futtatási hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -810,7 +842,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/pause`);
       return response.data.success;
     } catch (error) {
-      console.error(`Pause hiba (${deviceId}):`, error);
+      log.error(`Pause hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -820,7 +852,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/resume`);
       return response.data.success;
     } catch (error) {
-      console.error(`Resume hiba (${deviceId}):`, error);
+      log.error(`Resume hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -830,7 +862,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/stop`);
       return response.data.success;
     } catch (error) {
-      console.error(`Stop hiba (${deviceId}):`, error);
+      log.error(`Stop hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -840,7 +872,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/reset`);
       return response.data.success;
     } catch (error) {
-      console.error(`Reset hiba (${deviceId}):`, error);
+      log.error(`Reset hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -852,7 +884,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Feed override hiba (${deviceId}):`, error);
+      log.error(`Feed override hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -864,7 +896,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Spindle override hiba (${deviceId}):`, error);
+      log.error(`Spindle override hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -876,7 +908,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`Soft limits beállítási hiba (${deviceId}):`, error);
+      log.error(`Soft limits beállítási hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -886,7 +918,7 @@ export class DeviceManager {
       const response = await this.http.get(`/devices/${deviceId}/soft-limits`);
       return response.data as { soft_limits_enabled: boolean };
     } catch (error) {
-      console.error(`Soft limits állapot lekérdezési hiba (${deviceId}):`, error);
+      log.error(`Soft limits állapot lekérdezési hiba (${deviceId}):`, error);
       return null;
     }
   }
@@ -896,7 +928,7 @@ export class DeviceManager {
       const response = await this.http.get(`/devices/${deviceId}/grbl-settings`);
       return (response.data?.settings ?? null) as Record<string, number> | null;
     } catch (error) {
-      console.error(`GRBL settings lekérdezési hiba (${deviceId}):`, error);
+      log.error(`GRBL settings lekérdezési hiba (${deviceId}):`, error);
       return null;
     }
   }
@@ -908,7 +940,7 @@ export class DeviceManager {
       });
       return response.data.success;
     } catch (error) {
-      console.error(`GRBL settings batch beállítási hiba (${deviceId}):`, error);
+      log.error(`GRBL settings batch beállítási hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -922,7 +954,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/gripper/on`);
       return response.data.success;
     } catch (error) {
-      console.error(`Gripper ON hiba (${deviceId}):`, error);
+      log.error(`Gripper ON hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -932,7 +964,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/gripper/off`);
       return response.data.success;
     } catch (error) {
-      console.error(`Gripper OFF hiba (${deviceId}):`, error);
+      log.error(`Gripper OFF hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -942,7 +974,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/sucker/on`);
       return response.data.success;
     } catch (error) {
-      console.error(`Sucker ON hiba (${deviceId}):`, error);
+      log.error(`Sucker ON hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -952,7 +984,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/sucker/off`);
       return response.data.success;
     } catch (error) {
-      console.error(`Sucker OFF hiba (${deviceId}):`, error);
+      log.error(`Sucker OFF hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -962,7 +994,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/enable`);
       return response.data.success;
     } catch (error) {
-      console.error(`Robot enable hiba (${deviceId}):`, error);
+      log.error(`Robot enable hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -972,7 +1004,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/disable`);
       return response.data.success;
     } catch (error) {
-      console.error(`Robot disable hiba (${deviceId}):`, error);
+      log.error(`Robot disable hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -982,7 +1014,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/calibrate`);
       return response.data.success;
     } catch (error) {
-      console.error(`Robot calibrate hiba (${deviceId}):`, error);
+      log.error(`Robot calibrate hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -995,7 +1027,7 @@ export class DeviceManager {
       });
       return response.data;
     } catch (error) {
-      console.error(`Calibrate limits hiba (${deviceId}):`, error);
+      log.error(`Calibrate limits hiba (${deviceId}):`, error);
       throw error;
     }
   }
@@ -1006,7 +1038,7 @@ export class DeviceManager {
       const response = await this.http.get(`/devices/${deviceId}/calibration-status`);
       return response.data;
     } catch (error) {
-      console.error(`Get calibration status hiba (${deviceId}):`, error);
+      log.error(`Get calibration status hiba (${deviceId}):`, error);
       return { running: false, message: 'Hiba történt' };
     }
   }
@@ -1016,7 +1048,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/calibration-stop`);
       return response.data.success;
     } catch (error) {
-      console.error(`Stop calibration hiba (${deviceId}):`, error);
+      log.error(`Stop calibration hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -1027,7 +1059,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/save-calibration`, calibrationData);
       return response.data;
     } catch (error) {
-      console.error(`Save calibration hiba (${deviceId}):`, error);
+      log.error(`Save calibration hiba (${deviceId}):`, error);
       throw error;
     }
   }
@@ -1037,7 +1069,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/teach/record`);
       return response.data;
     } catch (error) {
-      console.error(`Teach record hiba (${deviceId}):`, error);
+      log.error(`Teach record hiba (${deviceId}):`, error);
       return null;
     }
   }
@@ -1047,7 +1079,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/teach/play`);
       return response.data.success;
     } catch (error) {
-      console.error(`Teach play hiba (${deviceId}):`, error);
+      log.error(`Teach play hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -1057,7 +1089,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/teach/clear`);
       return response.data.success;
     } catch (error) {
-      console.error(`Teach clear hiba (${deviceId}):`, error);
+      log.error(`Teach clear hiba (${deviceId}):`, error);
       return false;
     }
   }
@@ -1067,7 +1099,7 @@ export class DeviceManager {
       const response = await this.http.get(`/devices/${deviceId}/teach/positions`);
       return response.data.positions || [];
     } catch (error) {
-      console.error(`Teach positions hiba (${deviceId}):`, error);
+      log.error(`Teach positions hiba (${deviceId}):`, error);
       return [];
     }
   }
@@ -1081,7 +1113,7 @@ export class DeviceManager {
       });
       return response.data;
     } catch (error) {
-      console.error(`Diagnosztika hiba (${deviceId}):`, error);
+      log.error(`Diagnosztika hiba (${deviceId}):`, error);
       throw error;
     }
   }
@@ -1098,7 +1130,7 @@ export class DeviceManager {
       });
       return response.data;
     } catch (error) {
-      console.error(`Firmware probe hiba (${deviceId}):`, error);
+      log.error(`Firmware probe hiba (${deviceId}):`, error);
       throw error;
     }
   }
@@ -1117,7 +1149,7 @@ export class DeviceManager {
       });
       return response.data;
     } catch (error) {
-      console.error(`Endstop test hiba (${deviceId}):`, error);
+      log.error(`Endstop test hiba (${deviceId}):`, error);
       throw error;
     }
   }
@@ -1131,7 +1163,7 @@ export class DeviceManager {
       });
       return response.data;
     } catch (error) {
-      console.error(`Motion test hiba (${deviceId}):`, error);
+      log.error(`Motion test hiba (${deviceId}):`, error);
       throw error;
     }
   }
@@ -1158,7 +1190,7 @@ export class DeviceManager {
       });
       return response.data;
     } catch (error) {
-      console.error(`Cancel test hiba (${deviceId}):`, error);
+      log.error(`Cancel test hiba (${deviceId}):`, error);
       throw error;
     }
   }
@@ -1173,7 +1205,7 @@ export class DeviceManager {
       const response = await this.http.post(`/devices/${deviceId}/reload-config`);
       return response.data;
     } catch (error) {
-      console.error(`Config reload hiba (${deviceId}):`, error);
+      log.error(`Config reload hiba (${deviceId}):`, error);
       throw error;
     }
   }
