@@ -5,6 +5,9 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DeviceManager } from '../devices/DeviceManager.js';
 import { StateManager } from '../state/StateManager.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger('ws');
 
 const VALID_AXES = new Set(['X', 'Y', 'Z']);
 
@@ -27,7 +30,7 @@ export function setupWebSocket(
     
     // Kezdeti adatok küldése (with error handling)
     sendInitialData(socket, deviceManager).catch((err) => {
-      console.error('Error sending initial data:', err);
+      log.error('Error sending initial data:', err);
     });
     
     // =========================================
@@ -125,7 +128,7 @@ export function setupWebSocket(
             break;
         }
       } catch (error) {
-        console.error(`WebSocket device:command error (${command}):`, error);
+        log.error(`WebSocket device:command error (${command}):`, error);
         success = false;
       }
       
@@ -150,19 +153,59 @@ export function setupWebSocket(
       try {
         success = await deviceManager.jog(deviceId, axis, distance, feedRate, mode);
       } catch (error) {
-        console.error('WebSocket device:jog error:', error);
+        log.error('WebSocket device:jog error:', error);
       }
       
-      // Log jog command to MDI console
+      // Log jog command to MDI console. We surface the *actual* commands the
+      // driver pushed onto the serial line (e.g. `$J=G91 X10.000 F50000` for
+      // GRBL 1.1 or the relative `G91`/`G1`/`G90` triplet for the v0.9
+      // fallback) and the raw GRBL responses. This makes it possible to tell
+      // whether a jog failure originates in our send pipeline or inside the
+      // GRBL HAL parser.
       const isContinuous = Math.abs(distance) > 1000;
-      const jogCommand = isContinuous 
-        ? `[JOG] ${axis}${distance > 0 ? '+' : '-'} F${feedRate} (folyamatos)`
-        : `[JOG] G91 G0 ${axis}${distance} F${feedRate}`;
-      
+      const diagnostics = await deviceManager.getJogDiagnostics(deviceId);
+      const trace = diagnostics?.last_jog_trace;
+      const traceCommands = trace?.commands?.filter((c) => typeof c === 'string' && c.length > 0) ?? [];
+      const traceResponses = trace?.responses?.filter((r) => typeof r === 'string' && r.length > 0) ?? [];
+      const errorBits: string[] = [];
+      if (typeof trace?.error_code === 'number') {
+        errorBits.push(`error:${trace.error_code}${trace.error_message ? ` - ${trace.error_message}` : ''}`);
+      } else if (trace?.error) {
+        errorBits.push(trace.error);
+      }
+
+      // Layer payload:
+      // - command: clean, portable G-code (what we'd offer to the gcode buffer)
+      // - raw: actual hardware command(s) the driver pushed onto the wire
+      // - response: short summary line
+      // - detailed: full GRBL response(s) + error_code/error_message
+      // - debug: protocol + pre-jog GRBL state
+      const cleanCommand = `G91 G0 ${axis}${distance} F${feedRate}`;
+      const rawCommand = traceCommands.length > 0 ? traceCommands.join('\n') : cleanCommand;
+      const responseSummary = success
+        ? 'ok'
+        : (errorBits[0] ?? (traceResponses.length > 0 ? traceResponses[traceResponses.length - 1] : 'error'));
+      const detailedResponse = [...traceResponses, ...errorBits].join('\n');
+
       socket.emit('device:mdi:result', {
         deviceId,
-        gcode: jogCommand,
-        response: success ? 'ok' : 'error',
+        kind: 'jog',
+        continuous: isContinuous,
+        command: cleanCommand,
+        raw: rawCommand,
+        response: responseSummary,
+        detailed: detailedResponse,
+        debug: {
+          protocol: diagnostics?.protocol ?? trace?.protocol ?? null,
+          stateBefore: trace?.state_before ?? null,
+        },
+        // Structured params let the client rebuild the command in absolute
+        // coordinate form without having to parse the gcode string.
+        jogParams: { axis, distance, feedRate },
+        // Backward-compat aliases for older clients.
+        gcode: cleanCommand,
+        protocol: diagnostics?.protocol ?? trace?.protocol,
+        stateBefore: trace?.state_before ?? undefined,
       });
       
       socket.emit('device:jog:result', {
@@ -226,7 +269,7 @@ export function setupWebSocket(
           tickMs,
         );
       } catch (error) {
-        console.error('WebSocket device:jog:start error:', error);
+        log.error('WebSocket device:jog:start error:', error);
         errorMessage = error instanceof Error ? error.message : 'Jog start hiba';
       }
 
@@ -276,7 +319,7 @@ export function setupWebSocket(
           mode
         );
       } catch (error) {
-        console.error('WebSocket device:jog:beat error:', error);
+        log.error('WebSocket device:jog:beat error:', error);
         errorMessage = error instanceof Error ? error.message : 'Jog beat hiba';
       }
 
@@ -306,15 +349,24 @@ export function setupWebSocket(
           success = await deviceManager.jogStop(data.deviceId);
         }
       } catch (error) {
-        console.error('WebSocket device:jog:stop error:', error);
+        log.error('WebSocket device:jog:stop error:', error);
         errorMessage = error instanceof Error ? error.message : 'Jog stop hiba';
       }
       
-      // Log jog stop to MDI console
+      // Log jog stop to MDI console. There is no real G-code to recall here;
+      // the UI uses `kind` to render this as a non-recallable status entry.
+      // Real-time jog cancel is `0x85`; we surface that in the `raw` layer.
+      const stopDiagnostics = await deviceManager.getJogDiagnostics(data.deviceId);
       socket.emit('device:mdi:result', {
         deviceId: data.deviceId,
-        gcode: '[JOG STOP]',
+        kind: 'jog-stop',
+        command: '',
+        raw: '0x85',
         response: success ? 'ok' : 'error',
+        detailed: success ? 'ok' : (errorMessage ?? 'error'),
+        debug: { protocol: stopDiagnostics?.protocol ?? null },
+        // Backward-compat aliases.
+        gcode: '',
       });
       
       socket.emit('device:jog:stop:result', {
@@ -335,13 +387,19 @@ export function setupWebSocket(
       try {
         response = await deviceManager.sendGCode(deviceId, gcode);
       } catch (error) {
-        console.error('WebSocket device:mdi error:', error);
+        log.error('WebSocket device:mdi error:', error);
       }
       
       socket.emit('device:mdi:result', {
         deviceId,
-        gcode,
+        kind: 'mdi',
+        command: gcode,
+        raw: gcode,
         response,
+        detailed: response,
+        debug: {},
+        // Backward-compat alias.
+        gcode,
       });
     });
     
@@ -361,7 +419,7 @@ export function setupWebSocket(
           success = await deviceManager.setSpindleOverride(deviceId, percent);
         }
       } catch (error) {
-        console.error('WebSocket device:override error:', error);
+        log.error('WebSocket device:override error:', error);
       }
       
       socket.emit('device:override:result', {
@@ -384,7 +442,7 @@ export function setupWebSocket(
           status,
         });
       } catch (error) {
-        console.error('WebSocket device:get:status error:', error);
+        log.error('WebSocket device:get:status error:', error);
         socket.emit('device:status', {
           deviceId: data.deviceId,
           status: null,
