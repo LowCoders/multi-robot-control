@@ -6,6 +6,7 @@
  * újrahasználható lesz (pl. teaching modal).
  */
 
+import { useTranslation } from 'react-i18next'
 import { Trash2 } from 'lucide-react'
 import type { AxisConfig, AxisName, AxisType } from '../../../types/machine-config'
 
@@ -46,6 +47,7 @@ export default function MachineConfigAxisEditor({
   onChange,
   onDelete,
 }: MachineConfigAxisEditorProps) {
+  const { t } = useTranslation('devices')
   const possibleParents = allAxes.filter((a) => a.name !== axis.name)
   const limitsInvalid = axis.min != null && axis.max != null && axis.min >= axis.max
 
@@ -59,10 +61,10 @@ export default function MachineConfigAxisEditor({
           >
             {axis.name}
           </div>
-          <span className="text-sm font-medium text-white">
+            <span className="text-sm font-medium text-white">
             {axis.name}
             <span className="text-steel-400 text-xs ml-1">
-              ({axis.type === 'linear' ? 'Lin.' : 'Rot.'})
+              ({axis.type === 'linear' ? t('machine_config_axis.lin_short') : t('machine_config_axis.rot_short')})
             </span>
           </span>
           <input
@@ -70,13 +72,13 @@ export default function MachineConfigAxisEditor({
             value={axis.color}
             onChange={(e) => onChange({ ...axis, color: e.target.value })}
             className="w-6 h-6 rounded cursor-pointer bg-transparent border border-steel-600 p-0"
-            title="Tengely színe"
+            title={t('machine_config_axis.axis_color')}
           />
         </div>
         <button
           onClick={onDelete}
           className="btn-icon text-red-400 hover:text-red-300 hover:bg-red-500/10"
-          title="Tengely törlése"
+          title={t('machine_config_axis.delete_axis')}
         >
           <Trash2 className="w-3 h-3" />
         </button>
@@ -84,8 +86,8 @@ export default function MachineConfigAxisEditor({
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div>
-          <label className="block text-xs text-steel-500 mb-1" title="Üres = nincs alsó limit">
-            Min
+          <label className="block text-xs text-steel-500 mb-1" title={t('machine_config_axis.min_empty_hint')}>
+            {t('machine_config_axis.min')}
           </label>
           <input
             type="number"
@@ -93,12 +95,12 @@ export default function MachineConfigAxisEditor({
             placeholder="∅"
             onChange={(e) => onChange({ ...axis, min: parseLimit(e.target.value) })}
             className="input w-full text-xs py-1"
-            title="Üresen hagyva: nincs alsó limit"
+            title={t('machine_config_axis.min_empty_hint')}
           />
         </div>
         <div>
-          <label className="block text-xs text-steel-500 mb-1" title="Üres = nincs felső limit">
-            Max
+          <label className="block text-xs text-steel-500 mb-1" title={t('machine_config_axis.max_empty_hint')}>
+            {t('machine_config_axis.max')}
           </label>
           <input
             type="number"
@@ -106,18 +108,18 @@ export default function MachineConfigAxisEditor({
             placeholder="∅"
             onChange={(e) => onChange({ ...axis, max: parseLimit(e.target.value) })}
             className="input w-full text-xs py-1"
-            title="Üresen hagyva: nincs felső limit"
+            title={t('machine_config_axis.max_empty_hint')}
           />
         </div>
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Scale</label>
+          <label className="block text-xs text-steel-500 mb-1">{t('machine_config_axis.scale')}</label>
           <input
             type="number"
             value={axis.scale ?? 1.0}
             onChange={(e) => onChange({ ...axis, scale: parseFloat(e.target.value) || 1.0 })}
             className="input w-full text-xs py-1"
             step={0.001}
-            title="Firmware érték → fizikai egység szorzó"
+            title={t('machine_config_axis.scale_title')}
           />
         </div>
         <div>
@@ -129,7 +131,7 @@ export default function MachineConfigAxisEditor({
             onChange={(e) => onHomePositionChange?.(parseHome(e.target.value))}
             className="input w-full text-xs py-1"
             disabled={!onHomePositionChange}
-            title="Home pozíció ezen a tengelyen (üres = nincs megadva)"
+            title={t('machine_config_axis.home_title')}
             step={0.1}
           />
         </div>
@@ -137,13 +139,13 @@ export default function MachineConfigAxisEditor({
 
       {limitsInvalid && (
         <div className="mt-1 text-[11px] text-amber-400">
-          Figyelem: Min ({axis.min}) ≥ Max ({axis.max}) — érvénytelen tartomány.
+          {t('machine_config_axis.limits_invalid', { min: axis.min, max: axis.max })}
         </div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Max rate (GRBL)</label>
+          <label className="block text-xs text-steel-500 mb-1">{t('machine_config_axis.max_rate')}</label>
           <input
             type="number"
             value={grblRate ?? ''}
@@ -154,11 +156,11 @@ export default function MachineConfigAxisEditor({
             className="input w-full text-xs py-1"
             min={1}
             disabled={!onGrblRateChange}
-            title="GRBL $110/$111/$112 érték tengelyenként"
+            title={t('machine_config_axis.max_rate_title')}
           />
         </div>
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Acceleration (GRBL)</label>
+          <label className="block text-xs text-steel-500 mb-1">{t('machine_config_axis.acceleration')}</label>
           <input
             type="number"
             value={grblAcceleration ?? ''}
@@ -169,25 +171,25 @@ export default function MachineConfigAxisEditor({
             className="input w-full text-xs py-1"
             min={1}
             disabled={!onGrblAccelerationChange}
-            title="GRBL $120/$121/$122 érték tengelyenként"
+            title={t('machine_config_axis.acceleration_title')}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Típus</label>
+          <label className="block text-xs text-steel-500 mb-1">{t('machine_config_axis.type')}</label>
           <select
             value={axis.type}
             onChange={(e) => onChange({ ...axis, type: e.target.value as AxisType })}
             className="input w-full text-xs py-1"
           >
-            <option value="linear">Lineáris</option>
-            <option value="rotary">Rotációs</option>
+            <option value="linear">{t('machine_config_axis.type_linear')}</option>
+            <option value="rotary">{t('machine_config_axis.type_rotary')}</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs text-steel-500 mb-1">Szülő</label>
+          <label className="block text-xs text-steel-500 mb-1">{t('machine_config_axis.parent')}</label>
           <select
             value={axis.parent ?? ''}
             onChange={(e) =>
@@ -198,7 +200,7 @@ export default function MachineConfigAxisEditor({
             }
             className="input w-full text-xs py-1"
           >
-            <option value="">Nincs</option>
+            <option value="">{t('machine_config_axis.parent_none')}</option>
             {possibleParents.map((p) => (
               <option key={p.name} value={p.name}>
                 {p.name}
@@ -214,7 +216,7 @@ export default function MachineConfigAxisEditor({
               onChange={(e) => onChange({ ...axis, invert: e.target.checked })}
               className="w-3 h-3 rounded bg-steel-700 border-steel-600"
             />
-            <span className="text-xs text-steel-400">Invertálás</span>
+            <span className="text-xs text-steel-400">{t('machine_config_axis.invert')}</span>
           </label>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Bot } from 'lucide-react'
 import type { RobotArmConfig } from '../../../types/machine-config'
 
@@ -17,12 +18,22 @@ const DEFAULT: RobotArmConfig = {
 }
 
 export default function RobotArmGeometryEditor({ value, onChange }: Props) {
+  const { t } = useTranslation('devices')
   const v = value ?? DEFAULT
   const update = (patch: Partial<RobotArmConfig>) => onChange({ ...v, ...patch })
 
-  const numField = (label: string, key: keyof Pick<RobotArmConfig, 'baseDiameter' | 'baseHeight' | 'lowerArmLength' | 'lowerArmWidth' | 'upperArmLength' | 'upperArmWidth'>) => (
+  const numField = (
+    labelKey:
+      | 'base_diameter'
+      | 'base_height'
+      | 'lower_arm_length'
+      | 'lower_arm_width'
+      | 'upper_arm_length'
+      | 'upper_arm_width',
+    key: keyof Pick<RobotArmConfig, 'baseDiameter' | 'baseHeight' | 'lowerArmLength' | 'lowerArmWidth' | 'upperArmLength' | 'upperArmWidth'>,
+  ) => (
     <div>
-      <label className="block text-[11px] text-steel-500 mb-1">{label}</label>
+      <label className="block text-[11px] text-steel-500 mb-1">{t(`cap_editors.robot_arm.${labelKey}`)}</label>
       <input
         type="number"
         min={1}
@@ -37,19 +48,19 @@ export default function RobotArmGeometryEditor({ value, onChange }: Props) {
     <div className="bg-steel-800/40 rounded-lg border border-steel-700 p-3 space-y-2">
       <div className="flex items-center gap-2 text-steel-300 text-xs font-medium">
         <Bot className="w-3 h-3" />
-        Robotkar geometria
+        {t('cap_editors.robot_arm.title')}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {numField('Bázis átmérő (mm)', 'baseDiameter')}
-        {numField('Bázis magasság (mm)', 'baseHeight')}
+        {numField('base_diameter', 'baseDiameter')}
+        {numField('base_height', 'baseHeight')}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {numField('Alsó kar hossz (mm)', 'lowerArmLength')}
-        {numField('Alsó kar szélesség (mm)', 'lowerArmWidth')}
+        {numField('lower_arm_length', 'lowerArmLength')}
+        {numField('lower_arm_width', 'lowerArmWidth')}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {numField('Felső kar hossz (mm)', 'upperArmLength')}
-        {numField('Felső kar szélesség (mm)', 'upperArmWidth')}
+        {numField('upper_arm_length', 'upperArmLength')}
+        {numField('upper_arm_width', 'upperArmWidth')}
       </div>
     </div>
   )

@@ -9,6 +9,7 @@ import {
   Home,
   AlertTriangle,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useDeviceStore } from '../../stores/deviceStore'
 import type { DeviceType, DeviceStatus, DeviceCapabilities } from '../../types/device'
 
@@ -36,6 +37,7 @@ interface JogButtonProps {
   title: string
   isBlocked: boolean
   jogMode: JogMode
+  blockedSuffix: string
 }
 
 function JogButton({ 
@@ -47,6 +49,7 @@ function JogButton({
   title, 
   isBlocked,
   jogMode,
+  blockedSuffix,
 }: JogButtonProps) {
   // Track if THIS button is currently pressed (for continuous mode)
   const isPressedRef = useRef(false)
@@ -97,7 +100,7 @@ function JogButton({
           ? 'bg-red-900/30 text-red-400/50 cursor-not-allowed border border-red-500/20' 
           : 'bg-steel-800 hover:bg-steel-700 active:bg-machine-600'
       }`}
-      title={isBlocked ? `${title} - ENDSTOP` : title}
+      title={isBlocked ? `${title}${blockedSuffix}` : title}
     >
       <Icon className="w-5 h-5" />
     </button>
@@ -115,6 +118,7 @@ export default function JogControl({
   feedRate: controlledFeedRate,
   onFeedRateChange,
 }: Props) {
+  const { t } = useTranslation('devices')
   const { jog, jogStart, jogBeat, jogStop, sendCommand } = useDeviceStore()
   
   const isRobotArm = deviceType === 'robot_arm'
@@ -464,25 +468,25 @@ export default function JogControl({
         <div className="flex border-b border-steel-700">
           <button
             onClick={() => setMotionMode('jog')}
-            title="Csukló szögek direkt vezérlés (X/Y/Z fokban)"
+            title={t('jog_control.mode_jog_hint')}
             className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
               motionMode === 'jog'
                 ? 'text-machine-400 border-b-2 border-machine-500 -mb-px'
                 : 'text-steel-400 hover:text-steel-200'
             }`}
           >
-            Jog
+            {t('jog_control.tab_jog')}
           </button>
           <button
             onClick={() => setMotionMode('cartesian')}
-            title="X/Y/Z koordináták mm-ben (IK számítás)"
+            title={t('jog_control.mode_cartesian_hint')}
             className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
               motionMode === 'cartesian'
                 ? 'text-machine-400 border-b-2 border-machine-500 -mb-px'
                 : 'text-steel-400 hover:text-steel-200'
             }`}
           >
-            Cartesian
+            {t('jog_control.tab_cartesian')}
           </button>
         </div>
       )}
@@ -502,6 +506,7 @@ export default function JogControl({
             title={`${axisLabels.y}+ (Arrow Up)`}
             isBlocked={blocked.yPlus}
             jogMode={jogMode}
+            blockedSuffix={t('jog_control.blocked_suffix')}
           />
           <div />
           
@@ -514,12 +519,13 @@ export default function JogControl({
             title={`${axisLabels.x}- (Arrow Left)`}
             isBlocked={blocked.xMinus}
             jogMode={jogMode}
+            blockedSuffix={t('jog_control.blocked_suffix')}
           />
           <button
             onClick={handleHome}
             tabIndex={-1}
             className="btn-icon bg-machine-600/20 hover:bg-machine-600/30 text-machine-400 p-3"
-            title="Home"
+            title={t('jog_control.home')}
           >
             <Home className="w-5 h-5" />
           </button>
@@ -532,6 +538,7 @@ export default function JogControl({
             title={`${axisLabels.x}+ (Arrow Right)`}
             isBlocked={blocked.xPlus}
             jogMode={jogMode}
+            blockedSuffix={t('jog_control.blocked_suffix')}
           />
           
           <div />
@@ -544,6 +551,7 @@ export default function JogControl({
             title={`${axisLabels.y}- (Arrow Down)`}
             isBlocked={blocked.yMinus}
             jogMode={jogMode}
+            blockedSuffix={t('jog_control.blocked_suffix')}
           />
           <div />
         </div>
@@ -559,6 +567,7 @@ export default function JogControl({
             title={`${axisLabels.z}+ (Page Up)`}
             isBlocked={blocked.zPlus}
             jogMode={jogMode}
+            blockedSuffix={t('jog_control.blocked_suffix')}
           />
           <div className="px-3 py-2 bg-steel-800/50 rounded text-center text-sm text-steel-400">
             {axisLabels.z}
@@ -572,6 +581,7 @@ export default function JogControl({
             title={`${axisLabels.z}- (Page Down)`}
             isBlocked={blocked.zMinus}
             jogMode={jogMode}
+            blockedSuffix={t('jog_control.blocked_suffix')}
           />
         </div>
       </div>
@@ -581,7 +591,7 @@ export default function JogControl({
         <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-md">
           <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
           <span className="text-xs text-red-300">
-            Endstop aktiv:{' '}
+            {t('jog_control.endstop_banner')}{' '}
             {[
               blocked.xPlus || blocked.xMinus ? axisLabels.x : null,
               blocked.yPlus || blocked.yMinus ? axisLabels.y : null,
@@ -595,7 +605,7 @@ export default function JogControl({
       {jogMode === 'step' && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-sm text-steel-400">Lépésköz</label>
+            <label className="text-sm text-steel-400">{t('jog_control.step_increment')}</label>
             <div className="flex items-center gap-1">
               <input
                 type="number"
@@ -636,7 +646,7 @@ export default function JogControl({
       {/* Feed Rate */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-sm text-steel-400">Sebesség</label>
+          <label className="text-sm text-steel-400">{t('jog_control.feed_rate')}</label>
           <div className="flex items-center gap-1">
             <input
               type="number"
@@ -678,15 +688,20 @@ export default function JogControl({
       <div className="text-xs text-steel-500 space-y-1">
         {isActive ? (
           <>
-            <p className="text-machine-400">Billentyuzet aktiv</p>
-            <p>&#8592; &#8594; &#8593; &#8595; {axisLabels.x}/{axisLabels.y} mozgas, Page Up/Down {axisLabels.z} mozgas</p>
-            <p>ESC: Leallitas</p>
+            <p className="text-machine-400">{t('jog_control.keyboard_active')}</p>
+            <p>
+              {t('jog_control.keyboard_axes', {
+                xy: `${axisLabels.x}/${axisLabels.y}`,
+                z: axisLabels.z,
+              })}
+            </p>
+            <p>{t('jog_control.keyboard_esc')}</p>
             {jogMode === 'continuous' && (
-              <p className="text-orange-400">Folyamatos mod: tartsd nyomva a gombot</p>
+              <p className="text-orange-400">{t('jog_control.keyboard_continuous')}</p>
             )}
           </>
         ) : (
-          <p>Kattints ide a billentyuzet vezerles aktivalasahoz</p>
+          <p>{t('jog_control.keyboard_click_enable')}</p>
         )}
       </div>
     </div>

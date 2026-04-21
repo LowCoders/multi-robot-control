@@ -200,7 +200,7 @@ export default function DeviceYamlConfigPanel({ deviceId }: Props) {
           />
         </div>
         <div>
-          <label className="block text-[11px] text-steel-400 mb-1">Driver</label>
+          <label className="block text-[11px] text-steel-400 mb-1">{t('device_yaml.driver_field')}</label>
           <select
             value={driver}
             onChange={(e) => setDriver(e.target.value)}

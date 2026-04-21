@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Zap } from 'lucide-react'
 import type { LaserConfig } from '../../../types/machine-config'
 
@@ -9,6 +10,7 @@ interface Props {
 const DEFAULT: LaserConfig = { maxPower: 1000, pwmFreq: 1000, defaultPower: 500 }
 
 export default function LaserEditor({ value, onChange }: Props) {
+  const { t } = useTranslation('devices')
   const v = value ?? DEFAULT
   const update = (patch: Partial<LaserConfig>) => onChange({ ...v, ...patch })
 
@@ -16,12 +18,12 @@ export default function LaserEditor({ value, onChange }: Props) {
     <div className="bg-steel-800/40 rounded-lg border border-steel-700 p-3 space-y-2">
       <div className="flex items-center gap-2 text-steel-300 text-xs font-medium">
         <Zap className="w-3 h-3" />
-        Lézer modul
+        {t('cap_editors.laser.title')}
       </div>
       <div className="grid grid-cols-3 gap-2">
         <div>
-          <label className="block text-[11px] text-steel-500 mb-1" title="Maximum lézer-érték (firmware S érték)">
-            Max power
+          <label className="block text-[11px] text-steel-500 mb-1" title={t('cap_editors.laser.max_power_title')}>
+            {t('cap_editors.laser.max_power')}
           </label>
           <input
             type="number"
@@ -32,7 +34,7 @@ export default function LaserEditor({ value, onChange }: Props) {
           />
         </div>
         <div>
-          <label className="block text-[11px] text-steel-500 mb-1">PWM Hz</label>
+          <label className="block text-[11px] text-steel-500 mb-1">{t('cap_editors.laser.pwm_hz')}</label>
           <input
             type="number"
             min={0}
@@ -42,8 +44,8 @@ export default function LaserEditor({ value, onChange }: Props) {
           />
         </div>
         <div>
-          <label className="block text-[11px] text-steel-500 mb-1" title="Alapértelmezett power egy 'lézer be' parancsra">
-            Default
+          <label className="block text-[11px] text-steel-500 mb-1" title={t('cap_editors.laser.default_power_title')}>
+            {t('cap_editors.laser.default_power')}
           </label>
           <input
             type="number"

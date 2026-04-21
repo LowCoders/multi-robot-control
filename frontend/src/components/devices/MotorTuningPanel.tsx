@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Settings,
   Gauge,
@@ -110,6 +111,7 @@ interface LogEntry {
 }
 
 function TestProgressLog({ deviceId, running }: { deviceId: string; running: boolean }) {
+  const { t } = useTranslation('devices')
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [lastTotal, setLastTotal] = useState(0)
   const logRef = useRef<HTMLDivElement>(null)
@@ -204,8 +206,8 @@ function TestProgressLog({ deviceId, running }: { deviceId: string; running: boo
       <div className="bg-steel-800/80 px-3 py-1.5 flex items-center justify-between border-b border-steel-700">
         <div className="flex items-center gap-2">
           <Terminal className="w-3.5 h-3.5 text-steel-400" />
-          <span className="text-xs text-steel-400 font-medium">Teszt folyamat</span>
-          <span className="text-xs text-steel-500">{entries.length} bejegyzés</span>
+          <span className="text-xs text-steel-400 font-medium">{t('motor_tuning.test_log_title')}</span>
+          <span className="text-xs text-steel-500">{t('motor_tuning.test_log_entries', { count: entries.length })}</span>
         </div>
         {running && latestPct !== undefined && latestPct > 0 && (
           <div className="flex items-center gap-2">
@@ -261,7 +263,7 @@ function TestProgressLog({ deviceId, running }: { deviceId: string; running: boo
         {running && (
           <div className="flex items-center gap-2 py-1 text-steel-500">
             <Loader2 className="w-3 h-3 animate-spin" />
-            <span>Folyamatban...</span>
+            <span>{t('motor_tuning.test_running')}</span>
           </div>
         )}
       </div>
@@ -280,6 +282,7 @@ export default function MotorTuningPanel({
   capabilities,
   embedded = false 
 }: MotorTuningPanelProps) {
+  const { t } = useTranslation('devices')
   const hasEndstops = capabilities?.has_endstops !== false
 
   const [activeTab, setActiveTab] = useState<'firmware' | 'motion' | 'endstop'>('firmware')
@@ -372,11 +375,14 @@ export default function MotorTuningPanel({
 
   const isAnyRunning = probeRunning || motionRunning || endstopRunning
 
-  const tabs = [
-    { id: 'firmware' as const, label: 'Firmware', icon: Settings },
-    { id: 'motion' as const, label: 'Sebesség', icon: Gauge },
-    ...(hasEndstops ? [{ id: 'endstop' as const, label: 'Végállás', icon: Target }] : []),
-  ]
+  const tabs = useMemo(
+    () => [
+      { id: 'firmware' as const, label: t('motor_tuning.tab_firmware'), icon: Settings },
+      { id: 'motion' as const, label: t('motor_tuning.tab_motion'), icon: Gauge },
+      ...(hasEndstops ? [{ id: 'endstop' as const, label: t('motor_tuning.tab_endstop'), icon: Target }] : []),
+    ],
+    [t, hasEndstops],
+  )
 
   const content = (
     <>
@@ -390,10 +396,7 @@ export default function MotorTuningPanel({
         {/* FIRMWARE TAB */}
         <TabPanel isActive={activeTab === 'firmware'}>
           <div className="space-y-4">
-            <p className="text-sm text-steel-400">
-              Firmware parameter felderítés: különböző GRBL, Marlin és egyedi parancsokat próbálkozik,
-              hogy kiderüljön milyen beállítások léteznek a firmware-ben.
-            </p>
+            <p className="text-sm text-steel-400">{t('motor_tuning.firmware_intro')}</p>
 
             {!probeReport && !probeRunning && (
               <button
@@ -402,7 +405,7 @@ export default function MotorTuningPanel({
                 className="btn btn-primary flex items-center gap-2"
               >
                 <Settings className="w-4 h-4" />
-                Firmware felderítés indítása
+                {t('motor_tuning.start_firmware_probe')}
               </button>
             )}
 
@@ -411,14 +414,14 @@ export default function MotorTuningPanel({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Loader2 className="w-5 h-5 text-machine-400 animate-spin" />
-                    <span className="text-steel-300 text-sm">Firmware felderítés folyamatban...</span>
+                    <span className="text-steel-300 text-sm">{t('motor_tuning.firmware_probe_running')}</span>
                   </div>
                   <button
                     onClick={cancelTest}
                     className="btn btn-danger text-sm flex items-center gap-2"
                   >
                     <Square className="w-3.5 h-3.5" />
-                    Leállítás
+                    {t('motor_tuning.stop')}
                   </button>
                 </div>
                 <TestProgressLog deviceId={deviceId} running={probeRunning} />
@@ -427,9 +430,9 @@ export default function MotorTuningPanel({
 
             {probeError && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3">
-                <p className="text-sm text-red-400">Hiba: {probeError}</p>
+                <p className="text-sm text-red-400">{t('motor_tuning.error_prefix')} {probeError}</p>
                 <button onClick={runFirmwareProbe} className="btn btn-secondary text-sm mt-2">
-                  Újra
+                  {t('motor_tuning.retry')}
                 </button>
               </div>
             )}
@@ -439,15 +442,15 @@ export default function MotorTuningPanel({
                 <div className="bg-steel-800/50 rounded-lg p-3 border border-steel-700">
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
-                      <div className="text-steel-400 text-xs">Firmware típus</div>
+                      <div className="text-steel-400 text-xs">{t('motor_tuning.firmware_type')}</div>
                       <div className="text-steel-100 font-mono">{probeReport.summary.firmware_type}</div>
                     </div>
                     <div>
-                      <div className="text-steel-400 text-xs">Felismert parancsok</div>
+                      <div className="text-steel-400 text-xs">{t('motor_tuning.recognized_commands')}</div>
                       <div className="text-green-400">{probeReport.summary.recognized} / {probeReport.summary.total_commands}</div>
                     </div>
                     <div>
-                      <div className="text-steel-400 text-xs">Konfigurálható param.</div>
+                      <div className="text-steel-400 text-xs">{t('motor_tuning.configurable_params_short')}</div>
                       <div className="text-steel-100">{Object.keys(probeReport.summary.configurable_params).length}</div>
                     </div>
                   </div>
@@ -455,7 +458,7 @@ export default function MotorTuningPanel({
 
                 {Object.keys(probeReport.summary.configurable_params).length > 0 && (
                   <div>
-                    <h4 className="text-sm font-medium text-steel-200 mb-2">Konfigurálható paraméterek</h4>
+                    <h4 className="text-sm font-medium text-steel-200 mb-2">{t('motor_tuning.configurable_params_heading')}</h4>
                     <div className="bg-steel-800/50 rounded-lg p-3 border border-steel-700 font-mono text-xs space-y-1 max-h-40 overflow-y-auto">
                       {Object.entries(probeReport.summary.configurable_params).map(([key, val]) => (
                         <div key={key} className="flex justify-between">
@@ -473,7 +476,7 @@ export default function MotorTuningPanel({
                     className="flex items-center gap-1 text-sm text-steel-300 hover:text-steel-100"
                   >
                     {showAllCommands ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    Felismert parancsok ({probeReport.recognized_commands.length})
+                    {t('motor_tuning.recognized_commands_expand', { count: probeReport.recognized_commands.length })}
                   </button>
 
                   {showAllCommands && (
@@ -491,7 +494,7 @@ export default function MotorTuningPanel({
 
                 <button onClick={runFirmwareProbe} className="btn btn-secondary text-sm flex items-center gap-2">
                   <RotateCcw className="w-3 h-3" />
-                  Újrafuttatás
+                  {t('motor_tuning.rerun')}
                 </button>
               </div>
             )}
@@ -501,14 +504,12 @@ export default function MotorTuningPanel({
         {/* MOTION TAB */}
         <TabPanel isActive={activeTab === 'motion'}>
           <div className="space-y-4">
-            <p className="text-sm text-steel-400">
-              Különböző sebességekkel (F5-F100) teszteli a mozgás minőségét. Méri az időigényét és megállapítja az optimális F értéket.
-            </p>
+            <p className="text-sm text-steel-400">{t('motor_tuning.motion_intro')}</p>
 
             {!motionReport && !motionRunning && (
               <div className="space-y-3">
                 <div className="flex items-center gap-4">
-                  <label className="text-sm text-steel-300">Teszt szög:</label>
+                  <label className="text-sm text-steel-300">{t('motor_tuning.test_angle')}</label>
                   <input
                     type="range"
                     min="10"
@@ -526,7 +527,7 @@ export default function MotorTuningPanel({
                   className="btn btn-primary flex items-center gap-2"
                 >
                   <Gauge className="w-4 h-4" />
-                  Sebességteszt indítása
+                  {t('motor_tuning.start_speed_test')}
                 </button>
               </div>
             )}
@@ -536,14 +537,14 @@ export default function MotorTuningPanel({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Loader2 className="w-5 h-5 text-machine-400 animate-spin" />
-                    <span className="text-steel-300 text-sm">Mozgásteszt folyamatban...</span>
+                    <span className="text-steel-300 text-sm">{t('motor_tuning.motion_test_running')}</span>
                   </div>
                   <button
                     onClick={cancelTest}
                     className="btn btn-danger text-sm flex items-center gap-2"
                   >
                     <Square className="w-3.5 h-3.5" />
-                    Leállítás
+                    {t('motor_tuning.stop')}
                   </button>
                 </div>
                 <TestProgressLog deviceId={deviceId} running={motionRunning} />
@@ -552,8 +553,8 @@ export default function MotorTuningPanel({
 
             {motionError && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3">
-                <p className="text-sm text-red-400">Hiba: {motionError}</p>
-                <button onClick={runMotionTest} className="btn btn-secondary text-sm mt-2">Újra</button>
+                <p className="text-sm text-red-400">{t('motor_tuning.error_prefix')} {motionError}</p>
+                <button onClick={runMotionTest} className="btn btn-secondary text-sm mt-2">{t('motor_tuning.retry')}</button>
               </div>
             )}
 
@@ -563,9 +564,9 @@ export default function MotorTuningPanel({
                   <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 flex items-center gap-3">
                     <CheckCircle className="w-5 h-5 text-green-400" />
                     <div>
-                      <div className="text-green-300 font-medium">Ajánlott sebesség: F{motionReport.recommended_speed}</div>
+                      <div className="text-green-300 font-medium">{t('motor_tuning.recommended_feed', { speed: motionReport.recommended_speed })}</div>
                       <div className="text-xs text-steel-400">
-                        Időtartam: {motionReport.duration_seconds.toFixed(1)} mp
+                        {t('motor_tuning.duration_seconds', { seconds: motionReport.duration_seconds.toFixed(1) })}
                       </div>
                     </div>
                   </div>
@@ -575,11 +576,11 @@ export default function MotorTuningPanel({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-steel-800">
-                        <th className="text-left px-3 py-2 text-steel-400">Sebesség</th>
-                        <th className="text-left px-3 py-2 text-steel-400">Átlag idő</th>
-                        <th className="text-left px-3 py-2 text-steel-400">Min</th>
-                        <th className="text-left px-3 py-2 text-steel-400">Max</th>
-                        <th className="text-left px-3 py-2 text-steel-400">Státusz</th>
+                        <th className="text-left px-3 py-2 text-steel-400">{t('motor_tuning.col_speed')}</th>
+                        <th className="text-left px-3 py-2 text-steel-400">{t('motor_tuning.col_avg_time')}</th>
+                        <th className="text-left px-3 py-2 text-steel-400">{t('motor_tuning.col_min')}</th>
+                        <th className="text-left px-3 py-2 text-steel-400">{t('motor_tuning.col_max')}</th>
+                        <th className="text-left px-3 py-2 text-steel-400">{t('motor_tuning.col_status')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-steel-700">
@@ -594,7 +595,7 @@ export default function MotorTuningPanel({
                           <td className="px-3 py-2 font-mono">
                             F{speed}
                             {Number(speed) === motionReport.recommended_speed && (
-                              <span className="ml-2 text-xs text-green-400">AJÁNLOTT</span>
+                              <span className="ml-2 text-xs text-green-400">{t('motor_tuning.recommended_chip')}</span>
                             )}
                           </td>
                           <td className="px-3 py-2 font-mono">{summary.avg_time_ms.toFixed(0)} ms</td>
@@ -614,7 +615,7 @@ export default function MotorTuningPanel({
 
                 <button onClick={runMotionTest} className="btn btn-secondary text-sm flex items-center gap-2">
                   <RotateCcw className="w-3 h-3" />
-                  Újrafuttatás
+                  {t('motor_tuning.rerun')}
                 </button>
               </div>
             )}
@@ -625,16 +626,13 @@ export default function MotorTuningPanel({
         {hasEndstops && (
           <TabPanel isActive={activeTab === 'endstop'}>
             <div className="space-y-4">
-              <p className="text-sm text-steel-400">
-                Végigmozgatja az összes kart a végállásokig mindkét irányba, és megméri a teljes mozgástartományt fokban.
-              </p>
+              <p className="text-sm text-steel-400">{t('motor_tuning.endstop_intro')}</p>
 
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-3">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-amber-300">
-                    <strong>Figyelem:</strong> Ez a teszt fizikailag végig mozgatja a robotkart!
-                    Győződj meg róla, hogy a munkaterület szabad és a robotkar nem ütközhet semmibe.
+                    <strong>{t('motor_tuning.warning_title')}</strong> {t('motor_tuning.warning_body')}
                   </p>
                 </div>
               </div>
@@ -643,7 +641,7 @@ export default function MotorTuningPanel({
                 <div className="space-y-3">
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-steel-300">Lépésméret:</label>
+                      <label className="text-sm text-steel-300">{t('motor_tuning.step_size')}</label>
                       <select
                         value={stepSize}
                         onChange={(e) => setStepSize(Number(e.target.value))}
@@ -655,15 +653,15 @@ export default function MotorTuningPanel({
                       </select>
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-steel-300">Sebesség:</label>
+                      <label className="text-sm text-steel-300">{t('motor_tuning.speed')}</label>
                       <select
                         value={searchSpeed}
                         onChange={(e) => setSearchSpeed(Number(e.target.value))}
                         className="bg-steel-800 text-steel-200 text-sm rounded px-2 py-1 border border-steel-600"
                       >
-                        <option value={10}>F10 (lassabb)</option>
-                        <option value={15}>F15 (alap)</option>
-                        <option value={20}>F20 (gyorsabb)</option>
+                        <option value={10}>{t('motor_tuning.speed_f10')}</option>
+                        <option value={15}>{t('motor_tuning.speed_f15')}</option>
+                        <option value={20}>{t('motor_tuning.speed_f20')}</option>
                       </select>
                     </div>
                   </div>
@@ -673,7 +671,7 @@ export default function MotorTuningPanel({
                     className="btn btn-primary flex items-center gap-2"
                   >
                     <Target className="w-4 h-4" />
-                    Végállás teszt indítása
+                    {t('motor_tuning.start_endstop_test')}
                   </button>
                 </div>
               )}
@@ -683,14 +681,14 @@ export default function MotorTuningPanel({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <Loader2 className="w-5 h-5 text-machine-400 animate-spin" />
-                      <span className="text-steel-300 text-sm">Végállás teszt folyamatban...</span>
+                      <span className="text-steel-300 text-sm">{t('motor_tuning.endstop_test_running')}</span>
                     </div>
                     <button
                       onClick={cancelTest}
                       className="btn btn-danger text-sm flex items-center gap-2"
                     >
                       <Square className="w-3.5 h-3.5" />
-                      Leállítás
+                      {t('motor_tuning.stop')}
                     </button>
                   </div>
                   <TestProgressLog deviceId={deviceId} running={endstopRunning} />
@@ -699,8 +697,8 @@ export default function MotorTuningPanel({
 
               {endstopError && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3">
-                  <p className="text-sm text-red-400">Hiba: {endstopError}</p>
-                  <button onClick={runEndstopTest} className="btn btn-secondary text-sm mt-2">Újra</button>
+                  <p className="text-sm text-red-400">{t('motor_tuning.error_prefix')} {endstopError}</p>
+                  <button onClick={runEndstopTest} className="btn btn-secondary text-sm mt-2">{t('motor_tuning.retry')}</button>
                 </div>
               )}
 
@@ -710,12 +708,12 @@ export default function MotorTuningPanel({
                     <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 flex items-center gap-2">
                       <CheckCircle className="w-5 h-5 text-green-400" />
                       <span className="text-green-300 font-medium">
-                        Végállás teszt befejezve ({endstopReport.duration_seconds.toFixed(1)} mp)
+                        {t('motor_tuning.endstop_done', { seconds: endstopReport.duration_seconds.toFixed(1) })}
                       </span>
                     </div>
                   ) : (
                     <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                      <p className="text-sm text-red-400">Teszt nem fejeződött be: {endstopReport.error}</p>
+                      <p className="text-sm text-red-400">{t('motor_tuning.test_not_finished')} {endstopReport.error}</p>
                     </div>
                   )}
 
@@ -723,7 +721,7 @@ export default function MotorTuningPanel({
                     {endstopReport.axes.map((ax) => (
                       <div key={ax.axis} className="bg-steel-800/50 rounded-lg p-4 border border-steel-700">
                         <h4 className="font-medium text-steel-200 mb-2">
-                          {ax.axis} tengely - {ax.axis_name}
+                          {t('motor_tuning.axis_heading', { id: ax.axis, name: ax.axis_name })}
                         </h4>
 
                         <div className="relative h-8 bg-steel-900 rounded-full overflow-hidden mb-3">
@@ -752,23 +750,23 @@ export default function MotorTuningPanel({
 
                         <div className="grid grid-cols-3 gap-3 text-sm">
                           <div>
-                            <span className="text-steel-400 text-xs">Negatív határ</span>
+                            <span className="text-steel-400 text-xs">{t('motor_tuning.neg_limit')}</span>
                             <div className="font-mono">
                               {ax.negative_limit !== null ? `${ax.negative_limit.toFixed(1)}°` : 'N/A'}
-                              {ax.negative_endstop_hit && <span className="text-green-400 text-xs ml-1">(endstop)</span>}
-                              {ax.negative_max_reached && <span className="text-amber-400 text-xs ml-1">(max limit)</span>}
+                              {ax.negative_endstop_hit && <span className="text-green-400 text-xs ml-1">{t('motor_tuning.tag_endstop')}</span>}
+                              {ax.negative_max_reached && <span className="text-amber-400 text-xs ml-1">{t('motor_tuning.tag_max_limit')}</span>}
                             </div>
                           </div>
                           <div>
-                            <span className="text-steel-400 text-xs">Pozitív határ</span>
+                            <span className="text-steel-400 text-xs">{t('motor_tuning.pos_limit')}</span>
                             <div className="font-mono">
                               {ax.positive_limit !== null ? `+${ax.positive_limit.toFixed(1)}°` : 'N/A'}
-                              {ax.positive_endstop_hit && <span className="text-green-400 text-xs ml-1">(endstop)</span>}
-                              {ax.positive_max_reached && <span className="text-amber-400 text-xs ml-1">(max limit)</span>}
+                              {ax.positive_endstop_hit && <span className="text-green-400 text-xs ml-1">{t('motor_tuning.tag_endstop')}</span>}
+                              {ax.positive_max_reached && <span className="text-amber-400 text-xs ml-1">{t('motor_tuning.tag_max_limit')}</span>}
                             </div>
                           </div>
                           <div>
-                            <span className="text-steel-400 text-xs">Teljes tartomány</span>
+                            <span className="text-steel-400 text-xs">{t('motor_tuning.total_range')}</span>
                             <div className="font-mono font-bold text-machine-400">
                               {ax.total_range !== null ? `${ax.total_range.toFixed(1)}°` : 'N/A'}
                             </div>
@@ -776,7 +774,7 @@ export default function MotorTuningPanel({
                         </div>
 
                         {ax.error && (
-                          <div className="mt-2 text-xs text-red-400">Hiba: {ax.error}</div>
+                          <div className="mt-2 text-xs text-red-400">{t('motor_tuning.axis_error')} {ax.error}</div>
                         )}
                       </div>
                     ))}
@@ -784,7 +782,7 @@ export default function MotorTuningPanel({
 
                   <button onClick={runEndstopTest} className="btn btn-secondary text-sm flex items-center gap-2">
                     <RotateCcw className="w-3 h-3" />
-                    Újrafuttatás
+                    {t('motor_tuning.rerun')}
                   </button>
                 </div>
               )}
@@ -803,7 +801,7 @@ export default function MotorTuningPanel({
     <div className="card">
       <div className="card-header flex items-center gap-2">
         <Gauge className="w-4 h-4 text-amber-400" />
-        <span className="font-medium">Motor Hangolás</span>
+        <span className="font-medium">{t('motor_tuning.panel_title')}</span>
       </div>
       {content}
     </div>

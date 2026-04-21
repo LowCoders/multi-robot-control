@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Hand } from 'lucide-react'
 import type { EndEffectorConfig, EndEffectorType } from '../../../types/machine-config'
 
@@ -14,6 +15,7 @@ const DEFAULT: EndEffectorConfig = {
 }
 
 export default function EndEffectorEditor({ value, onChange }: Props) {
+  const { t } = useTranslation('devices')
   const v = value ?? DEFAULT
   const update = (patch: Partial<EndEffectorConfig>) => onChange({ ...v, ...patch })
 
@@ -21,24 +23,24 @@ export default function EndEffectorEditor({ value, onChange }: Props) {
     <div className="bg-steel-800/40 rounded-lg border border-steel-700 p-3 space-y-2">
       <div className="flex items-center gap-2 text-steel-300 text-xs font-medium">
         <Hand className="w-3 h-3" />
-        Végszerszám (End Effector)
+        {t('cap_editors.end_effector.title')}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="block text-[11px] text-steel-500 mb-1">Típus</label>
+          <label className="block text-[11px] text-steel-500 mb-1">{t('cap_editors.end_effector.type')}</label>
           <select
             value={v.type}
             onChange={(e) => update({ type: e.target.value as EndEffectorType })}
             className="input w-full text-xs py-1"
           >
-            <option value="gripper">Fogókar (gripper)</option>
-            <option value="sucker">Vákuumos (sucker)</option>
-            <option value="none">Nincs</option>
+            <option value="gripper">{t('cap_editors.end_effector.type_gripper')}</option>
+            <option value="sucker">{t('cap_editors.end_effector.type_sucker')}</option>
+            <option value="none">{t('cap_editors.end_effector.type_none')}</option>
           </select>
         </div>
         {v.type === 'gripper' && (
           <div>
-            <label className="block text-[11px] text-steel-500 mb-1">Ujjak száma</label>
+            <label className="block text-[11px] text-steel-500 mb-1">{t('cap_editors.end_effector.finger_count')}</label>
             <input
               type="number"
               min={1}
@@ -53,7 +55,7 @@ export default function EndEffectorEditor({ value, onChange }: Props) {
       {v.type === 'gripper' && (
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="block text-[11px] text-steel-500 mb-1">Szélesség (mm)</label>
+            <label className="block text-[11px] text-steel-500 mb-1">{t('cap_editors.end_effector.width')}</label>
             <input
               type="number"
               min={1}
@@ -63,7 +65,7 @@ export default function EndEffectorEditor({ value, onChange }: Props) {
             />
           </div>
           <div>
-            <label className="block text-[11px] text-steel-500 mb-1">Hosszúság (mm)</label>
+            <label className="block text-[11px] text-steel-500 mb-1">{t('cap_editors.end_effector.finger_length')}</label>
             <input
               type="number"
               min={1}

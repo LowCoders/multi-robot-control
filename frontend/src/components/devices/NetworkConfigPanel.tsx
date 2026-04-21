@@ -210,7 +210,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
-            <label className="block text-xs text-steel-500 mb-1">Hostname ($71)</label>
+            <label className="block text-xs text-steel-500 mb-1">{t('network_config.hostname')}</label>
             <input
               type="text"
               value={form.hostname}
@@ -220,20 +220,20 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             />
           </div>
           <div>
-            <label className="block text-xs text-steel-500 mb-1">WiFi mode ($73)</label>
+            <label className="block text-xs text-steel-500 mb-1">{t('network_config.wifi_mode')}</label>
             <select
               value={form.wifiMode}
               onChange={(e) => setForm({ ...form, wifiMode: e.target.value })}
               className="input w-full text-xs py-1"
             >
-              <option value="0">0 — Off</option>
-              <option value="1">1 — STA (csatlakozás meglévő hálózatra)</option>
-              <option value="2">2 — AP (CrowPanel csatlakozik ide)</option>
-              <option value="3">3 — AP/STA</option>
+              <option value="0">{t('network_config.wifi_off')}</option>
+              <option value="1">{t('network_config.wifi_sta')}</option>
+              <option value="2">{t('network_config.wifi_ap')}</option>
+              <option value="3">{t('network_config.wifi_ap_sta')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs text-steel-500 mb-1">AP SSID ($74)</label>
+            <label className="block text-xs text-steel-500 mb-1">{t('network_config.ap_ssid')}</label>
             <input
               type="text"
               value={form.apSsid}
@@ -244,13 +244,13 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
           </div>
           <div>
             <label className="block text-xs text-steel-500 mb-1">
-              AP Password ($75)
+              {t('network_config.ap_password')}
               <button
                 type="button"
                 onClick={() => setShowApPass((v) => !v)}
                 className="ml-2 text-steel-400 hover:text-steel-200"
               >
-                {showApPass ? '(elrejt)' : '(mutat)'}
+                {showApPass ? t('network_config.hide_password') : t('network_config.show_password')}
               </button>
             </label>
             <input
@@ -262,7 +262,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             />
           </div>
           <div>
-            <label className="block text-xs text-steel-500 mb-1">STA SSID ($76)</label>
+            <label className="block text-xs text-steel-500 mb-1">{t('network_config.sta_ssid')}</label>
             <input
               type="text"
               value={form.staSsid}
@@ -273,13 +273,13 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
           </div>
           <div>
             <label className="block text-xs text-steel-500 mb-1">
-              STA Password ($77)
+              {t('network_config.sta_password')}
               <button
                 type="button"
                 onClick={() => setShowStaPass((v) => !v)}
                 className="ml-2 text-steel-400 hover:text-steel-200"
               >
-                {showStaPass ? '(elrejt)' : '(mutat)'}
+                {showStaPass ? t('network_config.hide_password') : t('network_config.show_password')}
               </button>
             </label>
             <input
@@ -291,7 +291,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             />
           </div>
           <div>
-            <label className="block text-xs text-steel-500 mb-1">Telnet port ($300)</label>
+            <label className="block text-xs text-steel-500 mb-1">{t('network_config.telnet_port')}</label>
             <input
               type="number"
               value={form.telnetPort}
@@ -317,7 +317,7 @@ export default function NetworkConfigPanel({ deviceId }: NetworkConfigPanelProps
             type="button"
             onClick={handleResetDefaults}
             className="btn btn-secondary btn-sm text-xs flex items-center gap-1"
-            title={`SSID/hostname = "${deviceId}", password = "panelDefault"`}
+            title={t('network_config.reset_defaults_title', { deviceId })}
           >
             <RotateCcw className="w-3 h-3" /> {t('network_config.reset_defaults')}
           </button>

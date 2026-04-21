@@ -10,6 +10,7 @@ import {
   Circle,
   CircleDot,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { useGcodeBufferStore } from '../../stores/gcodeBufferStore'
 import { useMdiViewStore, ALL_LAYERS, type MdiLayer, type CaptureMode } from '../../stores/mdiViewStore'
@@ -66,14 +67,6 @@ interface MdiResultPayload {
   continuous?: boolean
 }
 
-const LAYER_META: Record<MdiLayer, { label: string; title: string; Icon: typeof Terminal }> = {
-  command: { label: 'CMD', title: 'Parancs (tiszta G-code)', Icon: Terminal },
-  raw: { label: 'RAW', title: 'Nyers (hardvernek küldött parancs)', Icon: Code2 },
-  response: { label: 'RESP', title: 'Rövid válasz (ok / error)', Icon: MessageSquare },
-  detailed: { label: 'DETAIL', title: 'Részletes válasz (teljes GRBL trace)', Icon: FileText },
-  debug: { label: 'DEBUG', title: 'Debug (protocol, state_before, …)', Icon: Bug },
-}
-
 const POS_KEY: Record<string, keyof Position> = { X: 'x', Y: 'y', Z: 'z', A: 'a', B: 'b', C: 'c' }
 
 function formatNum(n: number): string {
@@ -96,6 +89,7 @@ function formatDebug(debug: DebugInfo): string {
  * these without doubling them inside the console itself.
  */
 export function MdiConsoleHeaderControls({ deviceId }: Props) {
+  const { t } = useTranslation('devices')
   const captureMode = useMdiViewStore((s) => s.captureMode[deviceId]) ?? 'relative'
   const recording = Boolean(useMdiViewStore((s) => s.recording[deviceId]))
   const setCaptureMode = useMdiViewStore((s) => s.setCaptureMode)
@@ -106,11 +100,7 @@ export function MdiConsoleHeaderControls({ deviceId }: Props) {
       <button
         type="button"
         onClick={() => toggleRecording(deviceId)}
-        title={
-          recording
-            ? 'Felvétel aktív: minden új parancs a G-code bufferbe kerül. Kattints a kikapcsoláshoz.'
-            : 'Felvétel: ha bekapcsolod, minden új parancs automatikusan a G-code bufferbe kerül.'
-        }
+        title={recording ? t('mdi_console.rec_on_title') : t('mdi_console.rec_off_title')}
         aria-pressed={recording}
         className={
           'flex items-center gap-1 px-1.5 py-0.5 text-[10px] uppercase tracking-wide rounded border transition-colors ' +
@@ -124,14 +114,14 @@ export function MdiConsoleHeaderControls({ deviceId }: Props) {
       </button>
 
       <div className="flex items-center gap-1 ml-auto">
-        <span className="text-[10px] uppercase tracking-wide text-steel-500 mr-1">Mód:</span>
+        <span className="text-[10px] uppercase tracking-wide text-steel-500 mr-1">{t('mdi_console.mode_heading')}</span>
         {(['relative', 'absolute'] as CaptureMode[]).map((mode) => {
           const active = captureMode === mode
           const label = mode === 'relative' ? 'REL' : 'ABS'
           const title =
             mode === 'relative'
-              ? 'Relatív (G91): a parancs/rögzítés a delta elmozdulást írja'
-              : 'Abszolút (G90): a parancs/rögzítés a végpoz munkakoordinátáját írja'
+              ? t('mdi_console.capture_relative_title')
+              : t('mdi_console.capture_absolute_title')
           return (
             <button
               key={mode}
@@ -196,6 +186,7 @@ function commandForMode(entry: HistoryEntry, mode: CaptureMode): string {
 }
 
 export default function MdiConsole({ deviceId }: Props) {
+  const { t } = useTranslation('devices')
   const { sendMDI, socket, devices, consumeJogSession } = useDeviceStore()
   const appendLineFromMdi = useGcodeBufferStore((s) => s.appendLineFromMdi)
 
@@ -212,6 +203,18 @@ export default function MdiConsole({ deviceId }: Props) {
     [getCaptureMode, deviceId, captureModeState]
   )
   const recording = Boolean(recordingState)
+
+  const layerMeta = useMemo(
+    () =>
+      ({
+        command: { label: t('mdi_console.layer_command'), title: t('mdi_console.layer_command_title'), Icon: Terminal },
+        raw: { label: t('mdi_console.layer_raw'), title: t('mdi_console.layer_raw_title'), Icon: Code2 },
+        response: { label: t('mdi_console.layer_response'), title: t('mdi_console.layer_response_title'), Icon: MessageSquare },
+        detailed: { label: t('mdi_console.layer_detailed'), title: t('mdi_console.layer_detailed_title'), Icon: FileText },
+        debug: { label: t('mdi_console.layer_debug'), title: t('mdi_console.layer_debug_title'), Icon: Bug },
+      }) as Record<MdiLayer, { label: string; title: string; Icon: typeof Terminal }>,
+    [t],
+  )
 
   const [command, setCommand] = useState('')
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -413,9 +416,9 @@ export default function MdiConsole({ deviceId }: Props) {
           → MdiConsoleHeaderControls). */}
       <div className="flex items-center gap-2 mb-2 text-steel-400 flex-wrap">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] uppercase tracking-wide mr-1">Rétegek:</span>
+          <span className="text-[10px] uppercase tracking-wide mr-1">{t('mdi_console.layers_heading')}</span>
           {ALL_LAYERS.map((layer) => {
-            const { label, title, Icon } = LAYER_META[layer]
+            const { label, title, Icon } = layerMeta[layer]
             const active = layers[layer]
             return (
               <button
@@ -446,9 +449,9 @@ export default function MdiConsole({ deviceId }: Props) {
       >
         {history.length === 0 ? (
           <p className="text-steel-500 text-center py-4">
-            G-code parancsokat küldhet közvetlenül az eszköznek.
+            {t('mdi_console.empty_hint_1')}
             <br />
-            Pl: G0 X0 Y0, M3 S12000, stb.
+            {t('mdi_console.empty_hint_2')}
           </p>
         ) : (
           <div className="space-y-2">
@@ -465,21 +468,21 @@ export default function MdiConsole({ deviceId }: Props) {
               const showDebug = layers.debug && debugLine
 
               const badge = isJogStop
-                ? 'JOG STOP'
+                ? t('mdi_console.badge_jog_stop')
                 : entry.kind === 'jog-continuous'
-                ? 'JOG·CONT'
+                ? t('mdi_console.badge_jog_cont')
                 : entry.continuous
-                ? 'JOG·CONT'
+                ? t('mdi_console.badge_jog_cont')
                 : isJog
-                ? 'JOG'
+                ? t('mdi_console.badge_jog')
                 : null
               const badgeTitle = isJogStop
-                ? 'Jog stop esemény'
+                ? t('mdi_console.badge_jog_stop_title')
                 : entry.kind === 'jog-continuous'
-                ? 'Folyamatos jog (befejezett szakasz)'
+                ? t('mdi_console.badge_jog_cont_title')
                 : entry.continuous
-                ? 'Folyamatos jog'
-                : 'Lépésenkénti jog'
+                ? t('mdi_console.badge_jog_cont_simple_title')
+                : t('mdi_console.badge_jog_step_title')
 
               return (
                 <div key={i} className="group">
@@ -501,7 +504,7 @@ export default function MdiConsole({ deviceId }: Props) {
                         <button
                           type="button"
                           onClick={() => handleAddToGcode(displayCommand || entry.raw)}
-                          title="Sor hozzáadása a G-code-hoz"
+                          title={t('mdi_console.add_line_title')}
                           className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-0.5 rounded hover:bg-steel-700 text-steel-400 hover:text-machine-400"
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -543,7 +546,7 @@ export default function MdiConsole({ deviceId }: Props) {
           value={command}
           onChange={(e) => setCommand(e.target.value.toUpperCase())}
           onKeyDown={handleKeyDown}
-          placeholder="G-code parancs..."
+          placeholder={t('mdi_console.placeholder')}
           className="input flex-1 font-mono"
           autoComplete="off"
           spellCheck={false}
