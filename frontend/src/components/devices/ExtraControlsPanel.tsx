@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Hand, MousePointer2, Zap, Disc3, Droplets, Power, Gauge } from 'lucide-react'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { effectiveCapabilities } from '../../utils/capabilities'
@@ -21,11 +22,12 @@ async function postJSON(url: string, body?: Record<string, unknown>): Promise<Re
 
 // Egyszerű badge komponens a forrás (declared/runtime/sync) jelzésére
 function SourceBadge({ source, runtimeSupported }: { source: 'declared' | 'runtime' | 'both' | 'none'; runtimeSupported: boolean }) {
+  const { t } = useTranslation('devices')
   if (source === 'none') return null
   if (!runtimeSupported && source === 'declared') {
     return (
       <span className="text-[9px] uppercase tracking-wide px-1 rounded border bg-amber-500/20 text-amber-300 border-amber-500/40">
-        nincs runtime
+        {t('extra_controls.badge_no_runtime')}
       </span>
     )
   }
@@ -33,6 +35,7 @@ function SourceBadge({ source, runtimeSupported }: { source: 'declared' | 'runti
 }
 
 export default function ExtraControlsPanel({ device, machineConfig, capabilities }: Props) {
+  const { t } = useTranslation('devices')
   const { sendMDI } = useDeviceStore()
   const effective = effectiveCapabilities(machineConfig, capabilities)
 
@@ -83,7 +86,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
     try {
       await fn()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Hiba')
+      setError(err instanceof Error ? err.message : t('extra_controls.error_generic'))
     } finally {
       setBusy(null)
     }
@@ -93,7 +96,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
     return guard(label, async () => {
       const resp = await postJSON(`/api/devices/${device.id}${path}`, body)
       if (!resp.ok) {
-        throw new Error(`${path} sikertelen (${resp.status})`)
+        throw new Error(t('extra_controls.api_failed', { path, status: resp.status }))
       }
     })
   }
@@ -125,7 +128,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
       <div className="card-header flex items-center justify-between">
         <span className="font-medium flex items-center gap-2">
           <Gauge className="w-4 h-4 text-machine-400" />
-          Extra vezérlés
+          {t('extra_controls.title')}
         </span>
         {busy && <span className="text-[11px] text-steel-400">{busy}…</span>}
       </div>
@@ -141,7 +144,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
           <div className="space-y-3">
             <div>
               <div className="flex items-center justify-between text-xs text-steel-400 mb-1">
-                <span>Feed override</span>
+                <span>{t('extra_controls.feed_override')}</span>
                 <span className="text-steel-200 font-mono">{feedOverride}%</span>
               </div>
               <input
@@ -160,7 +163,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
               <div>
                 <div className="flex items-center justify-between text-xs text-steel-400 mb-1">
                   <span className="flex items-center gap-1">
-                    <Disc3 className="w-3 h-3" /> Spindle override
+                    <Disc3 className="w-3 h-3" /> {t('extra_controls.spindle_override')}
                     <SourceBadge source={effective.source.hasSpindle} runtimeSupported={capabilities?.has_spindle === true} />
                   </span>
                   <span className="text-steel-200 font-mono">{spindleOverride}%</span>
@@ -188,7 +191,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
               <div className="bg-steel-800/40 rounded-lg p-2 space-y-1">
                 <div className="flex items-center justify-between text-xs text-steel-400">
                   <span className="flex items-center gap-1">
-                    <Hand className="w-3 h-3" /> Fogókar
+                    <Hand className="w-3 h-3" /> {t('extra_controls.gripper')}
                   </span>
                   <SourceBadge source={effective.source.hasGripper} runtimeSupported={capabilities?.has_gripper === true} />
                 </div>
@@ -198,18 +201,20 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
                     onClick={() => callApi('gripper_on', '/gripper/on')}
                     className="btn btn-secondary btn-sm flex-1 text-xs"
                   >
-                    Bezár
+                    {t('extra_controls.close')}
                   </button>
                   <button
                     disabled={!canControl}
                     onClick={() => callApi('gripper_off', '/gripper/off')}
                     className="btn btn-secondary btn-sm flex-1 text-xs"
                   >
-                    Kinyit
+                    {t('extra_controls.open')}
                   </button>
                 </div>
                 {device.status?.gripper_state && (
-                  <div className="text-[10px] text-steel-500">Állapot: {device.status.gripper_state}</div>
+                  <div className="text-[10px] text-steel-500">
+                    {t('extra_controls.state_prefix')} {device.status.gripper_state}
+                  </div>
                 )}
               </div>
             )}
@@ -217,7 +222,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
               <div className="bg-steel-800/40 rounded-lg p-2 space-y-1">
                 <div className="flex items-center justify-between text-xs text-steel-400">
                   <span className="flex items-center gap-1">
-                    <MousePointer2 className="w-3 h-3" /> Vákuumos
+                    <MousePointer2 className="w-3 h-3" /> {t('extra_controls.vacuum')}
                   </span>
                   <SourceBadge source={effective.source.hasSucker} runtimeSupported={capabilities?.has_sucker === true} />
                 </div>
@@ -227,19 +232,22 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
                     onClick={() => callApi('sucker_on', '/sucker/on')}
                     className="btn btn-secondary btn-sm flex-1 text-xs"
                   >
-                    Be
+                    {t('extra_controls.on_short')}
                   </button>
                   <button
                     disabled={!canControl}
                     onClick={() => callApi('sucker_off', '/sucker/off')}
                     className="btn btn-secondary btn-sm flex-1 text-xs"
                   >
-                    Ki
+                    {t('extra_controls.off_short')}
                   </button>
                 </div>
                 {typeof device.status?.sucker_state === 'boolean' && (
                   <div className="text-[10px] text-steel-500">
-                    Állapot: {device.status.sucker_state ? 'aktív' : 'inaktív'}
+                    {t('extra_controls.state_prefix')}{' '}
+                    {device.status.sucker_state
+                      ? t('extra_controls.sucker_active')
+                      : t('extra_controls.sucker_inactive')}
                   </div>
                 )}
               </div>
@@ -252,7 +260,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
           <div className="bg-steel-800/40 rounded-lg p-2 space-y-2">
             <div className="flex items-center justify-between text-xs text-steel-400">
               <span className="flex items-center gap-1">
-                <Zap className="w-3 h-3" /> Lézer (M3/M5)
+                <Zap className="w-3 h-3" /> {t('extra_controls.laser_m3_m5')}
               </span>
               <SourceBadge source={effective.source.hasLaser} runtimeSupported={capabilities?.has_laser === true} />
             </div>
@@ -274,18 +282,18 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
                 onClick={() => turnLaserOn(laserPower)}
                 className={`btn btn-sm flex-1 text-xs ${laserOn ? 'btn-warning' : 'btn-secondary'}`}
               >
-                Be
+                {t('extra_controls.on_short')}
               </button>
               <button
                 disabled={!canControl}
                 onClick={() => turnLaserOff()}
                 className="btn btn-secondary btn-sm flex-1 text-xs"
               >
-                Ki (M5)
+                {t('extra_controls.off_m5')}
               </button>
             </div>
             <div className="text-[10px] text-steel-500">
-              MDI fallback — egyedi backend endpoint nincs, M3/M5 G-kódot küldünk.
+              {t('extra_controls.mdi_laser_hint')}
             </div>
           </div>
         )}
@@ -295,7 +303,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
           <div className="bg-steel-800/40 rounded-lg p-2 space-y-2">
             <div className="flex items-center justify-between text-xs text-steel-400">
               <span className="flex items-center gap-1">
-                <Droplets className="w-3 h-3" /> Hűtés (M7/M8/M9)
+                <Droplets className="w-3 h-3" /> {t('extra_controls.coolant_m7_m9')}
               </span>
               <SourceBadge source={effective.source.hasCoolant} runtimeSupported={capabilities?.has_coolant === true} />
             </div>
@@ -331,7 +339,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
                 Ki (M9)
               </button>
             </div>
-            <div className="text-[10px] text-steel-500">MDI fallback — M-kódokat küldünk.</div>
+            <div className="text-[10px] text-steel-500">{t('extra_controls.mdi_coolant_hint')}</div>
           </div>
         )}
 
@@ -340,7 +348,7 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
           <div className="bg-steel-800/40 rounded-lg p-2 space-y-2">
             <div className="flex items-center justify-between text-xs text-steel-400">
               <span className="flex items-center gap-1">
-                <Power className="w-3 h-3" /> Motorok
+                <Power className="w-3 h-3" /> {t('extra_controls.motors')}
               </span>
             </div>
             <div className="flex gap-1">
@@ -349,14 +357,14 @@ export default function ExtraControlsPanel({ device, machineConfig, capabilities
                 onClick={() => callApi('robot_enable', '/enable')}
                 className="btn btn-secondary btn-sm flex-1 text-xs"
               >
-                Engedélyez
+                {t('extra_controls.enable')}
               </button>
               <button
                 disabled={!canControl}
                 onClick={() => callApi('robot_disable', '/disable')}
                 className="btn btn-secondary btn-sm flex-1 text-xs"
               >
-                Letilt
+                {t('extra_controls.disable')}
               </button>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle, RefreshCw, Save } from 'lucide-react'
 import {
   getGrblSettingDescription,
@@ -40,6 +41,7 @@ function hasNumericValue(value: string): boolean {
 }
 
 export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
+  const { t } = useTranslation('devices')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +70,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
           ? `${err.message} (${err.status})`
           : err instanceof Error
             ? err.message
-            : 'Ismeretlen hiba'
+            : t('grbl_config.unknown_error')
       setError(message)
     } finally {
       setLoading(false)
@@ -112,12 +114,12 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
     for (const key of orderedKeys) {
       const raw = editedSettings[key]
       if (!hasNumericValue(raw)) {
-        nextErrors[key] = 'Invalid number'
+        nextErrors[key] = t('grbl_config.invalid_number')
         continue
       }
       const settingId = Number(key)
       if (isIntegerOnlySetting(settingId) && !Number.isInteger(Number(raw))) {
-        nextErrors[key] = 'Integer required'
+        nextErrors[key] = t('grbl_config.integer_required')
       }
     }
     setFieldErrors(nextErrors)
@@ -126,7 +128,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
 
   const handleApply = async () => {
     if (!validateFields()) {
-      setError('Fix invalid values before apply.')
+      setError(t('grbl_config.fix_invalid'))
       return
     }
 
@@ -142,7 +144,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
         body: { settings: changedSettings },
       })
 
-      setSuccessMessage('GRBL settings updated.')
+      setSuccessMessage(t('grbl_config.success_updated'))
       await loadSettings()
     } catch (err) {
       const message =
@@ -150,7 +152,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
           ? `${err.message} (${err.status})`
           : err instanceof Error
             ? err.message
-            : 'Ismeretlen hiba'
+            : t('grbl_config.unknown_error')
       setError(message)
     } finally {
       setSaving(false)
@@ -164,7 +166,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
   }
 
   if (loading) {
-    return <div className="text-steel-400 py-6">GRBL settings betöltése...</div>
+    return <div className="text-steel-400 py-6">{t('grbl_config.loading')}</div>
   }
 
   return (
@@ -172,7 +174,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="space-y-1">
           <div className="text-sm text-steel-300">
-            Click value fields to edit. Apply sends only changed parameters.
+            {t('grbl_config.hint')}
           </div>
           <label className="inline-flex items-center gap-2 text-xs text-steel-400 cursor-pointer">
             <input
@@ -181,7 +183,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
               onChange={(e) => setShowKnownOnly(e.target.checked)}
               className="w-3 h-3 rounded bg-steel-800 border-steel-600"
             />
-            Csak funkcióval rendelkező beállítások
+            {t('grbl_config.known_only')}
           </label>
         </div>
         <div className="flex items-center gap-2">
@@ -191,14 +193,14 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
             disabled={saving}
           >
             <RefreshCw className="w-3 h-3" />
-            Frissítés
+            {t('grbl_config.refresh')}
           </button>
           <button
             onClick={handleReset}
             className="btn btn-secondary btn-sm"
             disabled={saving || (!hasChanges && Object.keys(fieldErrors).length === 0)}
           >
-            Visszaállítás
+            {t('grbl_config.reset')}
           </button>
           <button
             onClick={handleApply}
@@ -206,7 +208,7 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
             disabled={saving || !hasChanges}
           >
             <Save className="w-3 h-3" />
-            {saving ? 'Alkalmazás...' : 'Alkalmaz'}
+            {saving ? t('grbl_config.applying') : t('grbl_config.apply')}
           </button>
         </div>
       </div>

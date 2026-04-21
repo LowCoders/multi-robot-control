@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Activity,
   CheckCircle,
@@ -41,6 +42,7 @@ export default function DiagnosticsPanel({
   capabilities,
   embedded = false 
 }: DiagnosticsPanelProps) {
+  const { t } = useTranslation('devices')
   const [running, setRunning] = useState(false)
   const [report, setReport] = useState<DiagReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -72,22 +74,24 @@ export default function DiagnosticsPanel({
     }
   }
 
-  const getTestDescription = () => {
-    const parts = ['soros kapcsolat', 'firmware', 'tengelyek']
-    if (hasGripper) parts.push('gripper')
-    if (hasSucker) parts.push('szívópumpa')
-    parts.push('endstopok', 'latencia')
+  const scopeDescription = useMemo(() => {
+    const parts = [
+      t('diagnostics.scope_serial'),
+      t('diagnostics.scope_firmware'),
+      t('diagnostics.scope_axes'),
+    ]
+    if (hasGripper) parts.push(t('diagnostics.scope_gripper'))
+    if (hasSucker) parts.push(t('diagnostics.scope_sucker'))
+    parts.push(t('diagnostics.scope_endstops'), t('diagnostics.scope_latency'))
     return parts.join(', ')
-  }
+  }, [hasGripper, hasSucker, t])
 
   const content = (
     <div className="space-y-4">
       {/* Indítás */}
       {!report && !running && (
         <div className="space-y-3">
-          <p className="text-sm text-steel-400">
-            Átfogó hardver diagnosztika: {getTestDescription()}.
-          </p>
+          <p className="text-sm text-steel-400">{t('diagnostics.intro', { scope: scopeDescription })}</p>
           <label className="flex items-center gap-2 text-sm text-steel-300 cursor-pointer">
             <input
               type="checkbox"
@@ -95,14 +99,14 @@ export default function DiagnosticsPanel({
               onChange={(e) => setMoveTest(e.target.checked)}
               className="rounded border-steel-600 bg-steel-800 text-machine-500 focus:ring-machine-500"
             />
-            Mozgásteszt engedélyezése (kis szögű mozgatás)
+            {t('diagnostics.move_test')}
           </label>
           <button
             onClick={runDiagnostics}
             className="btn btn-primary flex items-center gap-2"
           >
             <Activity className="w-4 h-4" />
-            Diagnosztika indítása
+            {t('diagnostics.run')}
           </button>
         </div>
       )}
@@ -111,19 +115,21 @@ export default function DiagnosticsPanel({
       {running && (
         <div className="flex items-center gap-3 py-8 justify-center">
           <Loader2 className="w-6 h-6 text-machine-400 animate-spin" />
-          <span className="text-steel-300">Diagnosztika folyamatban...</span>
+          <span className="text-steel-300">{t('diagnostics.running')}</span>
         </div>
       )}
 
       {/* Hiba */}
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3">
-          <p className="text-sm text-red-400">Hiba: {error}</p>
+          <p className="text-sm text-red-400">
+            {t('diagnostics.error_prefix')} {error}
+          </p>
           <button
             onClick={runDiagnostics}
             className="btn btn-secondary text-sm mt-2"
           >
-            Újrapróbálás
+            {t('diagnostics.retry')}
           </button>
         </div>
       )}
@@ -143,13 +149,16 @@ export default function DiagnosticsPanel({
                 : <XCircle className="w-5 h-5 text-red-400" />
               }
               <span className={`font-medium ${report.overall_passed ? 'text-green-400' : 'text-red-400'}`}>
-                {report.overall_passed ? 'Minden teszt sikeres' : 'Hibák találhatók'}
+                {report.overall_passed ? t('diagnostics.all_passed') : t('diagnostics.has_issues')}
               </span>
             </div>
             <div className="text-sm text-steel-400 mt-1">
-              {report.passed_tests}/{report.total_tests} OK
-              {report.skipped_tests > 0 && `, ${report.skipped_tests} kihagyva`}
-              {report.failed_tests > 0 && `, ${report.failed_tests} hibás`}
+              {t('diagnostics.summary_ok', {
+                passed: report.passed_tests,
+                total: report.total_tests,
+              })}
+              {report.skipped_tests > 0 && t('diagnostics.skipped_suffix', { n: report.skipped_tests })}
+              {report.failed_tests > 0 && t('diagnostics.failed_suffix', { n: report.failed_tests })}
             </div>
             {report.firmware_info && (
               <div className="text-xs text-steel-500 mt-1 font-mono truncate">
@@ -186,7 +195,7 @@ export default function DiagnosticsPanel({
             className="btn btn-secondary text-sm flex items-center gap-2"
           >
             <RotateCcw className="w-3 h-3" />
-            Újrafuttatás
+            {t('diagnostics.run_again')}
           </button>
         </div>
       )}
@@ -201,7 +210,7 @@ export default function DiagnosticsPanel({
     <div className="card">
       <div className="card-header flex items-center gap-2">
         <Activity className="w-4 h-4 text-blue-400" />
-        <span className="font-medium">Board Diagnosztika</span>
+        <span className="font-medium">{t('diagnostics.panel_title')}</span>
       </div>
       <div className="card-body">
         {content}

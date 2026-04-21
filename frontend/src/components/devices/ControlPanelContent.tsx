@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Play,
   Pause,
@@ -41,6 +42,8 @@ export default function ControlPanelContent({
   jogStop,
   capabilities,
 }: ControlPanelContentProps) {
+  const { t } = useTranslation('devices')
+  const { t: tPages } = useTranslation('pages')
   const [vizExpanded, setVizExpanded] = useState(false)
   const [showGcode, setShowGcode] = useState(true)
   const [gcodeCollapsed, setGcodeCollapsed] = useState(false)
@@ -238,11 +241,11 @@ export default function ControlPanelContent({
         })
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
-          setRunError(data.error || `Futtatás sikertelen (HTTP ${res.status})`)
+          setRunError(data.error || t('control_panel.run_failed_http', { status: res.status }))
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Ismeretlen hiba'
-        setRunError(`Futtatási hiba: ${msg}`)
+        const msg = err instanceof Error ? err.message : t('control_panel.unknown_error')
+        setRunError(t('control_panel.run_error_prefix', { detail: msg }))
       } finally {
         runInFlightRef.current = false
         setPreparingRun(false)
@@ -263,6 +266,7 @@ export default function ControlPanelContent({
     device.id,
     sendCommand,
     setBufferEditing,
+    t,
   ])
 
   // A Play gomb akkor aktív, ha (a) szüneteltetve van (Resume), (b) a
@@ -275,17 +279,24 @@ export default function ControlPanelContent({
     !preparingRun &&
     (hasGcodeContent || !!currentBackendFile)
 
-  const playTitle = isPaused
-    ? 'Folytatás'
-    : !canPlay
-      ? hostLockedByPanel
-        ? 'Panel vezérlés alatt nem indítható'
-        : isRunning
-          ? 'Már fut'
-          : !hasGcodeContent && !currentBackendFile
-            ? 'Nincs futtatható G-code'
-            : 'Indítás'
-      : 'Indítás (a G-code ablak aktuális tartalma)'
+  const playTitle = useMemo(() => {
+    if (isPaused) return t('control_panel.resume')
+    if (!canPlay) {
+      if (hostLockedByPanel) return t('control_panel.start_blocked_panel')
+      if (isRunning) return t('control_panel.start_blocked_running')
+      if (!hasGcodeContent && !currentBackendFile) return t('control_panel.start_blocked_no_gcode')
+      return t('control_panel.start')
+    }
+    return t('control_panel.start_from_editor')
+  }, [
+    isPaused,
+    canPlay,
+    hostLockedByPanel,
+    isRunning,
+    hasGcodeContent,
+    currentBackendFile,
+    t,
+  ])
 
   const handleStop = () => {
     const hasActiveProgram = device.status?.current_file && (device.status?.progress ?? 0) > 0
@@ -304,7 +315,7 @@ export default function ControlPanelContent({
           {/* Status Card */}
           <div className="card">
             <div className="card-header flex items-center justify-between">
-              <span className="font-medium">Állapot</span>
+              <span className="font-medium">{t('control_panel.section_status')}</span>
               {supportsSoftLimits && (
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
@@ -313,7 +324,7 @@ export default function ControlPanelContent({
                     onChange={(e) => handleSoftLimitsChange(e.target.checked)}
                     className="w-3 h-3 accent-machine-500"
                   />
-                  <span className="text-xs text-steel-500">Limit</span>
+                  <span className="text-xs text-steel-500">{t('control_panel.limit_short')}</span>
                 </label>
               )}
             </div>
@@ -322,7 +333,7 @@ export default function ControlPanelContent({
                 <>
                   {isAlarm && (
                     <div className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-                      {device.status.error_message || 'Alarm aktív, részletek nem érhetők el.'}
+                      {device.status.error_message || t('control_panel.alarm_no_detail')}
                     </div>
                   )}
 
@@ -353,7 +364,10 @@ export default function ControlPanelContent({
                           </div>
                           <div className="flex justify-between text-xs text-steel-400">
                             <span>
-                              Sor {device.status.current_line} / {device.status.total_lines}
+                              {t('control_panel.line_row', {
+                                current: device.status.current_line,
+                                total: device.status.total_lines,
+                              })}
                             </span>
                             <span>{device.status.progress.toFixed(1)}%</span>
                           </div>
@@ -365,23 +379,23 @@ export default function ControlPanelContent({
                   {/* Info Grid */}
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div className="bg-steel-800/50 rounded p-2">
-                      <div className="text-steel-400 text-xs">Feed Rate</div>
+                      <div className="text-steel-400 text-xs">{t('control_panel.feed_rate')}</div>
                       <div className="text-steel-100">{device.status.feed_rate.toFixed(0)} mm/min</div>
                     </div>
                     <div className="bg-steel-800/50 rounded p-2">
-                      <div className="text-steel-400 text-xs">Feed Override</div>
+                      <div className="text-steel-400 text-xs">{t('control_panel.feed_override_lbl')}</div>
                       <div className="text-steel-100">{device.status.feed_override.toFixed(0)}%</div>
                     </div>
                     {device.status.spindle_speed > 0 && (
                       <>
                         <div className="bg-steel-800/50 rounded p-2">
-                          <div className="text-steel-400 text-xs">Spindle</div>
+                          <div className="text-steel-400 text-xs">{t('control_panel.spindle_lbl')}</div>
                           <div className="text-steel-100">
                             {device.status.spindle_speed.toFixed(0)} RPM
                           </div>
                         </div>
                         <div className="bg-steel-800/50 rounded p-2">
-                          <div className="text-steel-400 text-xs">Spindle Override</div>
+                          <div className="text-steel-400 text-xs">{t('control_panel.spindle_override_lbl')}</div>
                           <div className="text-steel-100">
                             {device.status.spindle_override.toFixed(0)}%
                           </div>
@@ -398,44 +412,54 @@ export default function ControlPanelContent({
           {/* Control Buttons */}
           <div className="card">
             <div className="card-header">
-              <span className="font-medium">Vezérlés</span>
+              <span className="font-medium">{t('control_panel.section_control')}</span>
             </div>
             <div className="card-body">
               {supportsPanelController && (
                 <div className="mb-3 rounded border border-steel-700 bg-steel-800/40 p-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-steel-400">Tulajdonos:</span>
+                    <span className="text-steel-400">{t('control_panel.owner_label')}</span>
                     <span className="text-steel-200 uppercase">{device.control?.owner ?? 'none'}</span>
                   </div>
                   {!!device.control?.reason && (
-                    <div className="mt-1 text-steel-300">Ok: {device.control.reason}</div>
+                    <div className="mt-1 text-steel-300">
+                      {t('control_panel.reason_label')} {device.control.reason}
+                    </div>
                   )}
                   {device.control?.owner === 'host' && (
-                    <div className="mt-2 text-emerald-300">Host aktív (monitor mód a panelen)</div>
+                    <div className="mt-2 text-emerald-300">{t('control_panel.host_active_panel')}</div>
                   )}
                   {device.control?.owner === 'none' && (
                     <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="text-steel-300">Nincs aktív owner</span>
+                      <span className="text-steel-300">{t('control_panel.no_active_owner')}</span>
                       <button
                         className="btn btn-secondary btn-sm"
                         disabled={!device.control?.can_take_control}
                         onClick={() => sendCommand(device.id, 'take_control', { owner: 'host' })}
-                        title={!device.control?.can_take_control ? 'Futó program közben nem vehető át' : 'Host vezérlés átvétele'}
+                        title={
+                          !device.control?.can_take_control
+                            ? t('control_panel.host_takeover_denied_running')
+                            : t('control_panel.host_takeover')
+                        }
                       >
-                        Host aktiválás
+                        {t('control_panel.host_activate')}
                       </button>
                     </div>
                   )}
                   {hostLockedByPanel && (
                     <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className="text-amber-300">Panel vezérlés aktív</span>
+                      <span className="text-amber-300">{t('control_panel.panel_control_active')}</span>
                       <button
                         className="btn btn-secondary btn-sm"
                         disabled={!device.control?.can_take_control}
                         onClick={() => sendCommand(device.id, 'take_control', { owner: 'host' })}
-                        title={!device.control?.can_take_control ? 'Futó program közben nem vehető át' : 'Host vezérlés átvétele'}
+                        title={
+                          !device.control?.can_take_control
+                            ? t('control_panel.host_takeover_denied_running')
+                            : t('control_panel.host_takeover')
+                        }
                       >
-                        Visszavétel
+                        {t('control_panel.reclaim_host')}
                       </button>
                     </div>
                   )}
@@ -463,7 +487,9 @@ export default function ControlPanelContent({
                   ) : (
                     <Play className="w-5 h-5" />
                   )}
-                  <span className="text-xs">{isPaused ? 'Resume' : 'Run'}</span>
+                  <span className="text-xs">
+                    {isPaused ? t('control_panel.btn_resume') : t('control_panel.btn_run')}
+                  </span>
                 </button>
 
                 <button
@@ -508,7 +534,7 @@ export default function ControlPanelContent({
         {/* Middle Column - Jog */}
         <div className="card">
           <div className="card-header flex items-center justify-between flex-wrap gap-2">
-            <span className="font-medium">Kézi Vezérlés (Jog)</span>
+            <span className="font-medium">{t('control_panel.section_jog')}</span>
             <div className="flex gap-1">
               <button
                 type="button"
@@ -517,7 +543,7 @@ export default function ControlPanelContent({
                 className={`btn btn-xs ${jogMode === 'step' ? 'btn-primary' : 'btn-secondary'}`}
               >
                 <MousePointer2 className="w-3 h-3" />
-                Lépésköz
+                {t('control_panel.jog_step')}
               </button>
               <button
                 type="button"
@@ -526,7 +552,7 @@ export default function ControlPanelContent({
                 className={`btn btn-xs ${jogMode === 'continuous' ? 'btn-primary' : 'btn-secondary'}`}
               >
                 <Repeat className="w-3 h-3" />
-                Folyamatos
+                {t('control_panel.jog_continuous')}
               </button>
             </div>
           </div>
@@ -548,7 +574,7 @@ export default function ControlPanelContent({
         {/* Right Column - MDI */}
         <div className="card flex flex-col h-full">
           <div className="card-header flex items-center gap-3">
-            <span className="font-medium whitespace-nowrap">MDI Konzol</span>
+            <span className="font-medium whitespace-nowrap">{t('control_panel.mdi_title')}</span>
             <MdiConsoleHeaderControls deviceId={device.id} />
           </div>
           <div className="card-body flex-1 flex flex-col min-h-0">
@@ -569,7 +595,7 @@ export default function ControlPanelContent({
         <div className="card-header flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Box className="w-4 h-4 text-blue-400" />
-            <span className="font-medium">Vizualizáció</span>
+            <span className="font-medium">{t('control_panel.viz_title')}</span>
             {device.status?.current_file && (
               <span className="text-sm text-steel-400">
                 — {device.status.current_file.split('/').pop()}
@@ -581,7 +607,9 @@ export default function ControlPanelContent({
             <button
               onClick={() => setShowGcode(!showGcode)}
               className={`btn-icon hover:bg-steel-700 ${showGcode ? 'text-machine-400' : 'text-steel-500'}`}
-              title={showGcode ? 'G-code elrejtése' : 'G-code megjelenítése'}
+              title={
+                showGcode ? t('control_panel.toggle_gcode_hide') : t('control_panel.toggle_gcode_show')
+              }
             >
               <Code className="w-4 h-4" />
             </button>
@@ -590,7 +618,7 @@ export default function ControlPanelContent({
             <button
               onClick={() => setVizExpanded(!vizExpanded)}
               className="btn-icon hover:bg-steel-700"
-              title={vizExpanded ? 'Összecsukás' : 'Teljes képernyő'}
+              title={vizExpanded ? t('control_panel.collapse') : t('control_panel.fullscreen')}
             >
               {vizExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
             </button>
@@ -603,7 +631,7 @@ export default function ControlPanelContent({
             <div className="flex-1 min-w-0 h-full overflow-hidden">
               {configLoading ? (
                 <div className="flex items-center justify-center h-full text-steel-400">
-                  <span>Konfiguráció betöltése...</span>
+                  <span>{tPages('job_manager.viz_loading_config')}</span>
                 </div>
               ) : machineConfig ? (
                 <VisualizationPanel
@@ -615,7 +643,7 @@ export default function ControlPanelContent({
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-steel-400">
-                  <span>Nincs elérhető konfiguráció</span>
+                  <span>{tPages('job_manager.viz_no_config')}</span>
                 </div>
               )}
             </div>
