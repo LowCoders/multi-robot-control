@@ -194,7 +194,6 @@
     "simulated_mode": "Szimulált (emulált) mód",
     "simulated_hint": "Ha be van pipálva, az eszköz a SimulatedDevice driverrel jön létre, valós port nélkül.",
     "connection_json": "Csatlakozás / driver-specifikus config (JSON)",
-    "example_keys": "Példa kulcsok:",
     "reload": "Visszatöltés",
     "reload_title": "YAML újraolvasása diszkről (a piszkozat változások elvesznek)",
     "config_help": "Példa kulcsok: port, baudrate, ini_file, protocol, usb.{vid,pid,serial_number,location}. A teljes objektum cseréje történik mentéskor.",

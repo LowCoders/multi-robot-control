@@ -194,7 +194,6 @@
     "simulated_mode": "Simulated (emulated) mode",
     "simulated_hint": "When checked, the device uses the SimulatedDevice driver without a real port.",
     "connection_json": "Connection / driver-specific config (JSON)",
-    "example_keys": "Example keys:",
     "reload": "Reload",
     "reload_title": "Reload YAML from disk (draft changes are lost)",
     "config_help": "Example keys: port, baudrate, ini_file, protocol, usb.{vid,pid,serial_number,location}. The whole object is replaced when you save.",
