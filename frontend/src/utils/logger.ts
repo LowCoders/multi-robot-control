@@ -7,7 +7,7 @@
  *   3. import.meta.env.DEV ? 'debug' : 'warn' — default
  *
  * Példa:
- *   import { createLogger } from '@/utils/logger'
+ *   import { createLogger } from '../utils/logger'
  *   const log = createLogger('devices')
  *   log.info('Connected', { id })
  *

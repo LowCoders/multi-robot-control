@@ -1,0 +1,13 @@
+{
+  "type": "cnc_lathe",
+  "workEnvelope": { "x": 200, "y": 200, "z": 400 },
+  "axes": [
+    { "name": "X", "type": "linear", "min": 0, "max": 200, "color": "#ef4444" },
+    { "name": "Z", "type": "linear", "min": 0, "max": 400, "color": "#3b82f6", "parent": "X" }
+  ],
+  "spindle": { "maxRpm": 4000, "diameter": 120, "length": 150 },
+  "tool": { "diameter": 12, "length": 25, "type": "custom" },
+  "declaredCapabilities": { "hasSpindle": true, "hasCoolant": true, "maxSpindleSpeed": 4000 },
+  "base": { "width": 300, "height": 60, "depth": 500 },
+  "visuals": { "showGrid": true, "showAxesHelper": true }
+}

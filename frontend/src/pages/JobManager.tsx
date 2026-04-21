@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useJobsPolling } from '../hooks/useJobsPolling'
+import { hostGet, hostPost, hostDelete } from '../utils/hostApi'
 import { Link } from 'react-router-dom'
-import { 
-  Play, 
-  Pause, 
-  Trash2, 
-  Upload, 
+import {
+  Play,
+  Pause,
+  Trash2,
+  Upload,
   GripVertical,
   FileCode,
   Clock,
-  X,
   Loader2,
-  FolderOpen,
   CheckCircle,
   AlertCircle,
   ChevronDown,
@@ -22,6 +22,7 @@ import { useDeviceStore } from '../stores/deviceStore'
 import { MachineVisualization, GcodePanel, RobotArmVisualization, TubeBenderVisualization } from '../components/visualization'
 import { useMachineConfig } from '../hooks/useMachineConfig'
 import { createLogger } from '../utils/logger'
+import AddJobModal from '../components/jobs/AddJobModal'
 
 const log = createLogger('jobs')
 
@@ -37,19 +38,7 @@ interface Job {
 }
 
 
-interface AddJobModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onSubmit: (job: { name: string; deviceId: string; filepath: string; estimatedTime?: number }) => void
-  devices: { id: string; name: string }[]
-}
-
-// Előre definiált teszt fájlok
-const TEST_FILES = [
-  { name: 'test_square.nc', path: '/web/arduino/test_gcode/test_square.nc', time: 2 },
-  { name: 'test_circle.nc', path: '/web/arduino/test_gcode/test_circle.nc', time: 3 },
-  { name: 'test_engrave.nc', path: '/web/arduino/test_gcode/test_engrave.nc', time: 5 },
-]
+// AddJobModal és teszt-fájl lista a `components/jobs/AddJobModal.tsx` modulba költözött.
 
 // Job Visualization Panel - combines G-code and 3D view
 interface JobVisualizationPanelProps {
@@ -211,182 +200,10 @@ function JobVisualizationPanel({ job, showGcode, show3D }: JobVisualizationPanel
   )
 }
 
-function AddJobModal({ isOpen, onClose, onSubmit, devices }: AddJobModalProps) {
-  const [formData, setFormData] = useState(() => {
-    const lastDeviceId = loadFromStorage(STORAGE_KEYS.LAST_DEVICE_ID, '')
-    return {
-      name: '',
-      deviceId: lastDeviceId,
-      filepath: '',
-      estimatedTime: '',
-    }
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  
-  useEffect(() => {
-    if (devices.length > 0 && !formData.deviceId) {
-      // Use stored device or first available
-      const lastDeviceId = loadFromStorage(STORAGE_KEYS.LAST_DEVICE_ID, '')
-      const validDeviceId = devices.find(d => d.id === lastDeviceId)?.id || devices[0].id
-      setFormData(prev => ({ ...prev, deviceId: validDeviceId }))
-    }
-  }, [devices, formData.deviceId])
-  
-  // Save selected device to localStorage
-  const handleDeviceChange = (deviceId: string) => {
-    setFormData({ ...formData, deviceId })
-    saveToStorage(STORAGE_KEYS.LAST_DEVICE_ID, deviceId)
-  }
-  
-  if (!isOpen) return null
-  
-  const handleSelectTestFile = (file: typeof TEST_FILES[0]) => {
-    setFormData({
-      ...formData,
-      name: file.name,
-      filepath: file.path,
-      estimatedTime: file.time.toString(),
-    })
-  }
-  
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-    
-    await onSubmit({
-      name: formData.name || formData.filepath.split('/').pop() || 'Új Job',
-      deviceId: formData.deviceId,
-      filepath: formData.filepath,
-      estimatedTime: formData.estimatedTime ? parseInt(formData.estimatedTime, 10) : undefined,
-    })
-    
-    setIsSubmitting(false)
-    setFormData({ name: '', deviceId: devices[0]?.id || '', filepath: '', estimatedTime: '' })
-    onClose()
-  }
-  
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="card w-full max-w-lg mx-4">
-        <div className="card-header flex items-center justify-between">
-          <span className="font-medium">Új Job Hozzáadása</span>
-          <button onClick={onClose} className="text-steel-400 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="card-body space-y-4">
-          {/* Teszt fájlok */}
-          <div>
-            <label className="block text-sm text-steel-400 mb-2">Gyors választás (teszt fájlok)</label>
-            <div className="grid grid-cols-3 gap-2">
-              {TEST_FILES.map(file => (
-                <button
-                  key={file.path}
-                  type="button"
-                  onClick={() => handleSelectTestFile(file)}
-                  className={`
-                    p-2 rounded-lg border text-sm text-left transition-colors
-                    ${formData.filepath === file.path 
-                      ? 'border-machine-500 bg-machine-500/20 text-machine-400' 
-                      : 'border-steel-700 hover:border-steel-500 text-steel-300'
-                    }
-                  `}
-                >
-                  <FileCode className="w-4 h-4 mb-1" />
-                  {file.name}
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          <div className="text-center text-steel-500 text-sm">vagy</div>
-          
-          {/* Manuális fájl útvonal */}
-          <div>
-            <label className="block text-sm text-steel-400 mb-1">
-              <FolderOpen className="w-4 h-4 inline mr-1" />
-              Fájl útvonal
-            </label>
-            <input
-              type="text"
-              value={formData.filepath}
-              onChange={(e) => setFormData({ ...formData, filepath: e.target.value })}
-              className="input w-full"
-              placeholder="/path/to/file.nc"
-              required
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm text-steel-400 mb-1">Job neve (opcionális)</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="input w-full"
-              placeholder="Automatikus a fájlnév alapján"
-            />
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-steel-400 mb-1">Cél eszköz</label>
-              <select
-                value={formData.deviceId}
-                onChange={(e) => handleDeviceChange(e.target.value)}
-                className="input w-full"
-                required
-              >
-                {devices.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm text-steel-400 mb-1">Becsült idő (perc)</label>
-              <input
-                type="number"
-                value={formData.estimatedTime}
-                onChange={(e) => setFormData({ ...formData, estimatedTime: e.target.value })}
-                className="input w-full"
-                placeholder="Opcionális"
-                min="1"
-              />
-            </div>
-          </div>
-          
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn btn-secondary flex-1"
-            >
-              Mégse
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !formData.filepath || !formData.deviceId}
-              className="btn btn-primary flex-1 flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Upload className="w-4 h-4" />
-              )}
-              Hozzáadás
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
+// AddJobModal a `components/jobs/AddJobModal.tsx`-be költözött.
 
-// LocalStorage keys
 const STORAGE_KEYS = {
   EXECUTION_MODE: 'jobManager.executionMode',
-  LAST_DEVICE_ID: 'jobManager.lastDeviceId',
 }
 
 // Helper functions for localStorage
@@ -446,47 +263,21 @@ export default function JobManager() {
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  
-  // Load jobs from API and sync mode from backend on first load
-  useEffect(() => {
-    let isFirstLoad = true
-    
-    const loadJobs = async () => {
-      try {
-        const response = await fetch('/api/jobs')
-        if (response.ok) {
-          const data = await response.json()
-          setJobs(data.jobs)
-          
-          // On first load, sync localStorage mode with backend
-          if (isFirstLoad && data.executionMode) {
-            // If localStorage has a different mode, update backend
-            const storedMode = loadFromStorage(STORAGE_KEYS.EXECUTION_MODE, 'sequential')
-            if (storedMode !== data.executionMode) {
-              // Update backend to match localStorage
-              fetch('/api/jobs/mode', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: storedMode }),
-              }).catch((err) => log.error(err))
-            }
-            isFirstLoad = false
-          }
-        }
-      } catch (error) {
-        log.error('Failed to load jobs:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    loadJobs()
-    
-    // Poll faster when jobs are running
-    const hasRunningJobs = jobs.some(j => j.status === 'running')
-    const pollInterval = hasRunningJobs ? 500 : 2000
-    const interval = setInterval(loadJobs, pollInterval)
-    return () => clearInterval(interval)
-  }, [jobs.some(j => j.status === 'running')])
+
+  const jobsRef = useRef<Job[]>([])
+  jobsRef.current = jobs
+
+  const getStoredExecutionMode = useCallback(
+    () => loadFromStorage(STORAGE_KEYS.EXECUTION_MODE, 'sequential'),
+    []
+  )
+
+  useJobsPolling<Job>({
+    setJobs,
+    setIsLoading,
+    jobsRef,
+    getStoredExecutionMode,
+  })
   
   // Sync execution mode with backend and localStorage
   const handleModeChange = async (mode: typeof executionMode) => {
@@ -494,11 +285,7 @@ export default function JobManager() {
     saveToStorage(STORAGE_KEYS.EXECUTION_MODE, mode)
     
     try {
-      await fetch('/api/jobs/mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
-      })
+      await hostPost('/jobs/mode', { mode })
     } catch (error) {
       log.error('Failed to update mode:', error)
     }
@@ -506,16 +293,8 @@ export default function JobManager() {
   
   const handleAddJob = async (jobData: { name: string; deviceId: string; filepath: string; estimatedTime?: number }) => {
     try {
-      const response = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(jobData),
-      })
-      
-      if (response.ok) {
-        const newJob = await response.json()
-        setJobs([...jobs, newJob])
-      }
+      const newJob = (await hostPost('/jobs', jobData)) as Job
+      setJobs((prev) => [...prev, newJob])
     } catch (error) {
       log.error('Failed to add job:', error)
     }
@@ -523,14 +302,8 @@ export default function JobManager() {
   
   const handleRunJob = async (jobId: string) => {
     try {
-      const response = await fetch(`/api/jobs/${jobId}/run`, {
-        method: 'POST',
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setJobs(jobs.map(j => j.id === jobId ? data.job : j))
-      }
+      const data = (await hostPost(`/jobs/${jobId}/run`)) as { job: Job }
+      setJobs((prev) => prev.map((j) => (j.id === jobId ? data.job : j)))
     } catch (error) {
       log.error('Failed to run job:', error)
     }
@@ -538,14 +311,8 @@ export default function JobManager() {
   
   const handlePauseJob = async (jobId: string) => {
     try {
-      const response = await fetch(`/api/jobs/${jobId}/pause`, {
-        method: 'POST',
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setJobs(jobs.map(j => j.id === jobId ? data.job : j))
-      }
+      const data = (await hostPost(`/jobs/${jobId}/pause`)) as { job: Job }
+      setJobs((prev) => prev.map((j) => (j.id === jobId ? data.job : j)))
     } catch (error) {
       log.error('Failed to pause job:', error)
     }
@@ -555,18 +322,12 @@ export default function JobManager() {
     if (!confirm('Biztosan törölni szeretnéd ezt a job-ot?')) return
     
     try {
-      const response = await fetch(`/api/jobs/${jobId}`, {
-        method: 'DELETE',
+      await hostDelete(`/jobs/${jobId}`)
+      setJobs((prev) => prev.filter((j) => j.id !== jobId))
+      setExpandedViews((prev) => {
+        const { [jobId]: _, ...rest } = prev
+        return rest
       })
-      
-      if (response.ok) {
-        setJobs(jobs.filter(j => j.id !== jobId))
-        // Clean up expanded views state
-        setExpandedViews(prev => {
-          const { [jobId]: _, ...rest } = prev
-          return rest
-        })
-      }
     } catch (error) {
       log.error('Failed to delete job:', error)
     }
@@ -575,20 +336,9 @@ export default function JobManager() {
   const handleRunAll = async () => {
     setIsRunningAll(true)
     try {
-      const response = await fetch('/api/jobs/run-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: executionMode }),
-      })
-      
-      if (response.ok) {
-        // Refresh jobs list
-        const jobsResponse = await fetch('/api/jobs')
-        if (jobsResponse.ok) {
-          const data = await jobsResponse.json()
-          setJobs(data.jobs)
-        }
-      }
+      await hostPost('/jobs/run-all', { mode: executionMode })
+      const data = (await hostGet('/jobs')) as { jobs: Job[] }
+      setJobs(data.jobs)
     } catch (error) {
       log.error('Failed to run all jobs:', error)
     } finally {
@@ -601,6 +351,10 @@ export default function JobManager() {
   
   const handleDragStart = (e: React.DragEvent, index: number) => {
     const job = jobs[index]
+    if (job === undefined) {
+      e.preventDefault()
+      return
+    }
     if (!canDrag(job)) {
       e.preventDefault()
       return
@@ -631,17 +385,18 @@ export default function JobManager() {
     
     // Reorder locally first for instant feedback
     const newJobs = [...jobs]
-    const [draggedJob] = newJobs.splice(draggedIndex, 1)
+    const draggedJob = newJobs.splice(draggedIndex, 1)[0]
+    if (draggedJob === undefined) {
+      setDraggedIndex(null)
+      setDragOverIndex(null)
+      return
+    }
     newJobs.splice(dropIndex, 0, draggedJob)
     setJobs(newJobs)
     
     // Send reorder to backend
     try {
-      await fetch('/api/jobs/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: newJobs.map(j => j.id) }),
-      })
+      await hostPost('/jobs/reorder', { order: newJobs.map((j) => j.id) })
     } catch (error) {
       log.error('Failed to reorder jobs:', error)
     }

@@ -167,19 +167,19 @@ describe('Device Store', () => {
       expect(device.status?.position).toEqual(newPosition);
     });
 
-    it('should not update device without status', () => {
+    it('should initialize status object when device has no status yet', () => {
       act(() => {
-        useDeviceStore.getState().setDevices([mockDevice]); // No status
+        useDeviceStore.getState().setDevices([mockDevice]);
       });
 
       const newPosition: Position = { x: 50, y: 100, z: 25 };
-      
+
       act(() => {
         useDeviceStore.getState().updateDevicePosition('cnc-main', newPosition);
       });
 
       const device = useDeviceStore.getState().devices[0];
-      expect(device.status).toBeUndefined();
+      expect(device.status?.position).toEqual(newPosition);
     });
   });
 
@@ -301,6 +301,7 @@ describe('Device Store', () => {
 
         expect(mockEmit).toHaveBeenCalledWith('device:jog:stop', {
           deviceId: 'cnc-main',
+          hardStop: false,
         });
       });
     });

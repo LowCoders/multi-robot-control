@@ -1,14 +1,14 @@
 # Új Eszköz Hozzáadása
 
-## 1. Konfiguráció
+## 1. Eszköz konfiguráció
 
-Szerkeszd a `config/devices.yaml` fájlt:
+### Általános — `config/devices.yaml`
 
 ```yaml
 devices:
   - id: my_device
     name: "Új Eszköz"
-    driver: grbl  # vagy linuxcnc, marlin, stb.
+    driver: grbl                # grbl | linuxcnc | robot_arm | tube_bender | ...
     type: cnc_mill
     enabled: true
     config:
@@ -16,9 +16,18 @@ devices:
       baudrate: 115200
 ```
 
+### Gép-specifikus runtime konfig — `config/machines/<id>.json`
+
+A `config/machines/<deviceId>.json` tartja a futás közbeni paramétereket
+(axis limits, scale, home pozíció, work envelope, ...). A
+`config/machines/_defaults/<type>.json` fájlok adják az eszköz-típushoz
+tartozó alapokat. Új gép esetén másold a megfelelő default-ot, és tedd a
+`<deviceId>.json` mellé.
+
 ## 2. Meglévő Driver Használata
 
-### GRBL eszközök
+### GRBL / grblHAL eszközök
+
 ```yaml
 - id: laser_2
   name: "Második Lézer"
@@ -30,6 +39,7 @@ devices:
 ```
 
 ### LinuxCNC eszközök
+
 ```yaml
 - id: cnc_2
   name: "Második CNC"
@@ -39,16 +49,26 @@ devices:
     ini_file: /home/user/linuxcnc/configs/lathe/lathe.ini
 ```
 
-## 3. Új Driver Implementálása
+### Robotkar (jog session-nel)
 
-Ha teljesen új protokollt kell támogatni:
+```yaml
+- id: arm_1
+  name: "Robotkar #1"
+  driver: robot_arm
+  type: robot_arm
+  config:
+    port: /dev/ttyACM0
+    baudrate: 115200
+```
+
+## 3. Új Driver Implementálása
 
 ### 3.1 Hozz létre új driver fájlt
 
-`drivers/plugins/my_driver.py`:
+`drivers/my_driver.py`:
 
 ```python
-from drivers.base import (
+from device_driver import (
     DeviceDriver,
     DeviceType,
     DeviceState,
@@ -56,96 +76,55 @@ from drivers.base import (
     DeviceCapabilities,
     Position,
 )
+# Ha a drivered jog session-t is támogat (start/stop start_jog mintával),
+# örökölj a JogSafeDeviceDriver mixinből — ez egy helyen kezeli a session
+# state-et és a polling-szinkronizálást:
+from jog_safe_mixin import JogSafeDeviceDriver
 
-class MyDriver(DeviceDriver):
-    """Custom driver implementáció"""
-    
+
+class MyDriver(JogSafeDeviceDriver):
+    """Custom driver implementáció."""
+
     device_type = DeviceType.CUSTOM
-    
+
     def __init__(self, device_id: str, device_name: str, **config):
         super().__init__(device_id, device_name, DeviceType.CUSTOM)
         self.config = config
-    
+
     async def connect(self) -> bool:
-        """Kapcsolat létrehozása"""
         try:
-            # Implementáld a kapcsolódást
             self._connected = True
             self._set_state(DeviceState.IDLE)
             return True
-        except Exception as e:
-            self._set_error(str(e))
+        except Exception as exc:
+            self._set_error(str(exc))
             return False
-    
+
     async def disconnect(self) -> None:
-        """Kapcsolat bontása"""
         self._connected = False
         self._set_state(DeviceState.DISCONNECTED)
-    
+
     async def get_status(self) -> DeviceStatus:
-        """Állapot lekérdezése"""
-        # Implementáld az állapot lekérdezést
         return self._status
-    
+
     async def get_capabilities(self) -> DeviceCapabilities:
-        """Képességek lekérdezése"""
         return DeviceCapabilities(
             axes=["X", "Y", "Z"],
             has_spindle=True,
             max_feed_rate=5000,
         )
-    
-    async def home(self, axes=None) -> bool:
-        """Homing"""
-        # Implementáció
-        return True
-    
-    async def jog(self, axis, distance, feed_rate) -> bool:
-        """Jog mozgás"""
-        # Implementáció
-        return True
-    
-    async def jog_stop(self) -> bool:
-        """Jog leállítás"""
-        return True
-    
-    async def send_gcode(self, gcode: str) -> str:
-        """G-code küldés"""
-        # Implementáció
-        return "ok"
-    
-    async def load_file(self, filepath: str) -> bool:
-        """Fájl betöltés"""
-        return True
-    
-    async def run(self, from_line=0) -> bool:
-        """Program indítás"""
-        return True
-    
-    async def pause(self) -> bool:
-        """Szüneteltetés"""
-        return True
-    
-    async def resume(self) -> bool:
-        """Folytatás"""
-        return True
-    
-    async def stop(self) -> bool:
-        """Leállítás"""
-        return True
-    
-    async def reset(self) -> bool:
-        """Reset"""
-        return True
+
+    # home / jog / send_gcode / load_file / run / pause / resume / stop / reset
+    # — implementáld a hardware-specifikus részt.
 ```
 
 ### 3.2 Regisztráld a drivert
 
-`drivers/bridge_server.py` - DeviceManager.add_device():
+A `DeviceManager.add_device()` (`drivers/bridge/manager.py`) elágazásában:
 
 ```python
 elif driver == "my_driver":
-    from .plugins.my_driver import MyDriver
+    from my_driver import MyDriver
     device = MyDriver(
         device_id=config.id,
         device_name=config.name,
@@ -153,16 +132,66 @@ elif driver == "my_driver":
     )
 ```
 
-### 3.3 Konfiguráld
+### 3.3 Eszköz-specifikus REST végpont (opcionális)
 
-```yaml
-- id: custom_device
-  name: "Egyedi Eszköz"
-  driver: my_driver
-  type: custom
-  config:
-    custom_param: "value"
+Ha új REST végpontot kell kihirdetni:
+
+1. Hozz létre egy új router fájlt: `drivers/bridge/routers/my_router.py`:
+
+```python
+from fastapi import APIRouter, HTTPException
+from ..state import device_manager
+
+router = APIRouter()
+
+
+@router.post("/devices/{device_id}/my-action")
+async def my_action(device_id: str):
+    device = device_manager.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Eszköz nem található")
+    return {"success": await device.my_action()}
 ```
+
+2. Kösd be a `drivers/bridge/routers/__init__.py`-ban:
+
+```python
+from . import my_router
+app.include_router(my_router.router, tags=["my"])
+```
+
+3. Ha van új request body, vedd fel az `api_models.py`-ba (Pydantic).
+
+4. Generáld újra a típusokat:
+
+```bash
+bash scripts/generate-api-types.sh
+```
+
+A backend és frontend `bridge-types.ts` automatikusan frissül; a
+TypeScript fordítás azonnal jelzi a nem-megfelelő hívásokat.
+
+### 3.4 Diagnosztikai teszt (opcionális)
+
+Ha a driverhez thread-alapú diagnosztikai tesztet kell kiajánlani
+(firmware-probe / endstop / motion mintára), használd a közös runner-t:
+
+```python
+from .._runner import run_serial_test
+
+@router.post("/devices/{device_id}/my-test")
+async def my_test(device_id: str):
+    device = _get_device_or_404(device_id)
+    return await run_serial_test(
+        device=device,
+        device_id=device_id,
+        runner_factory=lambda: MyTestRunner(device.serial),
+        blocking_call=lambda runner, stop: runner.run(stop),
+    )
+```
+
+A runner cleanup-ja (polling újraindítás, cancel-event eltávolítás)
+automatikus.
 
 ## 4. Eszköz Típusok
 
@@ -174,13 +203,38 @@ elif driver == "my_driver":
 | laser_engraver | Lézer gravírozó |
 | printer_3d | 3D nyomtató |
 | robot_arm | Robot kar |
+| tube_bender | Csőhajlító |
 | conveyor | Szállítószalag |
 | rotary_table | Forgóasztal |
 | custom | Egyéb |
 
 ## 5. Tesztelés
 
-1. Indítsd újra a bridge szervert
-2. Ellenőrizd a logokat
-3. Nyisd meg a dashboardot
-4. Az új eszköznek meg kell jelennie
+1. Indítsd újra a bridge szervert: `./scripts/start-all.sh` (vagy
+   közvetlenül `uvicorn bridge_server:app`).
+2. Ellenőrizd a logokat (`drivers/bridge/manager.py` írja az init-et).
+3. Nyisd meg a dashboardot — az új eszköznek meg kell jelennie.
+4. Futtasd a contract tesztet, hogy a publikus API ne romoljon el:
+
+```bash
+cd backend && npm test
+```
+
+Ha kontrolt is adsz a frontendnek (panel komponens), használd a
+`frontend/src/utils/apiClient.ts` típusos wrapperet:
+
+```ts
+import { apiPost } from '../../utils/apiClient'
+
+await apiPost('/devices/{device_id}/my-action', {
+  path: { device_id: deviceId },
+})
+```
+
+## 6. Manuális diagnosztika
+
+A `drivers/scripts/` mappa interaktív, manuális diagnosztikai scripteket
+tartalmaz (`coupling_test.py`, `test_esp32_grbl.py`, `test_robot.py`).
+Ezeket csak akkor szabad futtatni, ha a bridge szerver **nem fut**, mert
+közvetlenül foglalják a soros portot. Részletek:
+`drivers/scripts/README.md`.

@@ -5,10 +5,17 @@
  * érték lehet abszolút (pl. `/srv/nc_files`) vagy relatív; relatív útvonal
  * esetén a workspace gyökeréhez (a backend cwd egy szinttel feljebb)
  * képest értelmezzük.
+ *
+ * A megengedett kiterjesztések és a max fájlméret a `config/system.yaml`
+ * `files` szakaszából jönnek (single source of truth), fallback default-okkal.
  */
 
-import { realpathSync, existsSync, mkdirSync, statSync } from 'fs';
+import { realpathSync, existsSync, mkdirSync, readFileSync, statSync } from 'fs';
 import path from 'path';
+import { parse as parseYaml } from 'yaml';
+import { GcodePathError } from '../errors/GcodePathError.js';
+
+export { GcodePathError };
 
 const WORKSPACE_ROOT = path.resolve(process.cwd(), '..');
 
@@ -22,7 +29,6 @@ function ensureRootExists(dir: string): string {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  // realpath az indulás után, hogy symlinkeket is feloldjuk
   try {
     return realpathSync(dir);
   } catch {
@@ -30,24 +36,58 @@ function ensureRootExists(dir: string): string {
   }
 }
 
+const DEFAULT_EXTENSIONS = ['.nc', '.gcode', '.ngc', '.tap', '.txt'];
+const DEFAULT_MAX_FILE_SIZE_MB = 5;
+
+interface SystemFilesYaml {
+  files?: {
+    max_file_size?: number;
+    allowed_extensions?: string[];
+  };
+}
+
+function loadFilesConfigSync(): { extensions: string[]; maxFileSize: number } {
+  const yamlPath = path.resolve(WORKSPACE_ROOT, 'config', 'system.yaml');
+  let extensions = DEFAULT_EXTENSIONS;
+  let maxMb = DEFAULT_MAX_FILE_SIZE_MB;
+
+  if (existsSync(yamlPath)) {
+    try {
+      const raw = readFileSync(yamlPath, 'utf-8');
+      const parsed = parseYaml(raw) as SystemFilesYaml | null;
+      const files = parsed?.files;
+      if (files) {
+        if (Array.isArray(files.allowed_extensions) && files.allowed_extensions.length > 0) {
+          extensions = files.allowed_extensions
+            .filter((e) => typeof e === 'string')
+            .map((e) => (e.startsWith('.') ? e.toLowerCase() : `.${e.toLowerCase()}`));
+        }
+        if (typeof files.max_file_size === 'number' && files.max_file_size > 0) {
+          maxMb = files.max_file_size;
+        }
+      }
+    } catch {
+      // marad a default
+    }
+  }
+
+  return {
+    extensions,
+    maxFileSize: Math.floor(maxMb * 1024 * 1024),
+  };
+}
+
+const filesConfig = loadFilesConfigSync();
+
 export const GCODE_ROOT: string = ensureRootExists(resolveConfiguredRoot());
 
-export const GCODE_EXTENSIONS = ['.nc', '.gcode', '.ngc', '.tap', '.txt'] as const;
+export const GCODE_EXTENSIONS: readonly string[] = filesConfig.extensions;
 
-// 5 MB max fájlméret mentésnél
-export const GCODE_MAX_FILE_SIZE = 5 * 1024 * 1024;
+export const GCODE_MAX_FILE_SIZE: number = filesConfig.maxFileSize;
 
 // Fájl- és könyvtárnév alap szanitálás: csak látható ASCII, nincs '/'.
 const SAFE_NAME_RE = /^[A-Za-z0-9._\-+ ()\[\]]{1,255}$/;
 const FORBIDDEN_NAMES = new Set(['', '.', '..']);
-
-export class GcodePathError extends Error {
-  status: number;
-  constructor(message: string, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
 
 /**
  * Validálja, hogy a megadott név önállóan biztonságos: nem tartalmaz
@@ -143,7 +183,7 @@ export function relativeFromRoot(absPath: string): string {
 
 export function isGcodeExtension(name: string): boolean {
   const ext = path.extname(name).toLowerCase();
-  return (GCODE_EXTENSIONS as readonly string[]).includes(ext);
+  return GCODE_EXTENSIONS.includes(ext);
 }
 
 export function isDirectory(absPath: string): boolean {

@@ -1,0 +1,14 @@
+{
+  "type": "cnc_mill",
+  "workEnvelope": { "x": 300, "y": 400, "z": 80 },
+  "axes": [
+    { "name": "X", "type": "linear", "min": 0, "max": 300, "color": "#ef4444" },
+    { "name": "Y", "type": "linear", "min": 0, "max": 400, "color": "#22c55e", "parent": "X" },
+    { "name": "Z", "type": "linear", "min": -80, "max": 0, "color": "#3b82f6", "parent": "Y" }
+  ],
+  "spindle": { "maxRpm": 24000, "diameter": 52, "length": 80 },
+  "tool": { "diameter": 6, "length": 30, "type": "endmill" },
+  "declaredCapabilities": { "hasSpindle": true, "hasCoolant": false, "maxSpindleSpeed": 24000 },
+  "base": { "width": 400, "height": 50, "depth": 500 },
+  "visuals": { "showGrid": true, "showAxesHelper": true }
+}

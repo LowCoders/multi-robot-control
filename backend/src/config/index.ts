@@ -37,11 +37,22 @@ export interface FilesConfig {
   allowed_extensions?: string[];
 }
 
+export interface SecurityConfig {
+  api_key?: string;
+  cors_origins?: string[];
+  rate_limit?: {
+    enabled?: boolean;
+    max_requests?: number;
+    window_ms?: number;
+  };
+}
+
 export interface SystemConfig {
   server?: ServerConfig;
   websocket?: WebSocketConfig;
   realtime?: RealtimeConfig;
   files?: FilesConfig;
+  security?: SecurityConfig;
 }
 
 export interface DeviceConfigEntry {

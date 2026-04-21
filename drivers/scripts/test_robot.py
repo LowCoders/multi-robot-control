@@ -18,9 +18,10 @@ from pathlib import Path
 from time import perf_counter
 from typing import Optional, Dict, Any, Tuple, List
 
-# Importok
-from robot_arm_driver import RobotArmDevice, ControlMode
-from kinematics import RobotConfig, forward_kinematics, inverse_kinematics
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from robot_arm_driver import RobotArmDevice, ControlMode  # noqa: E402
+from kinematics import RobotConfig, forward_kinematics, inverse_kinematics  # noqa: E402
 
 
 # Tengely mapping (új és legacy elnevezések)

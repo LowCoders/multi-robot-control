@@ -1,0 +1,11 @@
+{
+  "type": "custom",
+  "workEnvelope": { "x": 200, "y": 200, "z": 100 },
+  "axes": [
+    { "name": "X", "type": "linear", "min": 0, "max": 200, "color": "#ef4444" },
+    { "name": "Y", "type": "linear", "min": 0, "max": 200, "color": "#22c55e", "parent": "X" },
+    { "name": "Z", "type": "linear", "min": -100, "max": 0, "color": "#3b82f6", "parent": "Y" }
+  ],
+  "base": { "width": 300, "height": 50, "depth": 300 },
+  "visuals": { "showGrid": true, "showAxesHelper": true }
+}

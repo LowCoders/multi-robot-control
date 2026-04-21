@@ -18,6 +18,11 @@ for (const candidate of envCandidates) {
 
 import { createServer, ServerContext } from './server.js';
 import { loadConfig } from './config/index.js';
+import {
+  DEFAULT_BACKEND_HOST,
+  DEFAULT_BACKEND_PORT,
+  SHUTDOWN_GRACE_MS,
+} from './config/constants.js';
 import { createLogger } from './utils/logger.js';
 
 const log = createLogger('startup');
@@ -37,8 +42,8 @@ async function main(): Promise<void> {
     serverContext = await createServer(config);
     const { server, cleanup } = serverContext;
     
-    const port = config.server?.backend?.port || 4001;
-    const host = config.server?.backend?.host || '0.0.0.0';
+    const port = config.server?.backend?.port || DEFAULT_BACKEND_PORT;
+    const host = config.server?.backend?.host || DEFAULT_BACKEND_HOST;
     
     server.listen(port, host, () => {
       log.info(`Backend szerver fut: http://${host}:${port}`);
@@ -56,11 +61,11 @@ async function main(): Promise<void> {
         process.exit(0);
       });
       
-      // Force exit after 10 seconds if graceful shutdown fails
+      // Force exit ha a graceful shutdown nem fejeződik be időben.
       setTimeout(() => {
         log.error('Forced shutdown after timeout');
         process.exit(1);
-      }, 10000);
+      }, SHUTDOWN_GRACE_MS);
     };
     
     process.on('SIGTERM', () => handleShutdown('SIGTERM'));

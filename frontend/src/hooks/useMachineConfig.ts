@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { MachineConfig } from '../types/machine-config'
 import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, DEFAULT_TUBE_BENDER } from '../types/machine-config'
 import type { DeviceType } from '../types/device'
+import { hostGet } from '../utils/hostApi'
 
 // Map device types to default machine configs
 const DEFAULT_CONFIGS: Record<string, MachineConfig> = {
@@ -27,13 +28,12 @@ const DEFAULT_CONFIGS: Record<string, MachineConfig> = {
       { name: 'Y', type: 'linear', min: 0, max: 300, color: '#22c55e', parent: 'X' },
     ],
     workEnvelope: { x: 400, y: 300, z: 0 },
-    spindle: undefined,
     tool: {
       diameter: 0.1, // Laser focus point
       length: 50,
       type: 'laser',
     },
-  },
+  } as MachineConfig,
   '5axis': DEFAULT_5AXIS_CNC,
   tube_bender: DEFAULT_TUBE_BENDER,
 }
@@ -53,44 +53,37 @@ export function useMachineConfig(
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const ac = new AbortController()
+    const { signal } = ac
+
     async function loadConfig() {
       setLoading(true)
       setError(null)
 
-      try {
-        // Load device-specific config from API
-        const response = await fetch(`/api/devices/${deviceId}/machine-config`)
-        
-        if (response.ok) {
-          const data = await response.json()
-          setConfig(data as MachineConfig)
-        } else {
-          // Fall back to default config based on device type
-          const defaultConfig = deviceType 
-            ? DEFAULT_CONFIGS[deviceType] || DEFAULT_3AXIS_CNC
-            : DEFAULT_3AXIS_CNC
-          
-          setConfig({
-            ...defaultConfig,
-            id: deviceId,
-          })
-        }
-      } catch (err) {
-        // On error, use default config
-        const defaultConfig = deviceType 
+      const applyDefault = (): void => {
+        const defaultConfig = deviceType
           ? DEFAULT_CONFIGS[deviceType] || DEFAULT_3AXIS_CNC
           : DEFAULT_3AXIS_CNC
-        
         setConfig({
           ...defaultConfig,
           id: deviceId,
         })
+      }
+
+      try {
+        const data = (await hostGet(`/devices/${deviceId}/machine-config`, {
+          signal,
+        })) as MachineConfig
+        setConfig(data)
+      } catch {
+        applyDefault()
       } finally {
         setLoading(false)
       }
     }
 
-    loadConfig()
+    void loadConfig()
+    return () => ac.abort()
   }, [deviceId, deviceType])
 
   return { config, loading, error }

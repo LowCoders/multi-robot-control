@@ -26,6 +26,10 @@ import {
   EK20BearingMedium,
   EK20BearingRealistic,
   EK20BearingSchematic,
+  GEAR_BRACKET_DIMENSIONS,
+  GearBracketMedium,
+  GearBracketRealistic,
+  GearBracketSchematic,
   HTD_PULLEY_15T_8B_DIMENSIONS,
   HTD_PULLEY_70T_25B_DIMENSIONS,
   HtdPulley15T_8bMedium,
@@ -54,6 +58,14 @@ import {
   PlanetaryGearbox60Medium,
   PlanetaryGearbox60Realistic,
   PlanetaryGearbox60Schematic,
+  SHAFT_8MM_DIMENSIONS,
+  SHAFT_SUPPORT_SHF20_DIMENSIONS,
+  Shaft8mmMedium,
+  Shaft8mmRealistic,
+  Shaft8mmSchematic,
+  ShaftSupportSHF20Medium,
+  ShaftSupportSHF20Realistic,
+  ShaftSupportSHF20Schematic,
   SLIP_RING_H2056_12CH_DIMENSIONS,
   SlipRingH2056_12chMedium,
   SlipRingH2056_12chRealistic,
@@ -305,8 +317,8 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
   {
     id: 'menetes-szar-szerelveny-1',
     num: 5,
-    nameHu: 'menetes szár szerelvény (4 db M5 + 16 anya)',
-    nameEn: 'threaded rod assembly (4× M5 + 16 nuts)',
+    nameHu: 'menetes szár szerelvény (4 db M5 + 20 anya)',
+    nameEn: 'threaded rod assembly (4× M5 + 20 nuts)',
     color: generatePartColor(4),
     parentId: 'vertical-bracket-1',
     assemblyId: 'x-axis-drive',
@@ -340,43 +352,59 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
     },
     description:
       'Menetes szár szerelvény: 4 db M5 szár fogja össze a NEMA 23 motort a két ' +
-      'függőleges konzollal. A motor a bracket-1 cutout-ján átnyúlik, hátulja pedig ' +
-      'a bracket-2 4 mm-es zsebébe fekszik. A szár két végén anya rögzíti a motor ' +
-      'flange-et és a bracket-2-t — bracket-1 függetlenül van rögzítve a száron.',
+      'függőleges konzollal és a `gear-bracket-1`-gyel. A motor a bracket-1 ' +
+      'cutout-ján átnyúlik, hátulja a bracket-2 4 mm-es zsebébe fekszik. ' +
+      '5 anya/szár (összesen 20 db): (1) bracket-2 hátsó vég-anya; (2,3) bracket-1 ' +
+      'két oldalán; (4) motor előlap MÖGÖTT (az iron body belsejében — fade-módban ' +
+      'látható); (5) gear-bracket BELSEJÉBEN (U-cavity-ben). A motor flange front ' +
+      'face-e és a gear-bracket base wall back face-e KÖZVETLENÜL érintkezik, ' +
+      'NINCS anya közöttük.',
   },
   {
     id: 'pinion-gear-1',
     num: 6,
-    nameHu: 'fogaskerék 1.5M 17T (X tengely pinion)',
-    nameEn: 'pinion gear 1.5M 17T (X axis)',
+    nameHu: 'fogaskerék 1.5M 17T (gear-bracket tetején, #8 felett)',
+    nameEn: 'pinion gear 1.5M 17T (on gear-bracket top, above #8)',
     color: generatePartColor(5),
-    parentId: 'nema23-motor-1',
+    parentId: 'gear-bracket-1',
     assemblyId: 'x-axis-drive',
     transform: {
-      // A fogaskerék a NEMA 23 motor tengelyére (Ø8 × 22 mm) van feltolva.
-      // Builder-lokálisban a komponens +Z tengelye = a fogaskerék tengelye, az
-      // origó pedig a koszorú/hub találkozási síkja. Pozicionálás motor-lokálisban:
-      //   - motor body front face: motor-Z = +61 (= bodyLength/2)
-      //   - boss tetõ:             motor-Z = +62.6 (boss height = 1.6)
-      //   - shaft:                 motor-Z = +61 .. +83 (22 mm hosszú)
+      // A pinion most a `gear-bracket-1` (#16) GYERMEKE, a felső arm tetején ülve,
+      // a `bevel-gear-driven-1` (#8) furatával EGYVONALBAN (közös függőleges
+      // axis). Rotáció [-π/2, 0, 0]: builder +Z (a pinion tengelye) → world +Y
+      // (az +Y axis a bracket-1 +π/2 Y-körüli forgatása alatt változatlan),
+      // így gear face (builder Z = -10..0) lent, hub (builder Z = 0..+14) fent.
       //
-      // A koszorú back face közvetlenül a boss teteje fölé (small clearance):
-      //   gear_back  = 62.6 + 0.4 = 63.0  → komponens-lokális Z = -10..0
-      //   gear_front = 73.0
-      //   hub        = 73.0 .. 87.0       (a hub tetõ ~4 mm-rel túlnyúl a shaft
-      //                                    végén, ami a referencia képen is
-      //                                    látható; a set screwök azonban a
-      //                                    hub közepén Z = 80-on a tengely
-      //                                    területén belül kapaszkodnak).
-      // → komponens origó (motor builder-lokális Z) = 63 + GEAR_FACE_W = 73.
+      // POZÍCIÓ a gear-bracket-1 lokális frame-ben:
+      //   - X (bracket) = 0  — közös motor YZ síkban a #8-cal (world Z = 0)
+      //   - Z (bracket) = -12.76  — a #8 axisa = a driver pitch cone apex X-ében
+      //                            (apex motor-Z 93.24 - bracket center motor-Z 106)
+      //   - Y (bracket) = +18.2  — origin_Y = OUTER_HEIGHT_Y/2 - gearFaceWidth
+      //                            + ARM_Y_OFFSET. A [π/2,0,0] rotáció miatt builder
+      //                            Z = -GEAR_FACE_W → world +Y eltolás +10, ezért
+      //                            a pinion gear-face TETEJE world-Y = +28.2
+      //                            (= a LEEMELT felső arm tetején, mert ARM_Y_OFFSET
+      //                            = -10), ALJA = +18.2 - HUB_HEIGHT = +4.2. Az érték
+      //                            a felhasználói kéréseknek megfelelően lépésről
+      //                            lépésre lett módosítva: +48.2 (eredeti) → +28.2
+      //                            (a gear face tető a bracket felső arm tetejéhez
+      //                            illesztve, -20) → +18.2 (még -10) → +28.2
+      //                            (visszaemelve +10, együtt a #18 tengelyel) →
+      //                            +18.2 (lejjebb -10, együtt a leeresztett arm-okkal
+      //                            és a #18 tengelyel).
+      //
+      // A pinion bore (Ø8) függőlegesen átmegy az egész fogaskeréken; a #8 driven
+      // gear bore-jával PONTOSAN egy tengelyen (bracket X=0, Z=-12.76, az apex
+      // függőleges vonalán). A második furat +Z-ben (+40 mm world-X) és a #19
+      // másolat külön — az eredeti #6 itt marad X=0-nál.
       position: [
         0,
-        0,
-        NEMA23_MOTOR_DIMENSIONS.bodyLength / 2 +
-          NEMA23_MOTOR_DIMENSIONS.bossHeight +
-          0.4 +
-          PINION_GEAR_15M_17T_DIMENSIONS.gearFaceWidth,
+        GEAR_BRACKET_DIMENSIONS.outerHeightY / 2 -
+          PINION_GEAR_15M_17T_DIMENSIONS.gearFaceWidth +
+          GEAR_BRACKET_DIMENSIONS.armYOffset,
+        -12.76,
       ],
+      rotation: [Math.PI / 2, 0, 0],
     },
     bbox: {
       // Builder-lokális bbox: tipDiam × tipDiam × totalHeight.
@@ -392,31 +420,60 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       realistic: PinionGear15M17TRealistic,
     },
     description:
-      'NEMA 23 motor X-tengely pinion fogaskerék: modul 1.5, 17 fog, Ø8 furat. ' +
-      'Set screw collar (hub) tartja a tengelyen. A fogazat involute közelítéssel, ' +
-      '20° nyomásszöggel modellezve, 28.5 mm fejkör-átmérővel.',
+      'Spur fogaskerék: modul 1.5, 17 fog, Ø8 furat, set screw collar (hub). A ' +
+      '`gear-bracket-1` U-bracket FELSŐ arm-jánál — az X körüli 180°-os fordítás ' +
+      'után a gear face FELÜL (a bracket teteje SZINTJÉN), a hub LEFELÉ a bracket ' +
+      'belseje felé nyúlik. A `bevel-gear-driven-1` (#8) furatával EGY KÖZÖS ' +
+      'FÜGGŐLEGES TENGELYEN (world axis +Y, X = driver apex X). A pinion gear ' +
+      'face TETEJE PONTOSAN a gear-bracket felső szárának tetején (Y = +38.2) van.',
   },
   {
-    id: 'bevel-gear-driven-1',
+    id: 'bevel-gear-driver-1',
     num: 7,
-    nameHu: 'kúpfogaskerék 1.5M 20T 45° (hajtott)',
-    nameEn: 'bevel gear 1.5M 20T 45° (driven)',
+    nameHu: 'kúpfogaskerék 1.5M 20T 45° (hajtó, X motoron)',
+    nameEn: 'bevel gear 1.5M 20T 45° (driver, on X motor)',
     color: generatePartColor(6),
-    parentId: 'base',
-    assemblyId: 'preview-shelf',
+    parentId: 'nema23-motor-1',
+    assemblyId: 'x-axis-drive',
     transform: {
-      // Builder-lokális +Z = a gear axis. Rotation [-π/2, 0, 0]: builder +Z → world +Y.
-      // A fogazat builder-Z = -6.36..0 között van, így rotáció után world-Y = origin_Y - 6.36
-      // .. origin_Y. Origin_Y = base-local 49 → world Y = 45 (a base-tetejéhez közel).
-      // A "kis vég" (Z=0) felfelé néz — ide kerül majd hozzá a cilinder.
-      position: [200, 49, 80],
-      rotation: [-Math.PI / 2, 0, 0],
+      // A kúpfogaskerék MÁSOLATA, hajtó (driver) gyanánt a NEMA 23 X-motor
+      // tengelyére (Ø8 × 22 mm) feltolva. A motor builder +Z = a tengely iránya
+      // (a szülő bracket-1 [0, +π/2, 0] rotációja után ez world +X-be mappolódik).
+      // A fogaskerék builder +Z is a saját tengelye → identity rotációval a
+      // gear axisa egybeesik a motor tengelyével.
+      //
+      // Pozicionálás motor-lokális Z-ben:
+      //   - motor body front face: motor-Z = +61 (= bodyLength/2)
+      //   - boss tető:             motor-Z = +62.6 (= bodyLength/2 + bossHeight)
+      //   - shaft:                 motor-Z = +62.6 .. +84.6 (22 mm hosszú)
+      //
+      // A bevel gear builder-Z = HUB_Z_BOTTOM (-16.36) .. Z_TOOTH_TOP (0).
+      // A fogazat KIS vége (Z = 0) PONTOSAN a tengely végéhez illesztve:
+      //   gear_origin_Z = shaft tip motor-Z
+      //                 = bodyLength/2 + bossHeight + shaftLength
+      //                 = 61 + 1.6 + 22 = 84.6
+      // Így:
+      //   - hub alja          motor-Z = 84.6 - 16.36 = 68.24 (a gear-bracket-1
+      //                       base wall belsejében — szükséges hozzá a
+      //                       Ø40 átmenő furat a base wall-on, lásd `gear-bracket-1`)
+      //   - hub teteje / cone wide  motor-Z = 78.24
+      //   - fogazat kis vége (tip)  motor-Z = 84.6 = shaft tip
+      //
+      // A gear NEM fekszik fel a motor előlapjára / boss-ra (a tengely + a
+      // beépített Ø8 furat radiális vezetése + esetleges set-screw / locktite tartja).
+      position: [
+        0,
+        0,
+        NEMA23_MOTOR_DIMENSIONS.bodyLength / 2 +
+          NEMA23_MOTOR_DIMENSIONS.bossHeight +
+          NEMA23_MOTOR_DIMENSIONS.shaftLength,
+      ],
     },
     bbox: {
       size: [
         BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS.tipDiamBack,
         BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS.tipDiamBack,
-        BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS.toothAxialExtent,
+        BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS.totalAxialExtent,
       ],
     },
     builders: {
@@ -425,8 +482,69 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       realistic: BevelGear15M20T45degRealistic,
     },
     description:
-      'Kúpfogaskerék — 1.5M, 20T, 45° osztókúpszög. STRIPPED változat: csak a ' +
-      'fogazat (bordázat) jelenik meg, hub/cilinder a következő lépésben kerül hozzá.',
+      'Kúpfogaskerék — 1.5M, 20T, 45° osztókúpszög, hajtó (driver) tag a NEMA 23 ' +
+      'X-motor tengelyén. Hub a motor felé (boss fölött), fogazat a motortól el ' +
+      'irányba (világ +X). Azonos építésű mint a `bevel-gear-driven-1` partner.',
+  },
+  {
+    id: 'bevel-gear-driven-1',
+    num: 8,
+    nameHu: 'kúpfogaskerék 1.5M 20T 45° (hajtott)',
+    nameEn: 'bevel gear 1.5M 20T 45° (driven)',
+    color: generatePartColor(7),
+    parentId: 'gear-bracket-1',
+    assemblyId: 'x-axis-drive',
+    transform: {
+      // A `bevel-gear-driver-1` partnere — a `gear-bracket-1` GYERMEKÉKÉNT, a U
+      // belsejében (cavity-ben) elhelyezve, axisa +Y felé (FORGATÁS VÁLTOZATLAN
+      // a preview-höz képest: [-π/2, 0, 0]).
+      //
+      // MESHING SZÁMÍTÁS (45° osztókúpszögű bevel pair, közös pitch cone apex):
+      //   - Driver (#7) origin (= teeth tip) motor-Z = +84.6
+      //   - Driver pitch back face motor-Z = 84.6 - toothAxialExtent (6.36) = 78.24
+      //   - Apex axiális távolság a back face-től = pitchR_BACK / tan(45°) = 15 mm
+      //   - Driver pitch cone APEX motor-Z = 78.24 + 15 = 93.24
+      //     (= world X = motor_world_X + 93.24)
+      //
+      //   - Driven axisa = world +Y, az apex-en keresztül
+      //   - Driven origin (= teeth tip, builder Z=0) az apex-től lefelé 8.64 mm
+      //     (apex builder Z = +8.64 = pitchR_BACK - toothAxialExtent)
+      //   - Driven origin world: (apex_X, motor_Y - 8.64, 0)
+      //
+      // POZÍCIÓ a gear-bracket-1 lokális frame-ben:
+      //   - Gear-bracket center motor-Z = bodyLength/2 + TOTAL_Z/2 = 61 + 45 = 106
+      //   - bracket +Z = motor +Z = world +X (bracket-1 [0, π/2, 0] miatt)
+      //   - bracket +Y = world +Y (változatlan)
+      //   - bracket +X = world -Z
+      //   - X (bracket) = 0  (driven axis = motor axis YZ síkban, world Z = 0)
+      //   - Y (bracket) = -8.64  (driven origin world Y - bracket center Y = -APEX_AXIAL)
+      //   - Z (bracket) = 93.24 - 106 = -12.76  (apex motor-Z minus bracket center motor-Z)
+      //
+      // ÉRINTKEZÉSI PONT: a driver pitch back körének legalsó pontja (world Y =
+      // motor_Y - 15) megegyezik a driven pitch back körének leg-X pontjával —
+      // egy közös pitch pontban érintkeznek (mesh).
+      position: [0, -8.64, -12.76],
+      rotation: [-Math.PI / 2, 0, 0],
+    },
+    bbox: {
+      size: [
+        BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS.tipDiamBack,
+        BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS.tipDiamBack,
+        BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS.totalAxialExtent,
+      ],
+    },
+    builders: {
+      schematic: BevelGear15M20T45degSchematic,
+      medium: BevelGear15M20T45degMedium,
+      realistic: BevelGear15M20T45degRealistic,
+    },
+    description:
+      'Kúpfogaskerék — 1.5M, 20T, 45° osztókúpszög, fogazat + root cone + ' +
+      'Ø24×10 mm hub cilinder Ø8 furattal. A `bevel-gear-driver-1` MESHELŐ ' +
+      'partnere: gear-bracket-1 U-cavity-jében felfüggesztve, axisa függőleges ' +
+      '(+Y), a driver pitch cone apex-én osztva közös találkozási pontot. A ' +
+      'driven hub a gear-bracket alsó arm-ja közelében lóg le (Y ~ -25), a ' +
+      'fogazat felfelé mutat és a driver fogazatával felülről érintkezik.',
   },
   {
     id: 'gearbox-1',
@@ -765,6 +883,255 @@ export const TUBE_BENDER_REGISTRY: ComponentDef[] = [
       'szíjszélességhez, kiemelt hub-bal (Ø14 × 8 mm) és 2 db M4 set screw-vel. ' +
       'Külső Ø ≈ 23.11 mm, flange Ø ≈ 28.11 mm. A 70T-vel együtt 4.67:1 lassító ' +
       'áttételt ad — a motor tengelyén (Ø8 NEMA 23) ülve hajtja a nagy pulley-t.',
+  },
+  {
+    id: 'gear-bracket-1',
+    num: 16,
+    nameHu: 'gear konzol (X motor előtt, U-tartó pinion + követő fogaskerékhez)',
+    nameEn: 'gear bracket (in front of X motor, U-frame for pinion + driven gear)',
+    color: generatePartColor(15),
+    parentId: 'nema23-motor-1',
+    assemblyId: 'x-axis-drive',
+    transform: {
+      // A bracket a NEMA 23 motor (X-tengely, #3) GYERMEKE. A motor builder
+      // lokális +Z = motor shaft iránya, így a bracket builder identity rotációval
+      // helyesen tájolódik: a builder +Z (a U szárainak iránya) = motor +Z =
+      // bracket-1 forgatása ([0, π/2, 0]) után world +X — vagyis a U a
+      // csőelőtolás (és a hajtott komponensek) irányába nyitva áll.
+      //
+      // POZÍCIÓ-SZÁMÍTÁS (motor-lokális Z mentén):
+      //   - Motor flange front face:           motor-Z = +BODY/2 = +61
+      //   - Bracket base wall back face KÖZVETLENÜL érintkezik a motor flange
+      //     front face-ével (motor-Z = +61). NINCS anya közöttük (lásd
+      //     `menetes-szar-szerelveny-1` átszervezett anyák) — a motor flange
+      //     a bracket base wall-jára szorítva, a két felület tisztán egymáson.
+      //   - Bracket base wall front face: +61 + MATERIAL_T = +71
+      //   - Bracket arm vég:               +61 + TOTAL_Z = +151
+      //   - Bracket builder GEOMETRIAI KÖZÉPPONT (origó) motor-lokálisban:
+      //     +61 + TOTAL_Z/2 = +61 + 45 = +106
+      //
+      // X, Y = 0 (a base wall és az arm-ok X-ben és Y-ben centrálva a motor
+      // tengelyére, mert a builder origó a bbox közepén van, és a 47.14 furat-
+      // pattern is a centrumhoz képest szimmetrikus).
+      //
+      // KÖZPONTI Ø40 ÁTMENŐ FURAT a base wall-on: a motor pilot boss (Ø38.1)
+      // belefekszik (axiálisan a motor-Z +61..+62.6 közé esik, a bracket base
+      // wall +61..+71 régiójában — közös tengellyel), és a `bevel-gear-driver-1`
+      // hub (Ø24 OD, motor-Z +68.24..+78.24) is szabadon átfér rajta. Így a
+      // bracket úgy fekszik fel a motor flange front face-ére, hogy a boss + hub
+      // a Ø40 furatban van, nem akadnak össze a base wall anyagával.
+      position: [
+        0,
+        0,
+        NEMA23_MOTOR_DIMENSIONS.bodyLength / 2 + GEAR_BRACKET_DIMENSIONS.totalLengthZ / 2,
+      ],
+      rotation: [0, 0, 0],
+    },
+    bbox: {
+      // Builder-lokális bbox: szélesség (X) × outer magasság (Y) × teljes Z.
+      size: [
+        GEAR_BRACKET_DIMENSIONS.widthX,
+        GEAR_BRACKET_DIMENSIONS.outerHeightY,
+        GEAR_BRACKET_DIMENSIONS.totalLengthZ,
+      ],
+    },
+    builders: {
+      schematic: GearBracketSchematic,
+      medium: GearBracketMedium,
+      realistic: GearBracketRealistic,
+    },
+    description:
+      'Alumínium U-tartó (gear konzol) a NEMA 23 X-motor flange előlapjához ' +
+      'KÖZVETLENÜL felfekve, a 4 db M5 menetes száron felfűzve. Befoglaló méret: ' +
+      '56.4 (X) × 76.4 (Y) × 90 (Z, a base wall 10 mm + 80 mm arm). 3 szakasz: ' +
+      '(1) base wall 56.4×76.4×10 mm: 4 db Ø5.1 furat a NEMA 23 47.14 mm ' +
+      'pattern-en (a motor flange furataival egyező pozícióban) + 1 db Ø40 ' +
+      'KÖZPONTI átmenő furat a hub + boss clearance-hez; (2+3) felső és alsó ' +
+      'arm = 56.4×10×80 mm, a base wall tetején/alján +Z (motor shaft) irányba ' +
+      'kinyúlva. A 2 arm közötti BELSŐ gap = 56.4 mm. Az U szárai a motor ' +
+      'tengelyirányába (world +X) nyúlnak, befogadva a `bevel-gear-driver-1` ' +
+      'hajtó kúpfogaskereket és a leendő követő (driven) fogaskereket.',
+  },
+  {
+    id: 'shaft-support-1',
+    num: 17,
+    nameHu: 'tengelytámasz SHF20 (Ø20 tengely, álló blokk M5 szorítóval)',
+    nameEn: 'shaft support SHF20 (Ø20 shaft, upright block with M5 clamp)',
+    color: generatePartColor(16),
+    parentId: 'base',
+    assemblyId: 'frame',
+    transform: {
+      // Az alaplemez ('base') GYERMEKE. A base lokális koordinátarendszerében
+      // a base teteje Y = +BASE_HEIGHT/2 = +4. A támasz alja erre fekszik fel,
+      // a builder origó (Y = 0) a támasz GEOMETRIAI KÖZEPE → builder Y eltolás
+      // = +BASE_HEIGHT/2 + H/2 = +4 + 25 = +29.
+      //
+      // X-pozíció: ideiglenesen az alap KÖZEPÉRE helyezve (X = 0); a végleges
+      // pozíció a csőelőtoló / csőtengely-vezető mentén kerül megadásra,
+      // miután a tengely végpontját ismerjük. Z = 0 a base közepén.
+      position: [
+        0,
+        BASE_DIMENSIONS.height / 2 + SHAFT_SUPPORT_SHF20_DIMENSIONS.totalHeight / 2,
+        0,
+      ],
+      rotation: [0, 0, 0],
+    },
+    bbox: {
+      // Builder-lokális bbox: A (X) × H (Y) × B (Z).
+      size: [
+        SHAFT_SUPPORT_SHF20_DIMENSIONS.totalWidth,
+        SHAFT_SUPPORT_SHF20_DIMENSIONS.totalHeight,
+        SHAFT_SUPPORT_SHF20_DIMENSIONS.totalThickness,
+      ],
+    },
+    builders: {
+      schematic: ShaftSupportSHF20Schematic,
+      medium: ShaftSupportSHF20Medium,
+      realistic: ShaftSupportSHF20Realistic,
+    },
+    description:
+      'Tengelytámasz blokk Ø20 mm-es fix tengelyhez (SHF20 / SK20 stílus). ' +
+      'Méretek: A=60 (X) × H=50 (Y) × B=30 (Z) mm, tengely-magasság h=30, ' +
+      'furattáv A1=42, 2 db Ø8.6 átmenő rögzítő furat (M8 clearance) + ' +
+      '2 db M10×25 menetes furat alulról. A bore tetején függőleges szorító-rés, ' +
+      'felül M5 (DIN 912) szorítócsavar X-irányban átmenve a réseken. ' +
+      'Anyaga: alumínium. A bore tengelye +Z irányba mutat (a csőtengely-vezető ' +
+      'tengelyt párhuzamosan tartja a base hosszanti irányával).',
+  },
+  {
+    id: 'shaft-pinion-bevel-1',
+    num: 18,
+    nameHu: 'tengely Ø8 (pinion ↔ bevel közös)',
+    nameEn: 'shaft Ø8 (pinion ↔ bevel common)',
+    color: generatePartColor(17),
+    parentId: 'gear-bracket-1',
+    assemblyId: 'x-axis-drive',
+    transform: {
+      // A tengely a gear-bracket-1 LOKÁLIS frame-jében áll függőlegesen (+Y).
+      // A bracket Y-tartománya (szimmetrikus): -OUTER_HEIGHT_Y/2 .. +OUTER_HEIGHT_Y/2
+      // = -38.2 .. +38.2; az ARM_Y_OFFSET = -10 miatt az arm-ok jelenlegi Y-jai:
+      // felső arm: +23.2 .. +33.2, alsó arm: -43.2 .. -33.2.
+      //
+      // Eredeti követelmény: tengely ALJA = bracket alja (Y = -38.2), TETEJE =
+      // bracket teteje + 20 mm (Y = +58.2). Hossz = 96.4 mm, közép = +10.0.
+      //
+      // MÓDOSÍTÁSOK:
+      //   1) +10 mm felfelé (a #6 fogaskerékkel együtt): közép +10.0 → +20.0.
+      //   2) -10 mm lefelé (a #6 fogaskerékkel és a leeresztett arm-okkal együtt):
+      //      közép +20.0 → +10.0. Most az alja -38.2, a teteje +58.2 (visszatért
+      //      az eredeti pozícióhoz). Az alsó arm furata (Y = -43.2..-33.2) körül
+      //      a tengely átmegy; a felső arm furatán (Y = +23.2..+33.2) is.
+      //
+      // X-Z pozíció: a `bevel-gear-driven-1` (#8) függőleges axisa, ami egybeesik
+      // a `pinion-gear-1` (#6) bore-jával. Lásd a #8 MESHING SZÁMÍTÁSA blokkot:
+      //   - X (bracket) = 0
+      //   - Z (bracket) = -12.76
+      //
+      // A `cylinderGeometry` default tengelye +Y, ezért rotation = identity.
+      // A `gear-bracket-1` Realistic LOD-ja Ø8 átmenő furatot ad MINDKÉT arm-ra
+      // (X=0, Z=-12.76) — lásd `GearBracket.tsx` `buildArmGeometry`-jét.
+      // X = +40 (átszervezve a #6 fogaskerékkel együtt a 16. elem MÁSIK
+      // oldalán található Ø8 furathoz). Az eredeti X=0 a #8 driven bevel
+      // axisán volt, de a felhasználói kérésre most +40-rel +X-be került.
+      position: [+40, +10.0, -12.76],
+      rotation: [0, 0, 0],
+    },
+    bbox: {
+      size: [
+        SHAFT_8MM_DIMENSIONS.diameter,
+        SHAFT_8MM_DIMENSIONS.length,
+        SHAFT_8MM_DIMENSIONS.diameter,
+      ],
+    },
+    builders: {
+      schematic: Shaft8mmSchematic,
+      medium: Shaft8mmMedium,
+      realistic: Shaft8mmRealistic,
+    },
+    description:
+      'Edzett szénacél tengely Ø8 × 96.4 mm — a `pinion-gear-1` (#6) és a ' +
+      '`bevel-gear-driven-1` (#8) közös függőleges forgástengelye. A ' +
+      '`gear-bracket-1` (#16) MINDKÉT (leeresztett) szárán átmegy a Ø8 furatokon: ' +
+      'felső arm (Y = +23.2..+33.2) és alsó arm (Y = -43.2..-33.2). Tengely Y ' +
+      'tartománya: -38.2..+58.2 (közép = +10.0, hossz 96.4 mm). A két fogaskerék ' +
+      'agglyukát ezen a közös tengelyen forog egyszerre, így a #6 → #8 erőátvitel ' +
+      'a tengely körül történik (vagy fix tengely + csapágyazott fogaskerekek, ' +
+      'vagy fix fogaskerekek + forgó tengely — ez a regiszter szempontjából ' +
+      'irreleváns).',
+  },
+  {
+    id: 'pinion-gear-2',
+    num: 19,
+    nameHu: 'fogaskerék 1.5M 17T (másolat, 2. furat: +Z40, X−6)',
+    nameEn: 'pinion gear 1.5M 17T (copy, 2nd hole: +Z40, X−6)',
+    color: generatePartColor(18),
+    parentId: 'gear-bracket-1',
+    assemblyId: 'x-axis-drive',
+    transform: {
+      // A #6 (`pinion-gear-1`) MÁSOLATA, ugyanazon a bracket-en (#16), a 2. Ø8
+      // furaton: bracket-lokális (X, Z) = (shaftHoleX2, shaftHoleZ2).
+      // A többi paraméter (Y, rotation) változatlan a #6-hoz képest.
+      position: [
+        GEAR_BRACKET_DIMENSIONS.shaftHoleX2,
+        GEAR_BRACKET_DIMENSIONS.outerHeightY / 2 -
+          PINION_GEAR_15M_17T_DIMENSIONS.gearFaceWidth +
+          GEAR_BRACKET_DIMENSIONS.armYOffset,
+        GEAR_BRACKET_DIMENSIONS.shaftHoleZ2,
+      ],
+      rotation: [Math.PI / 2, 0, 0],
+    },
+    bbox: {
+      size: [
+        PINION_GEAR_15M_17T_DIMENSIONS.tipDiam,
+        PINION_GEAR_15M_17T_DIMENSIONS.tipDiam,
+        PINION_GEAR_15M_17T_DIMENSIONS.totalHeight,
+      ],
+    },
+    builders: {
+      schematic: PinionGear15M17TSchematic,
+      medium: PinionGear15M17TMedium,
+      realistic: PinionGear15M17TRealistic,
+    },
+    description:
+      'A `pinion-gear-1` (#6) MÁSOLATA — azonos geometriával, ugyanazon a ' +
+      '`gear-bracket-1`-en (#16), a bracket arm-jain lévő 2. Ø8 furaton ' +
+      '(bracket-lokális Z = +27.24 az 1.-től +40 mm world-X-ben, X = -6 mm). ' +
+      'A másolt #20 tengelyen forog. A #8 driven bevel-lel NEM mesh-el.',
+  },
+  {
+    id: 'shaft-pinion-bevel-2',
+    num: 20,
+    nameHu: 'tengely Ø8 (másolat, 2. furat: +Z40, X−6)',
+    nameEn: 'shaft Ø8 (copy, 2nd hole: +Z40, X−6)',
+    color: generatePartColor(19),
+    parentId: 'gear-bracket-1',
+    assemblyId: 'x-axis-drive',
+    transform: {
+      // A #18 (`shaft-pinion-bevel-1`) MÁSOLATA, a 2. Ø8 furaton: (X, Z) =
+      // (shaftHoleX2, shaftHoleZ2). Y és rotation a #18-hoz igazítva.
+      position: [
+        GEAR_BRACKET_DIMENSIONS.shaftHoleX2,
+        +10.0,
+        GEAR_BRACKET_DIMENSIONS.shaftHoleZ2,
+      ],
+      rotation: [0, 0, 0],
+    },
+    bbox: {
+      size: [
+        SHAFT_8MM_DIMENSIONS.diameter,
+        SHAFT_8MM_DIMENSIONS.length,
+        SHAFT_8MM_DIMENSIONS.diameter,
+      ],
+    },
+    builders: {
+      schematic: Shaft8mmSchematic,
+      medium: Shaft8mmMedium,
+      realistic: Shaft8mmRealistic,
+    },
+    description:
+      'A `shaft-pinion-bevel-1` (#18) MÁSOLATA — azonos Ø8 × 96.4 mm acéltengely, ' +
+      'ugyanazon a `gear-bracket-1`-en (#16), a 2. Ø8 furaton (Z = +27.24, X = -6). ' +
+      'A `pinion-gear-2` (#19) másolt fogaskereket tartja.',
   },
 ]
 

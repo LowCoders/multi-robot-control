@@ -1,0 +1,32 @@
+{
+  "root": true,
+  "env": {
+    "node": true,
+    "es2022": true
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "plugins": ["@typescript-eslint"],
+  "globals": {
+    "NodeJS": "readonly"
+  },
+  "rules": {
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-useless-escape": "warn"
+  },
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    "src/api/bridge-types.ts",
+    "src/api/bridge-openapi.json"
+  ]
+}

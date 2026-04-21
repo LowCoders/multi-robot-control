@@ -60,7 +60,7 @@ function Scene({
 
   useEffect(() => {
     if (cameraFov && cameraFov !== prevFov.current) {
-      ;(camera as THREE.PerspectiveCamera).fov = cameraFov
+      (camera as THREE.PerspectiveCamera).fov = cameraFov
       ;(camera as THREE.PerspectiveCamera).updateProjectionMatrix()
       prevFov.current = cameraFov
     }

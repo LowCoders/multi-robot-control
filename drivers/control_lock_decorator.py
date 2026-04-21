@@ -70,6 +70,14 @@ class ControlLockDecorator(DeviceDriver):
         self._inner = inner
         self._supports_panel_controller = bool(supports_panel_controller)
         self._control = ControlState()
+        # External hook (set by bridge_server) for push-based control state
+        # updates. Whenever the lock decorator detects a change in control
+        # ownership/lock_state/version, this callback fires so the bridge can
+        # broadcast it over WS without periodic polling.
+        self.on_control_change: Optional[
+            "callable[[Dict[str, Any]], None]"  # type: ignore[name-defined]
+        ] = None
+        self._last_emitted_signature: Optional[tuple] = None
         self._sync_from_inner()
         self._wire_inner_callbacks()
 
@@ -136,6 +144,28 @@ class ControlLockDecorator(DeviceDriver):
 
     def _refresh_control_state(self) -> None:
         self._control.can_take_control = self._compute_can_take_control()
+        self._maybe_emit_control_change()
+
+    def _control_signature(self) -> tuple:
+        return (
+            self._control.owner.value,
+            self._control.lock_state.value,
+            self._control.reason or "",
+            int(self._control.version),
+            bool(self._control.can_take_control),
+        )
+
+    def _maybe_emit_control_change(self) -> None:
+        if self.on_control_change is None:
+            return
+        sig = self._control_signature()
+        if sig == self._last_emitted_signature:
+            return
+        self._last_emitted_signature = sig
+        try:
+            self.on_control_change(self._control.to_dict())
+        except Exception as exc:  # pragma: no cover - safety net
+            logger.error(f"on_control_change callback hiba: {exc}")
 
     def sync_firmware_owner(
         self,

@@ -1,14 +1,39 @@
 /**
- * Device Manager - Eszközök kezelése a Python bridge-en keresztül
+ * Device Manager — vékony orchestrátor.
+ *
+ * Felelőssége: a Bridge HTTP API + Bridge WS + DevicePoller összekötése
+ * és a `StateManager`-en keresztüli broadcast a frontend felé. A HTTP
+ * hívások a `BridgeClient` típusos kliensbe, a WS pedig a `BridgeWsClient`-be
+ * lett kiemelve. Ez a fájl így már csak orchestrálja a részeket és tartja a
+ * `Map<string, Device>` cache-t.
+ *
+ * Backward compatible: a route-ok és tesztek minden korábbi public method-ra
+ * (jog, run, gripperOn, …) ugyanúgy hivatkozhatnak.
  */
 
-import axios, { AxiosInstance } from 'axios';
-import WebSocket from 'ws';
 import { DeviceConfigEntry } from '../config/index.js';
 import { StateManager } from '../state/StateManager.js';
 import { createLogger } from '../utils/logger.js';
+import { BridgeClient, JogDiagnostics } from './bridgeClient.js';
+import {
+  BridgeWsClient,
+  BridgeMessage,
+  StatusMsg,
+  StateChangeMsg,
+  PositionMsg,
+  ErrorMsg,
+  JobCompleteMsg,
+  JobProgressMsg,
+  ControlStateMsg,
+  ControlDeniedMsg,
+} from './BridgeWsClient.js';
+import { DevicePoller } from './DevicePoller.js';
 
 const log = createLogger('devices');
+
+// =============================================================================
+// PUBLIC TYPES
+// =============================================================================
 
 export interface DeviceStatus {
   state: string;
@@ -35,12 +60,9 @@ export interface DeviceStatus {
   error_message: string | null;
   feed_override: number;
   spindle_override: number;
-  // Robot arm specific
   gripper_state?: 'open' | 'closed' | 'unknown';
   sucker_state?: boolean;
-  // Endstop states per axis (true = triggered)
   endstop_states?: Record<string, boolean>;
-  // Endstop blocked directions: {'Y': 'positive', ...}
   endstop_blocked?: Record<string, string>;
 }
 
@@ -70,7 +92,6 @@ export interface DeviceCapabilities {
     y: number;
     z: number;
   };
-  // Per-axis software limits
   axis_limits?: Record<string, AxisLimit>;
 }
 
@@ -99,34 +120,35 @@ export interface Device {
   control?: DeviceControlState;
 }
 
+// =============================================================================
+// MANAGER
+// =============================================================================
+
 export class DeviceManager {
-  private bridgeUrl: string;
-  private http: AxiosInstance;
-  private bridgeWs: WebSocket | null = null;
-  private devices: Map<string, Device> = new Map();
-  private stateManager: StateManager;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private statusPollTimer: NodeJS.Timeout | null = null;
-  private autoClaimAttemptAt: Map<string, number> = new Map();
-  
-  // Poll status every 500ms for active jobs
-  private static readonly STATUS_POLL_INTERVAL = 500;
-  private static readonly AUTO_CLAIM_THROTTLE_MS = 2500;
-  
+  private readonly devices = new Map<string, Device>();
+  private readonly stateManager: StateManager;
+  private readonly bridge: BridgeClient;
+  private readonly ws: BridgeWsClient;
+  private readonly poller: DevicePoller;
+
   constructor(bridgeUrl: string, stateManager: StateManager) {
-    this.bridgeUrl = bridgeUrl;
     this.stateManager = stateManager;
-    
-    this.http = axios.create({
-      baseURL: bridgeUrl,
-      timeout: 10000,
+    this.bridge = new BridgeClient(bridgeUrl);
+    this.ws = new BridgeWsClient(bridgeUrl, (msg) => this.handleBridgeMessage(msg));
+    this.poller = new DevicePoller({
+      listDevices: () => Array.from(this.devices.values()),
+      refreshStatus: async (id) => {
+        await this.getDeviceStatus(id);
+      },
+      tryAutoClaim: async (id) => {
+        await this.tryAutoClaimHost(id, 'poll');
+      },
     });
   }
-  
+
   async initialize(deviceConfigs: DeviceConfigEntry[]): Promise<void> {
     log.info('DeviceManager inicializálás...');
-    
-    // Eszközök inicializálása a konfigból
+
     for (const config of deviceConfigs) {
       if (config.enabled !== false) {
         this.devices.set(config.id, {
@@ -139,57 +161,25 @@ export class DeviceManager {
         });
       }
     }
-    
-    // Bridge WebSocket csatlakozás
-    await this.connectToBridge();
-    
-    // Eszközök lekérdezése a bridge-től
+
+    await this.ws.connect();
     await this.refreshDevices();
-    
-    // Start periodic status polling
-    this.startStatusPolling();
-    
+    this.poller.start();
+
     log.info(`DeviceManager inicializálva, ${this.devices.size} eszköz`);
   }
-  
-  /**
-   * Start periodic status polling for all devices
-   * This ensures status updates (current_line, current_file, etc.) are broadcast
-   */
-  private startStatusPolling(): void {
-    if (this.statusPollTimer) {
-      clearInterval(this.statusPollTimer);
-    }
-    
-    this.statusPollTimer = setInterval(async () => {
-      await this.pollAllDeviceStatus();
-    }, DeviceManager.STATUS_POLL_INTERVAL);
-    
-    log.info('Status polling started');
+
+  cleanup(): void {
+    log.info('DeviceManager cleanup...');
+    this.poller.stop();
+    this.ws.cleanup();
   }
-  
-  private async pollAllDeviceStatus(): Promise<void> {
-    for (const device of this.devices.values()) {
-      // Only poll status for connected devices
-      if (device.connected) {
-        try {
-          await this.getDeviceStatus(device.id);
-          // Ownership can change outside host flow (e.g. panel button takeover),
-          // so poll and broadcast control state as part of periodic refresh too.
-          const control = await this.getDeviceControlState(device.id);
-          if (control) {
-            await this.tryAutoClaimHost(device.id, 'poll');
-          }
-        } catch (error) {
-          // Ignore polling errors, device might be busy
-        }
-      }
-    }
-  }
+
+  // ---------------- AUTO-CLAIM POLICY ----------------
 
   private async tryAutoClaimHost(
     deviceId: string,
-    trigger: 'startup' | 'connect' | 'poll' = 'poll'
+    trigger: 'startup' | 'connect' | 'poll'
   ): Promise<void> {
     const device = this.devices.get(deviceId);
     if (!device || !device.connected) return;
@@ -198,308 +188,189 @@ export class DeviceManager {
     if (device.control.owner !== 'none') return;
     if (['running', 'paused', 'homing', 'probing', 'jog'].includes(device.state)) return;
 
-    const now = Date.now();
-    const last = this.autoClaimAttemptAt.get(deviceId) || 0;
-    if (trigger === 'poll' && now - last < DeviceManager.AUTO_CLAIM_THROTTLE_MS) {
-      return;
+    // Throttle csak a poll triggernél; startup/connect azonnal próbálkozik.
+    if (trigger === 'poll') {
+      if (!this.poller.shouldAutoClaim(deviceId)) return;
+      this.poller.recordAutoClaim(deviceId);
     }
-    this.autoClaimAttemptAt.set(deviceId, now);
 
     const result = await this.requestControl(deviceId, 'host', `backend_autoclaim_${trigger}`);
     if (!result?.state) return;
     if (result.granted) {
-      this.stateManager.broadcastControlState(deviceId, result.state);
+      this.stateManager.broadcastControlState(deviceId, result.state as DeviceControlState);
       return;
     }
     this.stateManager.broadcastControlDenied(
       deviceId,
       result.reason || 'denied',
-      result.state
+      result.state as DeviceControlState
     );
   }
-  
-  private async connectToBridge(): Promise<void> {
-    const wsUrl = this.bridgeUrl.replace('http', 'ws') + '/ws';
-    
-    // Close existing connection before creating new one
-    this.closeBridgeWs();
-    
-    return new Promise((resolve) => {
-      try {
-        this.bridgeWs = new WebSocket(wsUrl);
-        
-        this.bridgeWs.on('open', () => {
-          log.info('Bridge WebSocket csatlakozva');
-          if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-          }
-          resolve();
-        });
-        
-        this.bridgeWs.on('message', (data) => {
-          try {
-            const message = JSON.parse(data.toString());
-            this.handleBridgeMessage(message);
-          } catch (e) {
-            log.error('Bridge message parse error:', e);
-          }
-        });
-        
-        this.bridgeWs.on('close', () => {
-          log.info('Bridge WebSocket lecsatlakozva');
-          this.scheduleReconnect();
-        });
-        
-        this.bridgeWs.on('error', (error) => {
-          log.error('Bridge WebSocket hiba:', error.message);
-          resolve(); // Ne blokkoljuk az inicializálást
-        });
-        
-      } catch (error) {
-        log.error('Bridge WebSocket csatlakozási hiba:', error);
-        this.scheduleReconnect();
-        resolve();
-      }
+
+  // ---------------- WS MESSAGE DISPATCH ----------------
+
+  private handleBridgeMessage(message: BridgeMessage): void {
+    switch (message.type) {
+      case 'status':
+        this.onStatus(message);
+        break;
+      case 'state_change':
+        this.onStateChange(message);
+        break;
+      case 'position':
+        this.onPosition(message);
+        break;
+      case 'error':
+        this.onError(message);
+        break;
+      case 'job_complete':
+        this.onJobComplete(message);
+        break;
+      case 'job_progress':
+        this.onJobProgress(message);
+        break;
+      case 'control_state':
+        this.onControlState(message);
+        break;
+      case 'control_denied':
+        this.onControlDenied(message);
+        break;
+    }
+  }
+
+  private onStatus(msg: StatusMsg): void {
+    if (!msg.device_id) return;
+    this.updateDeviceStatus(msg.device_id, msg.status);
+  }
+
+  private onStateChange(msg: StateChangeMsg): void {
+    if (!msg.device_id) return;
+    const device = this.devices.get(msg.device_id);
+    if (device) {
+      device.state = msg.new_state;
+      device.connected = msg.new_state !== 'disconnected';
+    }
+    this.stateManager.broadcastStateChange(msg.device_id, msg.old_state, msg.new_state);
+  }
+
+  private onPosition(msg: PositionMsg): void {
+    if (!msg.device_id) return;
+    const device = this.devices.get(msg.device_id);
+    if (device && device.status) {
+      device.status.position = msg.position;
+    }
+    this.stateManager.broadcastPosition(msg.device_id, msg.position);
+  }
+
+  private onError(msg: ErrorMsg): void {
+    if (!msg.device_id) return;
+    const device = this.devices.get(msg.device_id);
+    if (device) {
+      device.state = 'alarm';
+      if (device.status) device.status.error_message = msg.message;
+    }
+    this.stateManager.broadcastError(msg.device_id, msg.message);
+  }
+
+  // ---------------- Kompatibilitási API a tesztek és külső hívók részére ----------------
+  // Ezeket a régi tesztek és néhány külső modul közvetlenül hívja. Belül egyszerűen
+  // delegálnak az új, üzenet-vezérelt belső handlerekre, így nem kell az egész tesztset-et
+  // átírni a `BridgeWsClient` discriminated unionra.
+
+  /** @internal */
+  handleStateChange(deviceId: string, oldState: string, newState: string): void {
+    this.onStateChange({
+      type: 'state_change',
+      device_id: deviceId,
+      old_state: oldState,
+      new_state: newState,
     });
   }
-  
-  private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
-    
-    // Clean up old WebSocket before reconnecting
-    this.closeBridgeWs();
-    
-    this.reconnectTimer = setTimeout(async () => {
-      this.reconnectTimer = null;
-      log.info('Bridge újracsatlakozás...');
-      await this.connectToBridge();
-    }, 5000);
-  }
-  
-  private closeBridgeWs(): void {
-    if (this.bridgeWs) {
-      try {
-        // Remove all listeners to prevent memory leaks
-        this.bridgeWs.removeAllListeners();
-        if (this.bridgeWs.readyState === WebSocket.OPEN || 
-            this.bridgeWs.readyState === WebSocket.CONNECTING) {
-          this.bridgeWs.close();
-        }
-      } catch (e) {
-        // Ignore close errors
-      }
-      this.bridgeWs = null;
-    }
-  }
-  
-  /**
-   * Cleanup method for graceful shutdown
-   */
-  cleanup(): void {
-    log.info('DeviceManager cleanup...');
-    
-    // Cancel reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    
-    // Stop status polling
-    if (this.statusPollTimer) {
-      clearInterval(this.statusPollTimer);
-      this.statusPollTimer = null;
-    }
-    
-    // Close WebSocket connection
-    this.closeBridgeWs();
-  }
-  
-  private handleBridgeMessage(message: {
-    type: string;
-    device_id?: string;
-    [key: string]: unknown;
-  }): void {
-    const { type, device_id } = message;
-    
-    switch (type) {
-      case 'status':
-        if (device_id) {
-          this.updateDeviceStatus(device_id, message.status as DeviceStatus);
-        }
-        break;
-        
-      case 'state_change':
-        if (device_id) {
-          this.handleStateChange(
-            device_id,
-            message.old_state as string,
-            message.new_state as string
-          );
-        }
-        break;
-        
-      case 'position':
-        if (device_id) {
-          this.handlePositionUpdate(device_id, message.position as DeviceStatus['position']);
-        }
-        break;
-        
-      case 'error':
-        if (device_id) {
-          this.handleError(device_id, message.message as string);
-        }
-        break;
-        
-      case 'job_complete':
-        if (device_id) {
-          this.handleJobComplete(device_id, message.file as string);
-        }
-        break;
-        
-      case 'job_progress':
-        if (device_id) {
-          this.handleJobProgress(
-            device_id,
-            message.progress as number,
-            message.current_line as number,
-            message.total_lines as number
-          );
-        }
-        break;
 
-      case 'control_state':
-        if (device_id) {
-          this.handleControlState(
-            device_id,
-            message.control as DeviceControlState
-          );
-        }
-        break;
-
-      case 'control_denied':
-        if (device_id) {
-          this.handleControlDenied(
-            device_id,
-            message.reason as string,
-            message.control as DeviceControlState
-          );
-        }
-        break;
-    }
+  /** @internal */
+  handlePositionUpdate(deviceId: string, position: DeviceStatus['position']): void {
+    this.onPosition({ type: 'position', device_id: deviceId, position });
   }
-  
+
+  /** @internal */
+  handleError(deviceId: string, message: string): void {
+    this.onError({ type: 'error', device_id: deviceId, message });
+  }
+
+  private onJobComplete(msg: JobCompleteMsg): void {
+    if (!msg.device_id) return;
+    this.stateManager.broadcastJobComplete(msg.device_id, msg.file);
+  }
+
+  private onJobProgress(msg: JobProgressMsg): void {
+    if (!msg.device_id) return;
+    const device = this.devices.get(msg.device_id);
+    if (device && device.status) {
+      device.status.progress = msg.progress;
+      device.status.current_line = msg.current_line;
+      device.status.total_lines = msg.total_lines;
+    }
+    this.stateManager.broadcastJobProgress(
+      msg.device_id,
+      msg.progress,
+      msg.current_line,
+      msg.total_lines
+    );
+  }
+
+  private onControlState(msg: ControlStateMsg): void {
+    if (!msg.device_id) return;
+    const device = this.devices.get(msg.device_id);
+    if (device) device.control = msg.control;
+    this.stateManager.broadcastControlState(msg.device_id, msg.control);
+  }
+
+  private onControlDenied(msg: ControlDeniedMsg): void {
+    if (!msg.device_id) return;
+    const device = this.devices.get(msg.device_id);
+    if (device) device.control = msg.control;
+    this.stateManager.broadcastControlDenied(msg.device_id, msg.reason, msg.control);
+  }
+
   private updateDeviceStatus(deviceId: string, status: DeviceStatus): void {
     const device = this.devices.get(deviceId);
     if (device) {
       device.status = status;
       device.state = status.state;
       device.connected = status.state !== 'disconnected';
-      
-      // Broadcast to clients
       this.stateManager.broadcastDeviceStatus(deviceId, status);
     }
   }
-  
-  private handleStateChange(deviceId: string, oldState: string, newState: string): void {
-    const device = this.devices.get(deviceId);
-    if (device) {
-      device.state = newState;
-      device.connected = newState !== 'disconnected';
-      
-      this.stateManager.broadcastStateChange(deviceId, oldState, newState);
-    }
-  }
-  
-  private handlePositionUpdate(deviceId: string, position: DeviceStatus['position']): void {
-    const device = this.devices.get(deviceId);
-    if (device && device.status) {
-      device.status.position = position;
-    }
-    
-    this.stateManager.broadcastPosition(deviceId, position);
-  }
-  
-  private handleError(deviceId: string, message: string): void {
-    const device = this.devices.get(deviceId);
-    if (device) {
-      device.state = 'alarm';
-      if (device.status) {
-        device.status.error_message = message;
-      }
-    }
-    
-    this.stateManager.broadcastError(deviceId, message);
-  }
-  
-  private handleJobComplete(deviceId: string, file: string): void {
-    this.stateManager.broadcastJobComplete(deviceId, file);
-  }
-  
-  private handleJobProgress(
-    deviceId: string,
-    progress: number,
-    currentLine: number,
-    totalLines: number
-  ): void {
-    const device = this.devices.get(deviceId);
-    if (device && device.status) {
-      device.status.progress = progress;
-      device.status.current_line = currentLine;
-      device.status.total_lines = totalLines;
-    }
-    
-    this.stateManager.broadcastJobProgress(deviceId, progress, currentLine, totalLines);
+
+  // ===========================================================================
+  // PUBLIC API — devices CRUD + state
+  // ===========================================================================
+
+  getDevices(): Device[] {
+    return Array.from(this.devices.values());
   }
 
-  private handleControlState(deviceId: string, control: DeviceControlState): void {
-    const device = this.devices.get(deviceId);
-    if (device) {
-      device.control = control;
-    }
-    this.stateManager.broadcastControlState(deviceId, control);
+  getDevice(deviceId: string): Device | undefined {
+    return this.devices.get(deviceId);
   }
 
-  private handleControlDenied(deviceId: string, reason: string, control: DeviceControlState): void {
-    const device = this.devices.get(deviceId);
-    if (device) {
-      device.control = control;
-    }
-    this.stateManager.broadcastControlDenied(deviceId, reason, control);
-  }
-  
-  // =========================================
-  // PUBLIC API
-  // =========================================
-  
   async refreshDevices(): Promise<void> {
     try {
-      const response = await this.http.get('/devices');
-      const bridgeDevices = response.data.devices as Array<{
-        id: string;
-        name: string;
-        type: string;
-        connected: boolean;
-        state: string;
-        simulated?: boolean;
-        connectionInfo?: string;
-        lastError?: string | null;
-        control?: DeviceControlState;
-      }>;
-      
+      const data = await this.bridge.listDevices();
+      const bridgeDevices = (data as { devices?: BridgeDeviceListEntry[] }).devices ?? [];
+
       for (const bd of bridgeDevices) {
         const device = this.devices.get(bd.id);
         if (device) {
           device.connected = bd.connected;
           device.state = bd.state;
-          device.simulated = bd.simulated;
-          device.connectionInfo = bd.connectionInfo;
-          device.lastError = bd.lastError;
-          device.control = bd.control;
+          if (bd.simulated !== undefined) device.simulated = bd.simulated;
+          if (bd.connectionInfo !== undefined) device.connectionInfo = bd.connectionInfo;
+          if (bd.lastError !== undefined) device.lastError = bd.lastError;
+          if (bd.control !== undefined) device.control = bd.control as DeviceControlState;
         }
       }
-      
-      // Capabilities lekérdezése minden eszközhöz (nem csak csatlakozottakhoz)
+
       for (const bd of bridgeDevices) {
         await this.getDeviceCapabilities(bd.id);
         await this.getDeviceControlState(bd.id);
@@ -509,15 +380,7 @@ export class DeviceManager {
       log.error('Eszközök frissítési hiba:', error);
     }
   }
-  
-  getDevices(): Device[] {
-    return Array.from(this.devices.values());
-  }
-  
-  getDevice(deviceId: string): Device | undefined {
-    return this.devices.get(deviceId);
-  }
-  
+
   async addDevice(config: {
     id: string;
     name: string;
@@ -526,81 +389,47 @@ export class DeviceManager {
     enabled: boolean;
     config: Record<string, unknown>;
   }): Promise<boolean> {
-    try {
-      // Add device via bridge
-      const response = await this.http.post('/devices', config);
-      
-      if (response.data.success) {
-        // Fetch updated device list
-        await this.refreshDevices();
-        
-        // Also add to local devices map
-        const newDevice: Device = {
-          id: config.id,
-          name: config.name,
-          type: config.type,
-          driver: config.driver,
-          connected: false,
-          state: 'disconnected',
-          status: undefined,
-        };
-        this.devices.set(config.id, newDevice);
-        
-        return true;
-      }
-      return false;
-    } catch (error) {
-      log.error('Eszköz hozzáadási hiba:', error);
-      return false;
-    }
+    const ok = await this.bridge.addDevice(config);
+    if (!ok) return false;
+
+    await this.refreshDevices();
+    this.devices.set(config.id, {
+      id: config.id,
+      name: config.name,
+      type: config.type,
+      driver: config.driver,
+      connected: false,
+      state: 'disconnected',
+    });
+    return true;
   }
-  
+
   async getDeviceStatus(deviceId: string): Promise<DeviceStatus | null> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/status`);
-      const status = response.data as DeviceStatus;
-      this.updateDeviceStatus(deviceId, status);
-      return status;
-    } catch (error) {
-      log.error(`Státusz lekérdezési hiba (${deviceId}):`, error);
-      return null;
-    }
+    const status = (await this.bridge.getDeviceStatus(deviceId)) as DeviceStatus | null;
+    if (status) this.updateDeviceStatus(deviceId, status);
+    return status;
   }
-  
+
   async getDeviceCapabilities(deviceId: string): Promise<DeviceCapabilities | null> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/capabilities`);
-      const capabilities = response.data as DeviceCapabilities;
-      
-      const device = this.devices.get(deviceId);
-      if (device) {
-        device.capabilities = capabilities;
-      }
-      
-      return capabilities;
-    } catch (error) {
-      log.error(`Capabilities lekérdezési hiba (${deviceId}):`, error);
-      return null;
-    }
+    const capabilities = (await this.bridge.getDeviceCapabilities(
+      deviceId
+    )) as DeviceCapabilities | null;
+    const device = this.devices.get(deviceId);
+    if (device && capabilities) device.capabilities = capabilities;
+    return capabilities;
   }
 
   async getDeviceControlState(deviceId: string): Promise<DeviceControlState | null> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/control/state`);
-      const control = response.data as DeviceControlState;
-      const device = this.devices.get(deviceId);
-      const prev = device?.control ? JSON.stringify(device.control) : null;
-      const next = JSON.stringify(control);
-      if (device) {
-        device.control = control;
-      }
-      if (prev !== next) {
-        this.stateManager.broadcastControlState(deviceId, control);
-      }
-      return control;
-    } catch {
-      return null;
-    }
+    const control = (await this.bridge.getDeviceControlState(
+      deviceId
+    )) as DeviceControlState | null;
+    if (!control) return null;
+    const device = this.devices.get(deviceId);
+    const prev = device?.control ? JSON.stringify(device.control) : null;
+    const next = JSON.stringify(control);
+    if (device) device.control = control;
+    if (prev !== next) this.stateManager.broadcastControlState(deviceId, control);
+    return control;
   }
 
   async requestControl(
@@ -608,85 +437,49 @@ export class DeviceManager {
     owner: 'host' | 'panel',
     requestedBy: string = 'backend_request'
   ): Promise<{ granted: boolean; reason?: string; state?: DeviceControlState } | null> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/control/request`, {
-        requested_owner: owner,
-        requested_by: requestedBy,
-      });
-      const result = response.data as { granted: boolean; reason?: string; state?: DeviceControlState };
-      if (result.state) {
-        const device = this.devices.get(deviceId);
-        if (device) {
-          device.control = result.state;
-        }
-      }
-      return result;
-    } catch (error) {
-      log.error(`Control request hiba (${deviceId}):`, error);
-      return null;
+    const result = await this.bridge.requestControl(deviceId, owner, requestedBy);
+    if (!result) return null;
+    if (result.state) {
+      const device = this.devices.get(deviceId);
+      if (device) device.control = result.state as DeviceControlState;
     }
+    return result as { granted: boolean; reason?: string; state?: DeviceControlState };
   }
 
   async releaseControl(
     deviceId: string,
     requestedBy: string = 'backend_release'
   ): Promise<{ granted: boolean; reason?: string; state?: DeviceControlState } | null> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/control/release`, {
-        requested_by: requestedBy,
-      });
-      const result = response.data as { granted: boolean; reason?: string; state?: DeviceControlState };
-      if (result.state) {
-        const device = this.devices.get(deviceId);
-        if (device) {
-          device.control = result.state;
-        }
-      }
-      return result;
-    } catch (error) {
-      log.error(`Control release hiba (${deviceId}):`, error);
-      return null;
+    const result = await this.bridge.releaseControl(deviceId, requestedBy);
+    if (!result) return null;
+    if (result.state) {
+      const device = this.devices.get(deviceId);
+      if (device) device.control = result.state as DeviceControlState;
     }
+    return result as { granted: boolean; reason?: string; state?: DeviceControlState };
   }
-  
-  async connectDevice(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/connect`);
-      const success = Boolean(response.data.success);
-      if (!success) {
-        return false;
-      }
 
-      await this.getDeviceCapabilities(deviceId);
-      await this.getDeviceControlState(deviceId);
-      await this.tryAutoClaimHost(deviceId, 'connect');
-      return true;
-    } catch (error) {
-      log.error(`Csatlakozási hiba (${deviceId}):`, error);
-      return false;
-    }
+  async connectDevice(deviceId: string): Promise<boolean> {
+    const ok = await this.bridge.connectDevice(deviceId);
+    if (!ok) return false;
+    await this.getDeviceCapabilities(deviceId);
+    await this.getDeviceControlState(deviceId);
+    await this.tryAutoClaimHost(deviceId, 'connect');
+    return true;
   }
-  
+
   async disconnectDevice(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/disconnect`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Lecsatlakozási hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.disconnectDevice(deviceId);
   }
-  
+
+  // ===========================================================================
+  // MOTION
+  // ===========================================================================
+
   async home(deviceId: string, axes?: string[], feedRate?: number): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/home`, { axes, feed_rate: feedRate });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Homing hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.home(deviceId, axes, feedRate);
   }
-  
+
   async jog(
     deviceId: string,
     axis: string,
@@ -694,28 +487,11 @@ export class DeviceManager {
     feedRate: number,
     mode?: string
   ): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/jog`, {
-        axis,
-        distance,
-        feed_rate: feedRate,
-        mode: mode || null,
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Jog hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.jog(deviceId, axis, distance, feedRate, mode);
   }
-  
+
   async jogStop(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/jog/stop`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Jog stop hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.jogStop(deviceId);
   }
 
   async jogSessionStart(
@@ -725,22 +501,16 @@ export class DeviceManager {
     feedRate: number,
     mode?: string,
     heartbeatTimeout: number = 0.5,
-    tickMs: number = 40,
+    tickMs: number = 40
   ): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/jog/session/start`, {
-        axis,
-        direction,
-        feed_rate: feedRate,
-        mode: mode || null,
-        heartbeat_timeout: heartbeatTimeout,
-        tick_ms: tickMs,
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Jog session start hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.jogSessionStart(deviceId, {
+      axis,
+      direction,
+      feed_rate: feedRate,
+      mode: mode || null,
+      heartbeat_timeout: heartbeatTimeout,
+      tick_ms: tickMs,
+    });
   }
 
   async jogSessionBeat(
@@ -748,451 +518,169 @@ export class DeviceManager {
     axis?: string,
     direction?: number,
     feedRate?: number,
-    mode?: string,
+    mode?: string
   ): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/jog/session/beat`, {
-        axis: axis || null,
-        direction: direction ?? null,
-        feed_rate: feedRate ?? null,
-        mode: mode || null,
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Jog session beat hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.jogSessionBeat(deviceId, {
+      axis: axis || null,
+      direction: direction ?? null,
+      feed_rate: feedRate ?? null,
+      mode: mode || null,
+    });
   }
 
   async jogSessionStop(deviceId: string, hardStop: boolean = false): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/jog/session/stop`, {
-        hard_stop: hardStop,
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Jog session stop hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.jogSessionStop(deviceId, hardStop);
   }
-  
-  async getJogDiagnostics(deviceId: string): Promise<{
-    grbl_version?: string | null;
-    protocol?: string;
-    streaming_error8_retries?: number;
-    last_jog_trace?: {
-      success?: boolean;
-      state_before?: string | null;
-      grbl_version?: string | null;
-      protocol?: string;
-      commands?: string[];
-      responses?: string[];
-      error_code?: number;
-      error_message?: string;
-      error?: string;
-    };
-  } | null> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/jog/diagnostics`);
-      return response.data ?? null;
-    } catch (error) {
-      // 400 = device does not support diagnostics. Don't spam logs.
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status !== 400 && status !== 404) {
-        log.error(`Jog diagnostics hiba (${deviceId}):`, error);
-      }
-      return null;
-    }
+
+  async getJogDiagnostics(deviceId: string): Promise<JogDiagnostics | null> {
+    return this.bridge.getJogDiagnostics(deviceId);
   }
 
   async sendGCode(deviceId: string, gcode: string): Promise<string> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/gcode`, { gcode });
-      return response.data.response;
-    } catch (error) {
-      log.error(`G-code küldési hiba (${deviceId}):`, error);
-      return 'error';
-    }
-  }
-  
-  async loadFile(deviceId: string, filepath: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/load`, { filepath });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Fájl betöltési hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-  
-  async run(deviceId: string, fromLine: number = 0): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/run`, null, {
-        params: { from_line: fromLine },
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Futtatási hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-  
-  async pause(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/pause`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Pause hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-  
-  async resume(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/resume`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Resume hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-  
-  async stop(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/stop`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Stop hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-  
-  async reset(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/reset`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Reset hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-  
-  async setFeedOverride(deviceId: string, percent: number): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/feed-override`, {
-        percent,
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Feed override hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-  
-  async setSpindleOverride(deviceId: string, percent: number): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/spindle-override`, {
-        percent,
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Spindle override hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.sendGCode(deviceId, gcode);
   }
 
+  async loadFile(deviceId: string, filepath: string): Promise<boolean> {
+    return this.bridge.loadFile(deviceId, filepath);
+  }
+
+  async run(deviceId: string, fromLine: number = 0): Promise<boolean> {
+    return this.bridge.run(deviceId, fromLine);
+  }
+
+  async pause(deviceId: string): Promise<boolean> {
+    return this.bridge.pause(deviceId);
+  }
+
+  async resume(deviceId: string): Promise<boolean> {
+    return this.bridge.resume(deviceId);
+  }
+
+  async stop(deviceId: string): Promise<boolean> {
+    return this.bridge.stop(deviceId);
+  }
+
+  async reset(deviceId: string): Promise<boolean> {
+    return this.bridge.reset(deviceId);
+  }
+
+  async setFeedOverride(deviceId: string, percent: number): Promise<boolean> {
+    return this.bridge.setFeedOverride(deviceId, percent);
+  }
+
+  async setSpindleOverride(deviceId: string, percent: number): Promise<boolean> {
+    return this.bridge.setSpindleOverride(deviceId, percent);
+  }
+
+  // ===========================================================================
+  // SOFT LIMITS / GRBL
+  // ===========================================================================
+
   async setSoftLimits(deviceId: string, enabled: boolean): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/soft-limits`, null, {
-        params: { enabled },
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`Soft limits beállítási hiba (${deviceId}):`, error);
-      return false;
-    }
+    return this.bridge.setSoftLimits(deviceId, enabled);
   }
 
   async getSoftLimits(deviceId: string): Promise<{ soft_limits_enabled: boolean } | null> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/soft-limits`);
-      return response.data as { soft_limits_enabled: boolean };
-    } catch (error) {
-      log.error(`Soft limits állapot lekérdezési hiba (${deviceId}):`, error);
-      return null;
-    }
+    return this.bridge.getSoftLimits(deviceId);
   }
 
   async getGrblSettings(deviceId: string): Promise<Record<string, number> | null> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/grbl-settings`);
-      return (response.data?.settings ?? null) as Record<string, number> | null;
-    } catch (error) {
-      log.error(`GRBL settings lekérdezési hiba (${deviceId}):`, error);
-      return null;
-    }
+    return this.bridge.getGrblSettings(deviceId);
   }
 
-  async setGrblSettingsBatch(deviceId: string, settings: Record<string, number | string>): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/grbl-settings/batch`, {
-        settings,
-      });
-      return response.data.success;
-    } catch (error) {
-      log.error(`GRBL settings batch beállítási hiba (${deviceId}):`, error);
-      return false;
-    }
+  async setGrblSettingsBatch(
+    deviceId: string,
+    settings: Record<string, number | string>
+  ): Promise<boolean> {
+    return this.bridge.setGrblSettingsBatch(deviceId, settings);
   }
 
-  // =========================================
-  // ROBOT ARM SPECIFIKUS MŰVELETEK
-  // =========================================
+  // ===========================================================================
+  // ROBOT
+  // ===========================================================================
 
-  async gripperOn(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/gripper/on`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Gripper ON hiba (${deviceId}):`, error);
-      return false;
-    }
+  gripperOn(deviceId: string): Promise<boolean> {
+    return this.bridge.gripperOn(deviceId);
+  }
+  gripperOff(deviceId: string): Promise<boolean> {
+    return this.bridge.gripperOff(deviceId);
+  }
+  suckerOn(deviceId: string): Promise<boolean> {
+    return this.bridge.suckerOn(deviceId);
+  }
+  suckerOff(deviceId: string): Promise<boolean> {
+    return this.bridge.suckerOff(deviceId);
+  }
+  robotEnable(deviceId: string): Promise<boolean> {
+    return this.bridge.robotEnable(deviceId);
+  }
+  robotDisable(deviceId: string): Promise<boolean> {
+    return this.bridge.robotDisable(deviceId);
+  }
+  robotCalibrate(deviceId: string): Promise<boolean> {
+    return this.bridge.robotCalibrate(deviceId);
   }
 
-  async gripperOff(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/gripper/off`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Gripper OFF hiba (${deviceId}):`, error);
-      return false;
-    }
+  // ===========================================================================
+  // CALIBRATION
+  // ===========================================================================
+
+  calibrateLimits(deviceId: string, options: Record<string, unknown> = {}): Promise<unknown> {
+    return this.bridge.calibrateLimits(deviceId, options);
+  }
+  getCalibrationStatus(deviceId: string): Promise<unknown> {
+    return this.bridge.getCalibrationStatus(deviceId);
+  }
+  stopCalibration(deviceId: string): Promise<boolean> {
+    return this.bridge.stopCalibration(deviceId);
+  }
+  saveCalibration(deviceId: string, payload: unknown): Promise<unknown> {
+    return this.bridge.saveCalibration(deviceId, payload);
   }
 
-  async suckerOn(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/sucker/on`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Sucker ON hiba (${deviceId}):`, error);
-      return false;
-    }
+  // ===========================================================================
+  // TEACH
+  // ===========================================================================
+
+  teachRecord(deviceId: string): Promise<unknown> {
+    return this.bridge.teachRecord(deviceId);
+  }
+  teachPlay(deviceId: string): Promise<boolean> {
+    return this.bridge.teachPlay(deviceId);
+  }
+  teachClear(deviceId: string): Promise<boolean> {
+    return this.bridge.teachClear(deviceId);
+  }
+  teachGetPositions(deviceId: string): Promise<unknown[]> {
+    return this.bridge.teachGetPositions(deviceId);
   }
 
-  async suckerOff(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/sucker/off`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Sucker OFF hiba (${deviceId}):`, error);
-      return false;
-    }
+  // ===========================================================================
+  // DIAGNOSTICS / MOTOR TUNING
+  // ===========================================================================
+
+  runDiagnostics(deviceId: string, moveTest: boolean = false): Promise<unknown> {
+    return this.bridge.runDiagnostics(deviceId, moveTest);
   }
-
-  async robotEnable(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/enable`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Robot enable hiba (${deviceId}):`, error);
-      return false;
-    }
+  runFirmwareProbe(deviceId: string): Promise<unknown> {
+    return this.bridge.runFirmwareProbe(deviceId);
   }
-
-  async robotDisable(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/disable`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Robot disable hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-
-  async robotCalibrate(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/calibrate`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Robot calibrate hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async calibrateLimits(deviceId: string, options: any = {}): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/calibrate-limits`, options, {
-        timeout: 300000, // 5 min - kalibráció hosszú lehet
-      });
-      return response.data;
-    } catch (error) {
-      log.error(`Calibrate limits hiba (${deviceId}):`, error);
-      throw error;
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getCalibrationStatus(deviceId: string): Promise<any> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/calibration-status`);
-      return response.data;
-    } catch (error) {
-      log.error(`Get calibration status hiba (${deviceId}):`, error);
-      return { running: false, message: 'Hiba történt' };
-    }
-  }
-
-  async stopCalibration(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/calibration-stop`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Stop calibration hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async saveCalibration(deviceId: string, calibrationData: any): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/save-calibration`, calibrationData);
-      return response.data;
-    } catch (error) {
-      log.error(`Save calibration hiba (${deviceId}):`, error);
-      throw error;
-    }
-  }
-
-  async teachRecord(deviceId: string): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/teach/record`);
-      return response.data;
-    } catch (error) {
-      log.error(`Teach record hiba (${deviceId}):`, error);
-      return null;
-    }
-  }
-
-  async teachPlay(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/teach/play`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Teach play hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-
-  async teachClear(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/teach/clear`);
-      return response.data.success;
-    } catch (error) {
-      log.error(`Teach clear hiba (${deviceId}):`, error);
-      return false;
-    }
-  }
-
-  async teachGetPositions(deviceId: string): Promise<any[]> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/teach/positions`);
-      return response.data.positions || [];
-    } catch (error) {
-      log.error(`Teach positions hiba (${deviceId}):`, error);
-      return [];
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async runDiagnostics(deviceId: string, moveTest: boolean = false): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/diagnostics`, null, {
-        params: { move_test: moveTest },
-        timeout: 60000, // 60s - a diagnosztika sokáig tarthat
-      });
-      return response.data;
-    } catch (error) {
-      log.error(`Diagnosztika hiba (${deviceId}):`, error);
-      throw error;
-    }
-  }
-
-  // =========================================
-  // MOTOR HANGOLÁS TESZTEK
-  // =========================================
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async runFirmwareProbe(deviceId: string): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/firmware-probe`, null, {
-        timeout: 120000, // 120s - sok parancsot próbál
-      });
-      return response.data;
-    } catch (error) {
-      log.error(`Firmware probe hiba (${deviceId}):`, error);
-      throw error;
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async runEndstopTest(
+  runEndstopTest(
     deviceId: string,
     stepSize: number = 5.0,
     speed: number = 15,
-    maxAngle: number = 200.0,
-  ): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/endstop-test`, null, {
-        params: { step_size: stepSize, speed, max_angle: maxAngle },
-        timeout: 300000, // 5 perc - lassú mozgás
-      });
-      return response.data;
-    } catch (error) {
-      log.error(`Endstop test hiba (${deviceId}):`, error);
-      throw error;
-    }
+    maxAngle: number = 200.0
+  ): Promise<unknown> {
+    return this.bridge.runEndstopTest(deviceId, stepSize, speed, maxAngle);
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async runMotionTest(deviceId: string, testAngle: number = 30.0): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/motion-test`, null, {
-        params: { test_angle: testAngle },
-        timeout: 300000, // 5 perc - sok sebesség-teszt
-      });
-      return response.data;
-    } catch (error) {
-      log.error(`Motion test hiba (${deviceId}):`, error);
-      throw error;
-    }
+  runMotionTest(deviceId: string, testAngle: number = 30.0): Promise<unknown> {
+    return this.bridge.runMotionTest(deviceId, testAngle);
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getTestProgress(deviceId: string, after: number = 0): Promise<any> {
-    try {
-      const response = await this.http.get(`/devices/${deviceId}/test-progress`, {
-        params: { after },
-        timeout: 5000,
-      });
-      return response.data;
-    } catch (error) {
-      // Silently return empty if bridge unavailable
-      return { entries: [], total: 0, running: false };
-    }
+  getTestProgress(deviceId: string, after: number = 0): Promise<unknown> {
+    return this.bridge.getTestProgress(deviceId, after);
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async cancelTest(deviceId: string): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/cancel-test`, null, {
-        timeout: 5000,
-      });
-      return response.data;
-    } catch (error) {
-      log.error(`Cancel test hiba (${deviceId}):`, error);
-      throw error;
-    }
+  cancelTest(deviceId: string): Promise<unknown> {
+    return this.bridge.cancelTest(deviceId);
   }
 
   /**
@@ -1200,13 +688,23 @@ export class DeviceManager {
    * A MachineConfigTab mentése után hívandó, hogy az új beállítások
    * (pl. tengely invertálás, scale, limitek) azonnal életbe lépjenek.
    */
-  async reloadConfig(deviceId: string): Promise<any> {
-    try {
-      const response = await this.http.post(`/devices/${deviceId}/reload-config`);
-      return response.data;
-    } catch (error) {
-      log.error(`Config reload hiba (${deviceId}):`, error);
-      throw error;
-    }
+  reloadConfig(deviceId: string): Promise<unknown> {
+    return this.bridge.reloadConfig(deviceId);
   }
+}
+
+// =============================================================================
+// INTERNAL TYPES
+// =============================================================================
+
+interface BridgeDeviceListEntry {
+  id: string;
+  name: string;
+  type: string;
+  connected: boolean;
+  state: string;
+  simulated?: boolean;
+  connectionInfo?: string;
+  lastError?: string | null;
+  control?: unknown;
 }

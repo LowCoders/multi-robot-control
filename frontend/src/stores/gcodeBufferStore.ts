@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { enableMapSet } from 'immer'
+import { fetchGcodeFile, saveGcodeFile } from '../services/gcodeBufferService'
 
 // Set/Map használathoz immer 10-ben a plugin opt-in szükséges; e nélkül a
 // draft-en végzett Set műveletek (.add(), spread) az első produce után
@@ -85,7 +86,7 @@ export const useGcodeBufferStore = create<GcodeBufferStore>()(
       set((state) => {
         ensureBuffer(state, deviceId)
       })
-      return get().buffers[deviceId]
+      return get().buffers[deviceId]!
     },
 
     loadFromServer: async (deviceId, filepath) => {
@@ -96,14 +97,7 @@ export const useGcodeBufferStore = create<GcodeBufferStore>()(
       })
 
       try {
-        const res = await fetch(`/api/gcode/file?path=${encodeURIComponent(filepath)}`)
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error(data.error || `HTTP ${res.status}`)
-        }
-        const data = await res.json()
-        const lines: string[] = Array.isArray(data.lines) ? data.lines : []
-        const filename: string = data.filename || filepath.split('/').pop() || 'program.nc'
+        const { lines, filename } = await fetchGcodeFile(filepath)
 
         set((state) => {
           const b = ensureBuffer(state, deviceId)
@@ -158,7 +152,8 @@ export const useGcodeBufferStore = create<GcodeBufferStore>()(
         modifiedIdx = 0
       } else {
         const lastIdx = nextLines.length - 1
-        if (nextLines[lastIdx].trim() === '') {
+        const lastLine = nextLines[lastIdx]
+        if (lastLine !== undefined && lastLine.trim() === '') {
           nextLines[lastIdx] = trimmed
           modifiedIdx = lastIdx
         } else {
@@ -227,21 +222,28 @@ export const useGcodeBufferStore = create<GcodeBufferStore>()(
 
       try {
         const content = buffer.lines.join('\n')
-        const res = await fetch('/api/gcode/file', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: target, content, overwrite }),
-        })
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
+        let data: { filepath?: string; filename?: string }
+        try {
+          data = await saveGcodeFile(target, content, overwrite)
+        } catch (err: unknown) {
+          const status =
+            typeof err === 'object' &&
+            err !== null &&
+            'status' in err &&
+            typeof (err as { status: unknown }).status === 'number'
+              ? (err as { status: number }).status
+              : undefined
+          const message = err instanceof Error ? err.message : 'Mentési hiba'
           set((state) => {
             const b = ensureBuffer(state, deviceId)
             b.saving = false
-            b.error = data.error || `HTTP ${res.status}`
+            b.error = message
           })
-          return { ok: false as const, error: data.error || `HTTP ${res.status}`, status: res.status }
+          if (status !== undefined) {
+            return { ok: false as const, error: message, status }
+          }
+          return { ok: false as const, error: message }
         }
-        const data = await res.json()
         set((state) => {
           const b = ensureBuffer(state, deviceId)
           b.filepath = data.filepath || target

@@ -14,11 +14,13 @@ import { createLogger } from '../utils/logger'
 const log = createLogger('settings')
 
 export default function Settings() {
+  // Az alapértékeket a backend `/api/settings` adja vissza (config/system.yaml-ből).
+  // Itt csak üres placeholder, a useEffect tölti fel.
   const [settings, setSettings] = useState({
-    bridgeHost: 'localhost',
-    bridgePort: '4002',
-    positionUpdateRate: '10',
-    statusUpdateRate: '5',
+    bridgeHost: '',
+    bridgePort: '',
+    positionUpdateRate: '',
+    statusUpdateRate: '',
   })
   // A G-code gyökérkönyvtár csak olvasható: a backend `.env` (GCODE_ROOT_DIR)
   // alapján adja vissza, a UI nem módosíthatja.

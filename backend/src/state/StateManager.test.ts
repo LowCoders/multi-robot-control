@@ -185,15 +185,13 @@ describe('StateManager', () => {
       }));
     });
 
-    it('should broadcast position to device room', async () => {
+    it('should broadcast position to all clients', async () => {
       const position = { x: 100, y: 50, z: 25 };
-      
+
       stateManager.broadcastPosition('device-cnc', position);
-      
-      // Flush pending throttled updates
+
       stateManager.flushAllPositions();
 
-      expect(mockIO.to).toHaveBeenCalledWith('device:device-cnc');
       expect(mockIO.emit).toHaveBeenCalledWith('device:position', expect.objectContaining({
         deviceId: 'device-cnc',
         position,

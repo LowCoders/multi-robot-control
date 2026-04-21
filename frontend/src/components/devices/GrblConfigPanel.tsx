@@ -4,6 +4,7 @@ import {
   getGrblSettingDescription,
   hasKnownGrblSettingDescription,
 } from '../../constants/grblSettings'
+import { apiGet, apiPost, HttpError } from '../../utils/apiClient'
 
 interface GrblConfigPanelProps {
   deviceId: string
@@ -54,19 +55,20 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
     setSuccessMessage(null)
 
     try {
-      const response = await fetch(`/api/devices/${deviceId}/grbl-settings`)
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}))
-        throw new Error(payload.error || 'GRBL settings lekérdezése sikertelen')
-      }
-
-      const payload = (await response.json()) as { settings?: GrblSettings }
-      const incoming = payload.settings ?? {}
+      const payload = await apiGet('/devices/{device_id}/grbl-settings', {
+        path: { device_id: deviceId },
+      })
+      const incoming = ((payload as { settings?: GrblSettings }).settings ?? {}) as GrblSettings
       setOriginalSettings(incoming)
       setEditedSettings(toStringSettings(incoming))
       setFieldErrors({})
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ismeretlen hiba'
+      const message =
+        err instanceof HttpError
+          ? `${err.message} (${err.status})`
+          : err instanceof Error
+            ? err.message
+            : 'Ismeretlen hiba'
       setError(message)
     } finally {
       setLoading(false)
@@ -135,21 +137,20 @@ export default function GrblConfigPanel({ deviceId }: GrblConfigPanelProps) {
     setSuccessMessage(null)
 
     try {
-      const response = await fetch(`/api/devices/${deviceId}/grbl-settings/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: changedSettings }),
+      await apiPost('/devices/{device_id}/grbl-settings/batch', {
+        path: { device_id: deviceId },
+        body: { settings: changedSettings },
       })
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}))
-        throw new Error(payload.error || 'GRBL settings mentése sikertelen')
-      }
 
       setSuccessMessage('GRBL settings updated.')
       await loadSettings()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ismeretlen hiba'
+      const message =
+        err instanceof HttpError
+          ? `${err.message} (${err.status})`
+          : err instanceof Error
+            ? err.message
+            : 'Ismeretlen hiba'
       setError(message)
     } finally {
       setSaving(false)

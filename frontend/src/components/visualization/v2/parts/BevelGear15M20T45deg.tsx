@@ -26,10 +26,21 @@ const ROOT_R_TOP = ROOT_R_BACK * R_RATIO_TOP // 7.87
 const TIP_R_TOP = TIP_R_BACK * R_RATIO_TOP // 8.93
 
 // Builder-Z layout: a fogazat -Z oldalán; nagy vég Z=-6.36, kicsi vég Z=0.
-// (Az origó a fogazat csúcsi/kis-átmérőjű végén van, hogy a hozzáadandó
-//  cilinder/hub közvetlenül +Z irányban illeszthető legyen.)
 const Z_LARGE_END = -TOOTH_AXIAL_EXTENT // -6.36
 const Z_TOOTH_TOP = 0
+
+// Hub cilinder a fogazat NAGY (back) végén — Ø24 OD, Ø8 ID.
+// A teljes axiális magasság (hub + fogazat) PONTOSAN 20 mm; ebből a fogazat
+// 6.36 mm (= toothAxialExtent), így a hub = 20 - 6.36 = 13.64 mm.
+// Az axison középen, a fogazat back face-éhez illesztve (Z = Z_LARGE_END).
+const TOTAL_AXIAL_TARGET = 20
+const HUB_OD = 24
+const HUB_OUTER_R = HUB_OD / 2 // 12
+const HUB_BORE_DIAM = 8
+const HUB_BORE_R = HUB_BORE_DIAM / 2 // 4
+const HUB_HEIGHT = TOTAL_AXIAL_TARGET - TOOTH_AXIAL_EXTENT // 13.64
+const HUB_Z_TOP = Z_LARGE_END // -6.36 (érintkezik a fogazat back face-ével)
+const HUB_Z_BOTTOM = HUB_Z_TOP - HUB_HEIGHT // -20
 
 function buildToothWedgeGeometry(): THREE.BufferGeometry {
   const halfAng = Math.PI / (2 * TOOTH_COUNT)
@@ -91,27 +102,37 @@ function useToothGeometry() {
   return geom
 }
 
-/** Csonka kúp (frustum), pontosan a fogak root felületére illesztve.
- *  - Nagy vég Ø = 2·ROOT_R_BACK = 27.34 @ Z = Z_LARGE_END (-6.36)
- *  - Kis vég Ø = 2·ROOT_R_TOP  = 15.74 @ Z = Z_TOOTH_TOP  (0)
- *  - Magasság = TOOTH_AXIAL_EXTENT = 6.36
- *  Záró diszkek mindkét végén (closed frustum), így a fogak gyökerét belülről
- *  lezárja és nem lehet "átlátni" a kerék közepén.
+/** Egyesített body Lathe-test: hub cilinder + csonka kúp (root cone) ÁTMENŐ
+ *  Ø8 furattal. A két részt egy közös profilba egyesítjük, hogy a hub teteje
+ *  és a kúp alja közti határ ne okozzon z-fighting-ot, és a furat folyamatos
+ *  legyen Z = HUB_Z_BOTTOM (-20) és Z = Z_TOOTH_TOP (0) között.
+ *
+ *  Profil pontok CCW sorrendben (a lathe outward normálokat ad):
+ *    1. (4, -20)           bore @ hub alja
+ *    2. (12, -20)          hub alsó síkja kifelé
+ *    3. (12, -6.36)        hub palástja felfelé
+ *    4. (13.67, -6.36)     LIP — kifelé lép a kúp wide végéig
+ *    5. (7.87, 0)          kúp palástja felfelé a kis végig
+ *    6. (4, 0)             kúp tetején annular gyűrű befelé a furathoz
+ *    7. (4, -20)           bore palástja lefelé (close)
+ *
+ *  Teljes axiális magasság = 20 mm (hub 13.64 + fogazat 6.36).
  */
-function useRootConeGeometry() {
+function useBodyGeometry() {
   const geom = useMemo(() => {
-    const cyl = new THREE.CylinderGeometry(
-      ROOT_R_TOP,
-      ROOT_R_BACK,
-      TOOTH_AXIAL_EXTENT,
-      64,
-      1,
-      false,
-    )
-    cyl.rotateX(Math.PI / 2)
-    cyl.translate(0, 0, (Z_LARGE_END + Z_TOOTH_TOP) / 2)
-    cyl.computeVertexNormals()
-    return cyl
+    const profile = [
+      new THREE.Vector2(HUB_BORE_R, HUB_Z_BOTTOM),    // 1
+      new THREE.Vector2(HUB_OUTER_R, HUB_Z_BOTTOM),   // 2
+      new THREE.Vector2(HUB_OUTER_R, HUB_Z_TOP),      // 3
+      new THREE.Vector2(ROOT_R_BACK, Z_LARGE_END),    // 4 (HUB_Z_TOP == Z_LARGE_END)
+      new THREE.Vector2(ROOT_R_TOP, Z_TOOTH_TOP),     // 5
+      new THREE.Vector2(HUB_BORE_R, Z_TOOTH_TOP),     // 6
+      new THREE.Vector2(HUB_BORE_R, HUB_Z_BOTTOM),    // 7 (close)
+    ]
+    const lathe = new THREE.LatheGeometry(profile, 64)
+    lathe.rotateX(Math.PI / 2)
+    lathe.computeVertexNormals()
+    return lathe
   }, [])
   useEffect(() => () => geom.dispose(), [geom])
   return geom
@@ -120,12 +141,12 @@ function useRootConeGeometry() {
 function ToothRing({ componentId }: PartBuilderProps) {
   const mat = useSteelMaterial()
   const toothGeom = useToothGeometry()
-  const coneGeom = useRootConeGeometry()
+  const bodyGeom = useBodyGeometry()
   const teethStep = (Math.PI * 2) / TOOTH_COUNT
 
   return (
     <group userData={{ componentId }}>
-      <mesh geometry={coneGeom} material={mat} userData={{ componentId }} />
+      <mesh geometry={bodyGeom} material={mat} userData={{ componentId }} />
       {Array.from({ length: TOOTH_COUNT }).map((_, i) => (
         <mesh
           key={i}
@@ -167,4 +188,11 @@ export const BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS = {
   zLargeEnd: Z_LARGE_END,
   /** Builder-Z, ahol a fogazat KIS vége (cilinder felőli) van. */
   zToothTop: Z_TOOTH_TOP,
+  hubOuterDiam: HUB_OD,
+  hubBoreDiam: HUB_BORE_DIAM,
+  hubHeight: HUB_HEIGHT,
+  /** Builder-Z, ahol a hub cilinder alsó síkja van. */
+  zHubBottom: HUB_Z_BOTTOM,
+  /** Az össz axiális (Z) magasság: hub alja → fogazat kis vége. */
+  totalAxialExtent: Z_TOOTH_TOP - HUB_Z_BOTTOM,
 }

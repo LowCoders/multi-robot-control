@@ -3,7 +3,6 @@ import {
   Save,
   RotateCcw,
   Plus,
-  Trash2,
   Download,
   Upload,
   AlertCircle,
@@ -34,12 +33,12 @@ import ToolEditor from './capabilities/ToolEditor'
 import CoolantEditor from './capabilities/CoolantEditor'
 import RobotArmGeometryEditor from './capabilities/RobotArmGeometryEditor'
 import DeviceYamlConfigPanel from './DeviceYamlConfigPanel'
+import MachineConfigAxisEditor from './machineConfig/MachineConfigAxisEditor'
 import type { CameraState } from '../visualization'
 import type {
   MachineConfig,
   AxisConfig,
   AxisName,
-  AxisType,
   MachineType,
   DeclaredCapabilities,
   EndEffectorConfig,
@@ -49,10 +48,14 @@ import type {
   CoolantConfig,
   RobotArmConfig,
 } from '../../types/machine-config'
-import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC, getDefaultConfigForType } from '../../types/machine-config'
+import { DEFAULT_3AXIS_CNC, DEFAULT_5AXIS_CNC } from '../../types/machine-config'
 import type { DeviceCapabilities } from '../../types/device'
 import { effectiveCapabilities } from '../../utils/capabilities'
 import { createLogger } from '../../utils/logger'
+import {
+  buildMachineConfigForTypeSwitch,
+  deriveWorkEnvelopeFromAxes,
+} from '../../utils/machineTypeSwitch'
 
 const log = createLogger('machine-config')
 
@@ -86,234 +89,9 @@ const DEFAULT_AXIS_CONFIG: Record<AxisName, Partial<AxisConfig>> = {
   J6: { type: 'rotary', min: -360, max: 360 },
 }
 
-// workEnvelope automatikus számítása a tengelyek min/max értékéből.
-// Ha valamelyik tengelynek nincs limitje (null), megtartjuk az aktuális értéket
-// (vagy fallback 100 mm-t használunk).
-function deriveWorkEnvelope(
-  axes: AxisConfig[],
-  current: MachineConfig['workEnvelope']
-): MachineConfig['workEnvelope'] {
-  const range = (n: AxisName, fallback: number) => {
-    const a = axes.find((x) => x.name === n)
-    if (!a || a.min == null || a.max == null) return fallback
-    return Math.max(1, Math.abs(a.max - a.min))
-  }
-  return {
-    x: range('X', current?.x || 100),
-    y: range('Y', current?.y || 100),
-    z: range('Z', current?.z || 100),
-  }
-}
-
-function AxisEditor({
-  axis,
-  allAxes,
-  grblRate,
-  grblAcceleration,
-  homePosition,
-  onGrblRateChange,
-  onGrblAccelerationChange,
-  onHomePositionChange,
-  onChange,
-  onDelete,
-}: {
-  axis: AxisConfig
-  allAxes: AxisConfig[]
-  grblRate?: number
-  grblAcceleration?: number
-  homePosition?: number | null
-  onGrblRateChange?: (rate: number) => void
-  onGrblAccelerationChange?: (acceleration: number) => void
-  onHomePositionChange?: (value: number | null) => void
-  onChange: (updated: AxisConfig) => void
-  onDelete: () => void
-}) {
-  const possibleParents = allAxes.filter(a => a.name !== axis.name)
-
-  // null = nincs limit; üres input mezővel jelezzük
-  const parseLimit = (raw: string): number | null => {
-    if (raw.trim() === '') return null
-    const n = parseFloat(raw)
-    return Number.isFinite(n) ? n : null
-  }
-
-  const parseHome = (raw: string): number | null => {
-    if (raw.trim() === '') return null
-    const n = parseFloat(raw)
-    return Number.isFinite(n) ? n : null
-  }
-
-  // Min >= Max validáció (csak ha mindkettő ki van töltve)
-  const limitsInvalid = axis.min != null && axis.max != null && axis.min >= axis.max
-
-  return (
-    <div className="bg-steel-800/50 rounded-lg p-3 border border-steel-700">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-            style={{ backgroundColor: axis.color }}
-          >
-            {axis.name}
-          </div>
-          <span className="text-sm font-medium text-white">
-            {axis.name}
-            <span className="text-steel-400 text-xs ml-1">
-              ({axis.type === 'linear' ? 'Lin.' : 'Rot.'})
-            </span>
-          </span>
-          <input
-            type="color"
-            value={axis.color}
-            onChange={(e) => onChange({ ...axis, color: e.target.value })}
-            className="w-6 h-6 rounded cursor-pointer bg-transparent border border-steel-600 p-0"
-            title="Tengely színe"
-          />
-        </div>
-        <button
-          onClick={onDelete}
-          className="btn-icon text-red-400 hover:text-red-300 hover:bg-red-500/10"
-          title="Tengely törlése"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
-      </div>
-
-      {/* Első sor: Min, Max, Scale, Home */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div>
-          <label className="block text-xs text-steel-500 mb-1" title="Üres = nincs alsó limit">
-            Min
-          </label>
-          <input
-            type="number"
-            value={axis.min ?? ''}
-            placeholder="∅"
-            onChange={(e) => onChange({ ...axis, min: parseLimit(e.target.value) })}
-            className="input w-full text-xs py-1"
-            title="Üresen hagyva: nincs alsó limit"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-steel-500 mb-1" title="Üres = nincs felső limit">
-            Max
-          </label>
-          <input
-            type="number"
-            value={axis.max ?? ''}
-            placeholder="∅"
-            onChange={(e) => onChange({ ...axis, max: parseLimit(e.target.value) })}
-            className="input w-full text-xs py-1"
-            title="Üresen hagyva: nincs felső limit"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-steel-500 mb-1">Scale</label>
-          <input
-            type="number"
-            value={axis.scale ?? 1.0}
-            onChange={(e) => onChange({ ...axis, scale: parseFloat(e.target.value) || 1.0 })}
-            className="input w-full text-xs py-1"
-            step={0.001}
-            title="Firmware érték → fizikai egység szorzó"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-steel-500 mb-1">Home</label>
-          <input
-            type="number"
-            value={homePosition ?? ''}
-            placeholder="∅"
-            onChange={(e) => onHomePositionChange?.(parseHome(e.target.value))}
-            className="input w-full text-xs py-1"
-            disabled={!onHomePositionChange}
-            title="Home pozíció ezen a tengelyen (üres = nincs megadva)"
-            step={0.1}
-          />
-        </div>
-      </div>
-
-      {limitsInvalid && (
-        <div className="mt-1 text-[11px] text-amber-400">
-          Figyelem: Min ({axis.min}) ≥ Max ({axis.max}) — érvénytelen tartomány.
-        </div>
-      )}
-
-      {/* Második sor: GRBL sebesség és gyorsulás */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-        <div>
-          <label className="block text-xs text-steel-500 mb-1">Max rate (GRBL)</label>
-          <input
-            type="number"
-            value={grblRate ?? ''}
-            onChange={(e) => {
-              if (!onGrblRateChange) return
-              onGrblRateChange(parseFloat(e.target.value) || 0)
-            }}
-            className="input w-full text-xs py-1"
-            min={1}
-            disabled={!onGrblRateChange}
-            title="GRBL $110/$111/$112 érték tengelyenként"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-steel-500 mb-1">Acceleration (GRBL)</label>
-          <input
-            type="number"
-            value={grblAcceleration ?? ''}
-            onChange={(e) => {
-              if (!onGrblAccelerationChange) return
-              onGrblAccelerationChange(parseFloat(e.target.value) || 0)
-            }}
-            className="input w-full text-xs py-1"
-            min={1}
-            disabled={!onGrblAccelerationChange}
-            title="GRBL $120/$121/$122 érték tengelyenként"
-          />
-        </div>
-      </div>
-
-      {/* Harmadik sor: Típus, Szülő, Invertálás */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
-        <div>
-          <label className="block text-xs text-steel-500 mb-1">Típus</label>
-          <select
-            value={axis.type}
-            onChange={(e) => onChange({ ...axis, type: e.target.value as AxisType })}
-            className="input w-full text-xs py-1"
-          >
-            <option value="linear">Lineáris</option>
-            <option value="rotary">Rotációs</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-steel-500 mb-1">Szülő</label>
-          <select
-            value={axis.parent ?? ''}
-            onChange={(e) => onChange({ ...axis, parent: (e.target.value || undefined) as AxisName | undefined })}
-            className="input w-full text-xs py-1"
-          >
-            <option value="">Nincs</option>
-            {possibleParents.map((p) => (
-              <option key={p.name} value={p.name}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center sm:pt-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={axis.invert ?? false}
-              onChange={(e) => onChange({ ...axis, invert: e.target.checked })}
-              className="w-3 h-3 rounded bg-steel-700 border-steel-600"
-            />
-            <span className="text-xs text-steel-400">Invertálás</span>
-          </label>
-        </div>
-      </div>
-    </div>
-  )
-}
+// `deriveWorkEnvelope` és az `AxisEditor` komponens a `utils/machineTypeSwitch.ts`,
+// illetve a `machineConfig/MachineConfigAxisEditor.tsx` modulokba költözött.
+const deriveWorkEnvelope = deriveWorkEnvelopeFromAxes
 
 interface MachineConfigTabProps {
   deviceId: string
@@ -906,14 +684,13 @@ export default function MachineConfigTab({
                             'A típus váltása felülírja a tengely- és driver-beállításokat. Folytatod?'
                           )
                           if (!confirmed) return
-                          const baseConfig = getDefaultConfigForType(newType)
-                          setConfig({
-                            ...baseConfig,
-                            id: config.id,
-                            name: config.name || baseConfig.name,
-                            type: newType,
-                            workEnvelope: deriveWorkEnvelope(baseConfig.axes, baseConfig.workEnvelope),
-                          })
+                          setConfig(
+                            buildMachineConfigForTypeSwitch(
+                              config,
+                              newType,
+                              deriveWorkEnvelopeFromAxes
+                            )
+                          )
                         }}
                         className="input w-full text-sm"
                       >
@@ -1082,7 +859,7 @@ export default function MachineConfigTab({
                 </summary>
                 <div className="px-3 pb-3 space-y-2 max-h-[800px] overflow-y-auto">
                   {config.axes.map((axis, index) => (
-                    <AxisEditor
+                    <MachineConfigAxisEditor
                       key={axis.name}
                       axis={axis}
                       allAxes={config.axes}

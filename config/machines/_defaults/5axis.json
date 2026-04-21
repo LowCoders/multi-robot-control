@@ -1,0 +1,16 @@
+{
+  "type": "5axis",
+  "workEnvelope": { "x": 300, "y": 300, "z": 200 },
+  "axes": [
+    { "name": "X", "type": "linear", "min": 0, "max": 300, "color": "#ef4444" },
+    { "name": "Y", "type": "linear", "min": 0, "max": 300, "color": "#22c55e", "parent": "X" },
+    { "name": "Z", "type": "linear", "min": -200, "max": 0, "color": "#3b82f6", "parent": "Y" },
+    { "name": "A", "type": "rotary", "min": -90, "max": 90, "color": "#f59e0b", "parent": "Z" },
+    { "name": "B", "type": "rotary", "min": -180, "max": 180, "color": "#8b5cf6", "parent": "A" }
+  ],
+  "spindle": { "maxRpm": 20000, "diameter": 65, "length": 100 },
+  "tool": { "diameter": 6, "length": 40, "type": "endmill" },
+  "declaredCapabilities": { "hasSpindle": true, "hasCoolant": false, "maxSpindleSpeed": 20000 },
+  "base": { "width": 450, "height": 80, "depth": 450 },
+  "visuals": { "showGrid": true, "showAxesHelper": true }
+}

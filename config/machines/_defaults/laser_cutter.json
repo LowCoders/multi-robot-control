@@ -1,0 +1,14 @@
+{
+  "type": "laser_cutter",
+  "workEnvelope": { "x": 600, "y": 400, "z": 50 },
+  "axes": [
+    { "name": "X", "type": "linear", "min": 0, "max": 600, "color": "#ef4444" },
+    { "name": "Y", "type": "linear", "min": 0, "max": 400, "color": "#22c55e", "parent": "X" },
+    { "name": "Z", "type": "linear", "min": -50, "max": 0, "color": "#3b82f6", "parent": "Y" }
+  ],
+  "tool": { "diameter": 0.1, "length": 20, "type": "laser" },
+  "laser": { "maxPower": 1000, "pwmFreq": 1000, "defaultPower": 500 },
+  "declaredCapabilities": { "hasLaser": true, "maxLaserPower": 1000 },
+  "base": { "width": 700, "height": 40, "depth": 500 },
+  "visuals": { "showGrid": true, "showAxesHelper": true }
+}

@@ -8,6 +8,7 @@ import Automation from './pages/Automation'
 import Settings from './pages/Settings'
 import { useDeviceStore } from './stores/deviceStore'
 import NotificationOverlay from './components/common/NotificationOverlay'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 function App() {
   const { connect, disconnect } = useDeviceStore()
@@ -21,13 +22,15 @@ function App() {
   
   return (
     <MainLayout>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/device/:deviceId" element={<DeviceDetail />} />
-        <Route path="/jobs" element={<JobManager />} />
-        <Route path="/automation" element={<Automation />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/device/:deviceId" element={<DeviceDetail />} />
+          <Route path="/jobs" element={<JobManager />} />
+          <Route path="/automation" element={<Automation />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </ErrorBoundary>
       <NotificationOverlay />
     </MainLayout>
   )

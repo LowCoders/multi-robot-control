@@ -127,10 +127,10 @@ function ComponentNode({
           if (!m.userData.__origColorHex) {
             m.userData.__origColorHex = '#' + (m as THREE.MeshStandardMaterial).color.getHexString()
           }
-          ;(m as THREE.MeshStandardMaterial).color.set(def.color)
+          (m as THREE.MeshStandardMaterial).color.set(def.color)
         } else {
           if (m.userData.__origColorHex) {
-            ;(m as THREE.MeshStandardMaterial).color.set(m.userData.__origColorHex as string)
+            (m as THREE.MeshStandardMaterial).color.set(m.userData.__origColorHex as string)
             delete m.userData.__origColorHex
           }
         }
@@ -138,10 +138,10 @@ function ComponentNode({
         // 2) emissive (csak meshstandard / phong / physical)
         if ('emissive' in m) {
           if (isSelected) {
-            ;(m as THREE.MeshStandardMaterial).emissive.set(def.color)
+            (m as THREE.MeshStandardMaterial).emissive.set(def.color)
             ;(m as THREE.MeshStandardMaterial).emissiveIntensity = 0.5
           } else {
-            ;(m as THREE.MeshStandardMaterial).emissive.set('#000')
+            (m as THREE.MeshStandardMaterial).emissive.set('#000')
             ;(m as THREE.MeshStandardMaterial).emissiveIntensity = 0
           }
         }

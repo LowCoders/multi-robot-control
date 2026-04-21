@@ -24,24 +24,36 @@
  *   - Component origó: a motor közepe (a regiszter `transform.position`-je
  *     ugyanaz, mint a motoré: bracket-1-local (0, +50, MOTOR_OFFSET_Z)).
  *
- * A 4 anya-pozíció szárakon (component-lokális Z-ben), motor közepétől hátulról előre:
+ * Az 5 anya-pozíció minden száron (component-lokális Z-ben), motor közepétől
+ * hátulról előre haladva:
  *   1. **bracket-2 hátsó anya** (rod-end): Z = bracket-2 back face Z - clearance - h/2
  *      ≈ -69.4 — ez fogja össze bracket-2-t a motorral.
  *   2. **bracket-1 hátsó anya**: Z = +(bracket-1 back face) - clearance ≈ -1.4
  *      (a motor body BELSEJÉBE esik — fade-módban látható).
  *   3. **bracket-1 elülső anya**: Z = +(bracket-1 front face) + clearance ≈ +13.4
  *      (a motor body BELSEJÉBE esik — fade-módban látható).
- *   4. **motor flange elülső anya**: Z = +BODY_HALF + clearance ≈ +63.4 — a motor
- *      flange előlapját rögzíti a száron.
+ *   4. **motor előlap MÖGÖTTI anya** (ÚJ): Z = +BODY_HALF - mountFlangeLength
+ *      - clearance - h/2 ≈ +53.6 — a motor flange BACK face-e mögött, az iron
+ *      body main belsejében (fade-módban látható), a motor flange-et a szárhoz
+ *      rögzíti hátulról.
+ *   5. **gear-bracket BELSŐ anya** (ÚJ): Z = gear-bracket front face + clearance
+ *      + h/2 ≈ +73.4 — a gear-bracket-1 base wall-jának ELÜLSŐ (U-belseji)
+ *      oldalán, a U-cavity-ben. Ez szorítja a gear-bracket-et hátrafelé a motor
+ *      flange front face-éhez.
  *
- * MEGSZŰNT a régi "motor hátlap-anya" (a motor hátulja a száron), mert ezt most
- * bracket-2 zsebe pótolja: a motor back face KÖZVETLENÜL a zseb fenekére fekszik
- * fel, így nincs hely / szükség külön anyára a motor háta és a bracket-2 között.
+ * MEGSZŰNT (átszervezve):
+ *   - A régi "motor flange előlapi anya" (motor és gear-bracket KÖZÖTT, motor-Z
+ *     ≈ +63.4): TÖRÖLVE. Helyette az új #4 (motor flange mögött) és #5 (gear-
+ *     bracket belsejében) anyák szorítják össze ezt a két felületet KÖZVETLEN
+ *     érintkezésre, anya nélkül a kettő közöttük.
+ *   - A régi "motor hátlap-anya" (a motor hátulja a száron) — bracket-2 zsebe
+ *     pótolja: a motor back face KÖZVETLENÜL a zseb fenekére fekszik fel.
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { PartBuilderProps } from '../types'
 import { NEMA23_BOLT_PATTERN } from './_motorSilhouette'
+import { GEAR_BRACKET_DIMENSIONS } from './GearBracket'
 import { NEMA23_MOTOR_DIMENSIONS } from './Nema23Motor'
 import { VERTICAL_BRACKET_1_DIMENSIONS } from './VerticalBracket1'
 import { VERTICAL_BRACKET_2_DIMENSIONS } from './VerticalBracket2'
@@ -70,8 +82,20 @@ const CLEARANCE = 0.4
 
 /** Komponens-lokális Z tengelye = motor tengelye, origó = motor közepén.
  *  Motor flange előlapja: Z = +BODY_HALF, motor hátlapja: Z = -BODY_HALF.
- *  Motor flange előlapi anya (a száron, a flange előtt): */
-const MOTOR_FRONT_NUT_Z = +BODY_HALF + CLEARANCE + NUT_HEIGHT / 2 // ≈ +63.4
+ *
+ *  ÚJ #4 — motor flange BACK face-e MÖGÖTTI anya (az iron body main belsejében).
+ *  A flange motor-Z = +BODY_HALF - mountFlangeLength .. +BODY_HALF közé esik
+ *  (= +56..+61). A flange back face mögötti anya: */
+const MOTOR_FLANGE_BACK_Z = +BODY_HALF - NEMA23_MOTOR_DIMENSIONS.mountFlangeLength // = +56
+const MOTOR_BACK_OF_FLANGE_NUT_Z = MOTOR_FLANGE_BACK_Z - CLEARANCE - NUT_HEIGHT / 2 // ≈ +53.6
+
+/** ÚJ #5 — gear-bracket-1 BELSŐ (U-cavity-beli) anyája: a base wall front face-e
+ *  ELŐTT, a U szárai között. A gear-bracket-1 base wall back face KÖZVETLENÜL
+ *  érintkezik a motor flange front face-ével (motor-Z = +BODY_HALF = +61),
+ *  vagyis a base wall front face = +61 + materialThickness. */
+const GEAR_BRACKET_BACK_Z = +BODY_HALF // = +61 (közvetlenül a motor flange-en)
+const GEAR_BRACKET_FRONT_Z = GEAR_BRACKET_BACK_Z + GEAR_BRACKET_DIMENSIONS.materialThickness // = +71
+const GEAR_BRACKET_INSIDE_NUT_Z = GEAR_BRACKET_FRONT_Z + CLEARANCE + NUT_HEIGHT / 2 // ≈ +73.4
 
 /** Bracket-1 a komponens-lokálisban: bracket-1-lokális Z = -PLATE_HALF_T..+PLATE_HALF_T,
  *  és component-lokális Z = bracket-1-lokális Z - MOTOR_OFFSET_Z. */
@@ -94,7 +118,8 @@ const NUT_Z_POSITIONS: number[] = [
   BRACKET2_END_NUT_Z,
   BRACKET1_BACK_NUT_Z,
   BRACKET1_FRONT_NUT_Z,
-  MOTOR_FRONT_NUT_Z,
+  MOTOR_BACK_OF_FLANGE_NUT_Z,
+  GEAR_BRACKET_INSIDE_NUT_Z,
 ]
 
 /** Szár-vég puffer (mm) — a legszélső anya után még ennyivel túlnyúlik a szár vége. */
@@ -148,7 +173,7 @@ function useNutMaterial() {
   return mat
 }
 
-/** Realisztikus: 4 db M5 szár + 16 db M5 hex anya. */
+/** Realisztikus: 4 db M5 szár + 20 db M5 hex anya (5/szár). */
 export function MountingRodsRealistic({ componentId }: PartBuilderProps) {
   const rodMat = useRodMaterial()
   const nutMat = useNutMaterial()
@@ -165,7 +190,7 @@ export function MountingRodsRealistic({ componentId }: PartBuilderProps) {
           >
             <cylinderGeometry args={[ROD_DIAM / 2, ROD_DIAM / 2, ROD_LENGTH, 12]} />
           </mesh>
-          {/* 4 db M5 hex anya minden száron: bracket-2 hátul (vég-anya), bracket-1 hátulja, bracket-1 eleje, motor flange előlapja. */}
+          {/* 5 db M5 hex anya minden száron: bracket-2 vég-anya, bracket-1 hátulja, bracket-1 eleje, motor flange MÖGÖTTE (iron body belsejében), gear-bracket BELSEJÉBEN (U-cavity). */}
           {NUT_Z_POSITIONS.map((nz, j) => (
             <mesh
               key={j}

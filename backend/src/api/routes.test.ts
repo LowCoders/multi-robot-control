@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express, { Express } from 'express';
 import request from 'supertest';
 import { createApiRoutes } from './routes.js';
+import { errorMiddleware } from './_helpers/errorMiddleware.js';
 import { DeviceManager, Device, DeviceStatus, DeviceCapabilities } from '../devices/DeviceManager.js';
 import { StateManager } from '../state/StateManager.js';
 
@@ -90,6 +91,7 @@ describe('API Routes', () => {
       mockDeviceManager as DeviceManager,
       mockStateManager as StateManager
     ));
+    app.use(errorMiddleware);
   });
 
   describe('GET /api/devices', () => {

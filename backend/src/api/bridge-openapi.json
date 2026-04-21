@@ -1,0 +1,2979 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Multi-Robot Control System - Device Bridge",
+    "description": "Python bridge server for device communication",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Root",
+        "description": "Root endpoint.",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/usb/devices": {
+      "get": {
+        "summary": "Get Usb Devices",
+        "description": "USB-serial eszközök listázása.\n\nDiagnosztikai endpoint az USB azonosítók (VID, PID, serial_number,\nlocation) megjelenítésére a devices.yaml konfigurációhoz.",
+        "operationId": "get_usb_devices_usb_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices": {
+      "get": {
+        "summary": "List Devices",
+        "description": "Összes eszköz listázása.",
+        "operationId": "list_devices_devices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add Device",
+        "description": "Új eszköz hozzáadása.",
+        "operationId": "add_device_devices_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}": {
+      "get": {
+        "summary": "Get Device",
+        "description": "Eszköz részletek.",
+        "operationId": "get_device_devices__device_id__get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/status": {
+      "get": {
+        "summary": "Get Device Status",
+        "description": "Eszköz állapot lekérdezése.",
+        "operationId": "get_device_status_devices__device_id__status_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/capabilities": {
+      "get": {
+        "summary": "Get Device Capabilities",
+        "description": "Eszköz képességek lekérdezése.",
+        "operationId": "get_device_capabilities_devices__device_id__capabilities_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/control/state": {
+      "get": {
+        "summary": "Get Device Control State",
+        "description": "Ownership lock állapot lekérdezése.\n\nHa az eszköz nem támogat lockot, neutrális default állapotot adunk\nvissza (nem 400-at), hogy a backend periodikus lekérdezése ne zajongjon.",
+        "operationId": "get_device_control_state_devices__device_id__control_state_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/control/request": {
+      "post": {
+        "summary": "Request Device Control",
+        "description": "Ownership kérés (host|panel).\n\nHa az eszköz támogat realtime ownership parancsokat (firmware oldali\nlock), akkor azt használjuk forrásként; egyébként a decorator szintű\nrequest_control()-t hívjuk fallback-ként.",
+        "operationId": "request_device_control_devices__device_id__control_request_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/control/release": {
+      "post": {
+        "summary": "Release Device Control",
+        "description": "Ownership elengedése.",
+        "operationId": "release_device_control_devices__device_id__control_release_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ControlReleaseRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/connect": {
+      "post": {
+        "summary": "Connect Device",
+        "description": "Csatlakozás az eszközhöz.",
+        "operationId": "connect_device_devices__device_id__connect_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/disconnect": {
+      "post": {
+        "summary": "Disconnect Device",
+        "description": "Lecsatlakozás az eszközről.",
+        "operationId": "disconnect_device_devices__device_id__disconnect_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/reconnect": {
+      "post": {
+        "summary": "Reconnect Device",
+        "description": "Újracsatlakozás az eszközhöz (USB disconnect/reconnect után).",
+        "operationId": "reconnect_device_devices__device_id__reconnect_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/home": {
+      "post": {
+        "summary": "Home Device",
+        "description": "Homing végrehajtása.",
+        "operationId": "home_device_devices__device_id__home_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/HomeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/jog": {
+      "post": {
+        "summary": "Jog Device",
+        "description": "Jog mozgás.\n\nRobotkar drivereknél a `mode` mező alapján Cartesian vagy joint jog-ot\nindítunk; CNC/GRBL drivereknél a sima `jog()`-ot. ControlLockDecorator\nközbeiktatása esetén az inner driver interfészét vizsgáljuk, hogy a\nGRBL device-ok ne fussanak végig a jog_joint útvonalon.",
+        "operationId": "jog_device_devices__device_id__jog_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JogRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/jog/stop": {
+      "post": {
+        "summary": "Jog Stop Device",
+        "description": "Jog leállítása.",
+        "operationId": "jog_stop_device_devices__device_id__jog_stop_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/jog/session/start": {
+      "post": {
+        "summary": "Jog Session Start",
+        "description": "Folyamatos jog session indítása.",
+        "operationId": "jog_session_start_devices__device_id__jog_session_start_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JogSessionStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/jog/session/beat": {
+      "post": {
+        "summary": "Jog Session Beat",
+        "description": "Folyamatos jog session heartbeat / paraméter frissítés.",
+        "operationId": "jog_session_beat_devices__device_id__jog_session_beat_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JogSessionBeatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/jog/session/stop": {
+      "post": {
+        "summary": "Jog Session Stop",
+        "description": "Folyamatos jog session leállítás (opcionális hard stop).",
+        "operationId": "jog_session_stop_devices__device_id__jog_session_stop_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JogSessionStopRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/jog/diagnostics": {
+      "get": {
+        "summary": "Get Jog Diagnostics",
+        "description": "Utolsó jog művelet nyers diagnosztikai adatai.",
+        "operationId": "get_jog_diagnostics_devices__device_id__jog_diagnostics_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/gcode": {
+      "post": {
+        "summary": "Send Gcode",
+        "description": "G-code parancs küldése.",
+        "operationId": "send_gcode_devices__device_id__gcode_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GCodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/load": {
+      "post": {
+        "summary": "Load File",
+        "description": "G-code fájl betöltése.",
+        "operationId": "load_file_devices__device_id__load_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/run": {
+      "post": {
+        "summary": "Run Device",
+        "description": "Program futtatás indítása.",
+        "operationId": "run_device_devices__device_id__run_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "from_line",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "From Line"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/pause": {
+      "post": {
+        "summary": "Pause Device",
+        "description": "Program megállítása.",
+        "operationId": "pause_device_devices__device_id__pause_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/resume": {
+      "post": {
+        "summary": "Resume Device",
+        "description": "Program folytatása.",
+        "operationId": "resume_device_devices__device_id__resume_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/stop": {
+      "post": {
+        "summary": "Stop Device",
+        "description": "Program leállítása.",
+        "operationId": "stop_device_devices__device_id__stop_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/reset": {
+      "post": {
+        "summary": "Reset Device",
+        "description": "Eszköz reset.",
+        "operationId": "reset_device_devices__device_id__reset_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/feed-override": {
+      "post": {
+        "summary": "Set Feed Override",
+        "description": "Feed rate override beállítása.",
+        "operationId": "set_feed_override_devices__device_id__feed_override_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/spindle-override": {
+      "post": {
+        "summary": "Set Spindle Override",
+        "description": "Spindle speed override beállítása.",
+        "operationId": "set_spindle_override_devices__device_id__spindle_override_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/gripper/on": {
+      "post": {
+        "summary": "Gripper On",
+        "description": "Megfogó bezárása.",
+        "operationId": "gripper_on_devices__device_id__gripper_on_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/gripper/off": {
+      "post": {
+        "summary": "Gripper Off",
+        "description": "Megfogó nyitása.",
+        "operationId": "gripper_off_devices__device_id__gripper_off_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/sucker/on": {
+      "post": {
+        "summary": "Sucker On",
+        "description": "Szívó bekapcsolása.",
+        "operationId": "sucker_on_devices__device_id__sucker_on_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/sucker/off": {
+      "post": {
+        "summary": "Sucker Off",
+        "description": "Szívó kikapcsolása.",
+        "operationId": "sucker_off_devices__device_id__sucker_off_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/enable": {
+      "post": {
+        "summary": "Robot Enable",
+        "description": "Robot engedélyezése.",
+        "operationId": "robot_enable_devices__device_id__enable_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/disable": {
+      "post": {
+        "summary": "Robot Disable",
+        "description": "Robot letiltása.",
+        "operationId": "robot_disable_devices__device_id__disable_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/calibrate": {
+      "post": {
+        "summary": "Robot Calibrate",
+        "description": "Robot kalibráció.",
+        "operationId": "robot_calibrate_devices__device_id__calibrate_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/calibrate-limits": {
+      "post": {
+        "summary": "Calibrate Limits",
+        "description": "Automatikus végállás kalibráció stall detection-nel.\n\nCsak closed loop (SERVO42C) eszközökkel működik megfelelően.",
+        "operationId": "calibrate_limits_devices__device_id__calibrate_limits_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrateLimitsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/calibration-status": {
+      "get": {
+        "summary": "Get Calibration Status",
+        "description": "Kalibráció állapot lekérdezése (progress, lépés, eredmények).",
+        "operationId": "get_calibration_status_devices__device_id__calibration_status_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/calibration-stop": {
+      "post": {
+        "summary": "Stop Calibration",
+        "description": "Futó kalibráció leállítása.",
+        "operationId": "stop_calibration_devices__device_id__calibration_stop_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/save-calibration": {
+      "post": {
+        "summary": "Save Calibration",
+        "description": "Kalibrációs eredmények mentése a devices.yaml fájlba.",
+        "operationId": "save_calibration_devices__device_id__save_calibration_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveCalibrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/home-position": {
+      "get": {
+        "summary": "Get Home Position",
+        "description": "Home pozíció konfiguráció lekérdezése a machine-config.json-ból.",
+        "operationId": "get_home_position_devices__device_id__home_position_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Set Home Position",
+        "description": "Home pozíció beállítása és mentése a machine-config.json fájlba.\n\nHa save_current=true, az aktuális pozíciót menti home pozícióként.",
+        "operationId": "set_home_position_devices__device_id__home_position_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHomePositionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/soft-limits": {
+      "post": {
+        "summary": "Set Soft Limits",
+        "description": "Szoftveres limitek be/kikapcsolása.",
+        "operationId": "set_soft_limits_devices__device_id__soft_limits_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "title": "Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get Soft Limits",
+        "description": "Szoftveres limitek állapotának lekérdezése.",
+        "operationId": "get_soft_limits_devices__device_id__soft_limits_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/reload-config": {
+      "post": {
+        "summary": "Reload Device Config",
+        "description": "Konfiguráció újratöltése a machine-config.json fájlból.",
+        "operationId": "reload_device_config_devices__device_id__reload_config_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/teach/record": {
+      "post": {
+        "summary": "Teach Record",
+        "description": "Pozíció rögzítése teaching módhoz.",
+        "operationId": "teach_record_devices__device_id__teach_record_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/teach/play": {
+      "post": {
+        "summary": "Teach Play",
+        "description": "Tanított pozíciók lejátszása.",
+        "operationId": "teach_play_devices__device_id__teach_play_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/teach/clear": {
+      "post": {
+        "summary": "Teach Clear",
+        "description": "Tanított pozíciók törlése.",
+        "operationId": "teach_clear_devices__device_id__teach_clear_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/teach/positions": {
+      "get": {
+        "summary": "Teach Positions",
+        "description": "Tanított pozíciók lekérdezése.",
+        "operationId": "teach_positions_devices__device_id__teach_positions_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/diagnostics": {
+      "post": {
+        "summary": "Run Diagnostics",
+        "description": "Board diagnosztika futtatása a meglévő serial kapcsolaton.",
+        "operationId": "run_diagnostics_devices__device_id__diagnostics_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "move_test",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Move Test"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/firmware-probe": {
+      "post": {
+        "summary": "Run Firmware Probe",
+        "description": "Firmware paraméterek felderítése – különböző parancsok kipróbálása.",
+        "operationId": "run_firmware_probe_devices__device_id__firmware_probe_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/endstop-test": {
+      "post": {
+        "summary": "Run Endstop Test",
+        "description": "Végállás teszt – minden tengely végállásig mozgatása.",
+        "operationId": "run_endstop_test_devices__device_id__endstop_test_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "step_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 5.0,
+              "title": "Step Size"
+            }
+          },
+          {
+            "name": "speed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 15,
+              "title": "Speed"
+            }
+          },
+          {
+            "name": "max_angle",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 200.0,
+              "title": "Max Angle"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/endstops": {
+      "get": {
+        "summary": "Get Endstop States",
+        "description": "Végállás érzékelők aktuális állapotának lekérdezése (M119).",
+        "operationId": "get_endstop_states_devices__device_id__endstops_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/motion-test": {
+      "post": {
+        "summary": "Run Motion Test",
+        "description": "Mozgásminőség teszt – különböző sebességekkel.",
+        "operationId": "run_motion_test_devices__device_id__motion_test_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "test_angle",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 30.0,
+              "title": "Test Angle"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/cancel-test": {
+      "post": {
+        "summary": "Cancel Test",
+        "description": "Futó teszt (firmware-probe, endstop-test, motion-test) leállítása.",
+        "operationId": "cancel_test_devices__device_id__cancel_test_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/test-progress": {
+      "get": {
+        "summary": "Get Test Progress",
+        "description": "Futó teszt napló lekérdezése (polling). after = ennyi bejegyzést ugorjon át.",
+        "operationId": "get_test_progress_devices__device_id__test_progress_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "After"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/grbl-settings": {
+      "get": {
+        "summary": "Get Grbl Settings",
+        "description": "GRBL beállítások lekérdezése ($$).",
+        "operationId": "get_grbl_settings_devices__device_id__grbl_settings_get",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Set Grbl Setting",
+        "description": "GRBL beállítás módosítása ($N=value).",
+        "operationId": "set_grbl_setting_devices__device_id__grbl_settings_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrblSettingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{device_id}/grbl-settings/batch": {
+      "post": {
+        "summary": "Set Grbl Settings Batch",
+        "description": "Több GRBL beállítás módosítása egyszerre.",
+        "operationId": "set_grbl_settings_batch_devices__device_id__grbl_settings_batch_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrblSettingsBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CalibrateLimitsRequest": {
+        "properties": {
+          "speed": {
+            "type": "number",
+            "title": "Speed",
+            "default": 300.0
+          },
+          "joints": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Joints"
+          },
+          "stall_timeout": {
+            "type": "number",
+            "title": "Stall Timeout",
+            "default": 0.3
+          },
+          "stall_tolerance": {
+            "type": "number",
+            "title": "Stall Tolerance",
+            "default": 0.5
+          }
+        },
+        "type": "object",
+        "title": "CalibrateLimitsRequest",
+        "description": "Stall-detection alapú végállás kalibráció."
+      },
+      "ControlReleaseRequest": {
+        "properties": {
+          "requested_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
+          }
+        },
+        "type": "object",
+        "title": "ControlReleaseRequest",
+        "description": "Aktív control elengedése."
+      },
+      "ControlRequest": {
+        "properties": {
+          "requested_owner": {
+            "type": "string",
+            "title": "Requested Owner"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requested_owner"
+        ],
+        "title": "ControlRequest",
+        "description": "Ownership váltási kérés ('host' vagy 'panel' a tulajdonos)."
+      },
+      "DeviceConfig": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "driver": {
+            "type": "string",
+            "title": "Driver"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "simulated": {
+            "type": "boolean",
+            "title": "Simulated",
+            "default": true
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "driver",
+          "type"
+        ],
+        "title": "DeviceConfig",
+        "description": "Eszköz konfiguráció (devices.yaml egy bejegyzése)."
+      },
+      "FileRequest": {
+        "properties": {
+          "filepath": {
+            "type": "string",
+            "title": "Filepath"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filepath"
+        ],
+        "title": "FileRequest",
+        "description": "G-code fájl betöltési kérés (a vezérlőre)."
+      },
+      "GCodeRequest": {
+        "properties": {
+          "gcode": {
+            "type": "string",
+            "title": "Gcode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gcode"
+        ],
+        "title": "GCodeRequest",
+        "description": "Egyetlen G-code parancs küldése."
+      },
+      "GrblSettingRequest": {
+        "properties": {
+          "setting": {
+            "type": "integer",
+            "title": "Setting"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setting",
+          "value"
+        ],
+        "title": "GrblSettingRequest",
+        "description": "Egyetlen GRBL beállítás módosítása ($N=value)."
+      },
+      "GrblSettingsBatchRequest": {
+        "properties": {
+          "settings": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Settings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "title": "GrblSettingsBatchRequest",
+        "description": "Több GRBL beállítás egyszerre.\n\nA networking paraméterek (pl. $71 hostname, $73-$76 SSID/jelszó) string\nértékűek a grblHAL-ban; ezért a value típus `Union[float, str]`."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HomeRequest": {
+        "properties": {
+          "axes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axes"
+          },
+          "feed_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feed Rate"
+          }
+        },
+        "type": "object",
+        "title": "HomeRequest",
+        "description": "Tengely vagy összes tengely homingolása."
+      },
+      "JogRequest": {
+        "properties": {
+          "axis": {
+            "type": "string",
+            "title": "Axis"
+          },
+          "distance": {
+            "type": "number",
+            "title": "Distance"
+          },
+          "feed_rate": {
+            "type": "number",
+            "title": "Feed Rate"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "axis",
+          "distance",
+          "feed_rate"
+        ],
+        "title": "JogRequest",
+        "description": "Egyszeri jog mozgás (relatív elmozdulás)."
+      },
+      "JogSessionBeatRequest": {
+        "properties": {
+          "axis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "feed_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feed Rate"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "type": "object",
+        "title": "JogSessionBeatRequest",
+        "description": "Heartbeat üzenet egy aktív jog session-höz."
+      },
+      "JogSessionStartRequest": {
+        "properties": {
+          "axis": {
+            "type": "string",
+            "title": "Axis"
+          },
+          "direction": {
+            "type": "number",
+            "title": "Direction"
+          },
+          "feed_rate": {
+            "type": "number",
+            "title": "Feed Rate"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "heartbeat_timeout": {
+            "type": "number",
+            "title": "Heartbeat Timeout",
+            "default": 0.5
+          },
+          "tick_ms": {
+            "type": "integer",
+            "title": "Tick Ms",
+            "default": 40
+          }
+        },
+        "type": "object",
+        "required": [
+          "axis",
+          "direction",
+          "feed_rate"
+        ],
+        "title": "JogSessionStartRequest",
+        "description": "Folyamatos jog session indítása (heartbeat-alapú)."
+      },
+      "JogSessionStopRequest": {
+        "properties": {
+          "hard_stop": {
+            "type": "boolean",
+            "title": "Hard Stop",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "JogSessionStopRequest",
+        "description": "Jog session leállítása."
+      },
+      "OverrideRequest": {
+        "properties": {
+          "percent": {
+            "type": "number",
+            "title": "Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "percent"
+        ],
+        "title": "OverrideRequest",
+        "description": "Feed / spindle override beállítás (százalékban)."
+      },
+      "SaveCalibrationRequest": {
+        "properties": {
+          "j1_limits": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "J1 Limits"
+          },
+          "j2_limits": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "J2 Limits"
+          },
+          "j3_limits": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "J3 Limits"
+          }
+        },
+        "type": "object",
+        "title": "SaveCalibrationRequest",
+        "description": "Kalibrált tengely-limitek mentése."
+      },
+      "SetHomePositionRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "default": "absolute"
+          },
+          "X": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
+          },
+          "Y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          },
+          "Z": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z"
+          },
+          "save_current": {
+            "type": "boolean",
+            "title": "Save Current",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "SetHomePositionRequest",
+        "description": "Home pozíció beállítás (abszolút vagy aktuális mentése)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

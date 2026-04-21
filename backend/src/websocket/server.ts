@@ -5,11 +5,12 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { DeviceManager } from '../devices/DeviceManager.js';
 import { StateManager } from '../state/StateManager.js';
+import { VALID_AXES } from '../api/_helpers/validators.js';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('ws');
 
-const VALID_AXES = new Set(['X', 'Y', 'Z']);
+const VALID_AXES_SET = new Set<string>(VALID_AXES);
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -237,8 +238,8 @@ export function setupWebSocket(
 
       if (!isNonEmptyString(deviceId)) {
         errorMessage = 'Érvénytelen deviceId';
-      } else if (!isNonEmptyString(axis) || !VALID_AXES.has(axis.toUpperCase())) {
-        errorMessage = 'Érvénytelen axis (X/Y/Z)';
+      } else if (!isNonEmptyString(axis) || !VALID_AXES_SET.has(axis.toUpperCase())) {
+        errorMessage = `Érvénytelen axis (megengedett: ${VALID_AXES.join('/')})`;
       } else if (!isFiniteNumber(direction) || direction === 0) {
         errorMessage = 'Érvénytelen direction (nem lehet 0)';
       } else if (!isFiniteNumber(feedRate) || feedRate <= 0) {
@@ -293,8 +294,8 @@ export function setupWebSocket(
 
       if (!isNonEmptyString(deviceId)) {
         errorMessage = 'Érvénytelen deviceId';
-      } else if (axis !== undefined && (!isNonEmptyString(axis) || !VALID_AXES.has(axis.toUpperCase()))) {
-        errorMessage = 'Érvénytelen axis (X/Y/Z)';
+      } else if (axis !== undefined && (!isNonEmptyString(axis) || !VALID_AXES_SET.has(axis.toUpperCase()))) {
+        errorMessage = `Érvénytelen axis (megengedett: ${VALID_AXES.join('/')})`;
       } else if (direction !== undefined && (!isFiniteNumber(direction) || direction === 0)) {
         errorMessage = 'Érvénytelen direction (nem lehet 0)';
       } else if (feedRate !== undefined && (!isFiniteNumber(feedRate) || feedRate <= 0)) {
