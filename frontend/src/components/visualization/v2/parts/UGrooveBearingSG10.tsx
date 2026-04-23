@@ -63,7 +63,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 
 // ---- Csapágy méretei ----
 const BORE_DIAM = 4
@@ -427,4 +427,31 @@ export const U_GROOVE_BEARING_SG10_DIMENSIONS = {
   screwThreadLength: SCREW_THREAD_L,
   /** Teljes axiális kiterjedés — a csavar fejtől a menet végéig. */
   totalAxialLength: SCREW_TOTAL_LENGTH,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame (+Z = csapágy + csavar tengelye;
+// origó = csapágy közép).
+// ---------------------------------------------------------------------------
+export const U_GROOVE_BEARING_SG10_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A csapágy geometriai közepe; +Z = bore-tengely',
+  },
+  'groove-center': {
+    position: [OUTER_R - GROOVE_DEPTH, 0, 0],
+    axis: [1, 0, 0],
+    description: 'A V-horony LEGMÉLYEBB pontja a +X radiális irányban (a vezető-felület)',
+  },
+  'screw-head': {
+    position: [0, 0, -SCREW_TOTAL_LENGTH / 2],
+    axis: [0, 0, -1],
+    description: 'A csavar fejének teteje (-Z vég)',
+  },
+  'screw-tip': {
+    position: [0, 0, +SCREW_TOTAL_LENGTH / 2],
+    axis: [0, 0, 1],
+    description: 'A csavar menetes végének csúcsa (+Z vég)',
+  },
 }

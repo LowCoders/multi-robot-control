@@ -381,6 +381,49 @@ export function Nema23MotorSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Anchor-export — a builder-lokális (motor-lokális) Y-up frame-ben
+// ---------------------------------------------------------------------------
+//
+// MEGJEGYZÉS: A NEMA23 builder JELENLEG még Y-up natív (Phase 4 plan szerint
+// később teljesen átírjuk Z-up natívra). Az anchorok ezért a builder belsejében
+// használt frame-ben vannak megadva:
+//   - X = oldalszélesség (NEMA23_BODY_SIZE / 2-en hagyjuk)
+//   - Y = függőleges (a kábelbevezető a +Y oldalon)
+//   - Z = a motor TENGELYE (shaft +Z)
+//
+// A registry-ben a `mount` mező és/vagy `transform.rotation` mappolja át a
+// world Z-up frame-be (pl. shaft → world +X a `vertical-bracket-1` szülőnél).
+import type { Anchor } from '../types'
+
+export const NEMA23_MOTOR_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A motor body geometriai középpontja; +Z = shaft iránya',
+  },
+  'shaft-tip': {
+    position: [0, 0, BODY_LENGTH / 2 + BOSS_HEIGHT + SHAFT_LENGTH],
+    axis: [0, 0, 1],
+    description: 'A tengely vége (D-cut tip), shaft axis +Z mentén',
+  },
+  'shaft-base': {
+    position: [0, 0, BODY_LENGTH / 2 + BOSS_HEIGHT],
+    axis: [0, 0, 1],
+    description: 'A tengely kezdete a boss tetején',
+  },
+  'mount-flange-front': {
+    position: [0, 0, BODY_LENGTH / 2],
+    axis: [0, 0, 1],
+    description: 'A mounting flange ELŐLAPJA (motor face) — ide fekszik fel a bracket',
+  },
+  'back-face-center': {
+    position: [0, 0, -BODY_LENGTH / 2],
+    axis: [0, 0, -1],
+    description: 'A motor hátlapja középen (cover hátsó vége)',
+  },
+}
+
 export const NEMA23_MOTOR_DIMENSIONS = {
   bodySize: NEMA23_BODY_SIZE,
   /** TELJES motor hossz (iron + hátsó plast fedő együtt) — 122 mm. */

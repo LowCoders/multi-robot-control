@@ -45,7 +45,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 
 const MODULE_M = 1.5
 const TOOTH_COUNT = 17
@@ -317,4 +317,32 @@ export const PINION_GEAR_15M_17T_DIMENSIONS = {
   hubDiam: HUB_DIAM,
   hubHeight: HUB_HEIGHT,
   totalHeight: TOTAL_HEIGHT,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame (+Z = furat iránya / tengely; origó
+// a koszorú és hub találkozási síkján).
+// ---------------------------------------------------------------------------
+export const PINION_GEAR_15M_17T_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'Koszorú-hub határsík; +Z = tengely (gear face -Z, hub +Z).',
+  },
+  'gear-face-bottom': {
+    position: [0, 0, -GEAR_FACE_W],
+    axis: [0, 0, -1],
+    description: 'A fogkoszorú alsó (motor felöli) síkja',
+  },
+  'hub-top': {
+    position: [0, 0, +HUB_HEIGHT],
+    axis: [0, 0, 1],
+    description: 'A hub teteje (a tengely + axis vége)',
+  },
+  'pitch-mate': {
+    position: [PITCH_R, 0, -GEAR_FACE_W / 2],
+    axis: [1, 0, 0],
+    description:
+      'A pitch körön a meshing-partner érintkezési pontja (radiálisan +X-en, axiálisan a gear face közepén).',
+  },
 }

@@ -52,17 +52,28 @@
     "showGrid": true,
     "showAxesHelper": true,
     "cameraPosition": {
-      "x": -84,
-      "y": 173,
-      "z": 642
+      "x": 178,
+      "y": -791,
+      "z": 216
     },
     "cameraTarget": {
-      "x": -120,
-      "y": 120,
-      "z": 0
+      "x": -47,
+      "y": 197,
+      "z": 66
     },
     "backgroundColor": "#1a1a2e",
-    "frameColor": "#f6f5f4"
+    "frameColor": "#f6f5f4",
+    "componentOverrides": {},
+    "componentVisualOverrides": {
+      "y-pulley-70t": {
+        "displayName": "HTD 5M pulley 70T",
+        "color": "#62a0ea",
+        "hidden": false
+      },
+      "y-belt-htd5m-600": {
+        "roughness": 0.4
+      }
+    }
   },
   "driverConfig": {
     "protocol": "grbl",

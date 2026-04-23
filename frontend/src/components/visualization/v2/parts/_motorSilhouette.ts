@@ -129,6 +129,10 @@ export function traceNema23BodyOutline(
  * @param cy pattern közép Y
  * @param holeDiam furat-átmérő (default Ø5.1)
  * @param pattern bolt-pattern oldala (default 47.14)
+ * @param rotated180 ha true, a 4 furat-pozíciót a (cx, cy) körül 180°-kal Z
+ *   tengely körül elforgatva helyezi el. A 47.14 pattern 4-szög szimmetrikus,
+ *   így a 4 furat-pozíciók halmazas értelemben változatlanok (csak permutálva).
+ *   Aszimmetrikus pattern esetén viszont valódi tükrözést eredményez.
  */
 export function addNema23BoltHoles(
   shape: THREE.Shape,
@@ -136,6 +140,7 @@ export function addNema23BoltHoles(
   cy: number,
   holeDiam = NEMA23_BOLT_HOLE_DIAM,
   pattern = NEMA23_BOLT_PATTERN,
+  rotated180 = false,
 ): void {
   const halfBP = pattern / 2
   const r = holeDiam / 2
@@ -146,9 +151,10 @@ export function addNema23BoltHoles(
     [cx - halfBP, cy + halfBP],
   ]
   for (const [px, py] of positions) {
+    const [tx, ty] = rotated180 ? [2 * cx - px, 2 * cy - py] : [px, py]
     const hole = new THREE.Path()
     // CW bejárás (a Shape.holes-ban CW kell hogy legyen, ezért `clockwise=true`).
-    hole.absarc(px, py, r, 0, Math.PI * 2, true)
+    hole.absarc(tx, ty, r, 0, Math.PI * 2, true)
     shape.holes.push(hole)
   }
 }
@@ -175,6 +181,67 @@ export function buildNema23HolePath(cx = 0, cy = 0): THREE.Path {
   const path = new THREE.Path()
   traceNema23BodyOutline(path, cx, cy)
   return path
+}
+
+/**
+ * Path-szerű minimális interfész — a `traceNema23IndentedSilhouette` által
+ * használt 3 metódus (`moveTo`, `lineTo`, `absarc`). Ezt implementáljuk a
+ * `Rotated180Path` wrapperben hogy a (cx, cy) körüli 180°-os Z-forgatást
+ * transzparensen tudjuk alkalmazni a meglévő trace logikára.
+ */
+interface SilhouettePath {
+  moveTo(x: number, y: number): unknown
+  lineTo(x: number, y: number): unknown
+  absarc(
+    aX: number,
+    aY: number,
+    aRadius: number,
+    aStartAngle: number,
+    aEndAngle: number,
+    aClockwise: boolean,
+  ): unknown
+}
+
+/**
+ * `SilhouettePath` wrapper, amely minden hozzá írt pontot 180°-kal a
+ * (`pivotX`, `pivotY`) körül a Z tengely körül elforgatva továbbít a belső
+ * path-ra. Ekvivalens a `(x, y) → (2*pivotX - x, 2*pivotY - y)` tükrözéssel
+ * (180° = pontos tükrözés a pivot körül). Az ívek `startAngle`/`endAngle`
+ * paramétereihez +π hozzáadódik, az `clockwise` flag változatlan (a 180°-os
+ * Z-rotation orientáció-megőrző).
+ */
+class Rotated180Path implements SilhouettePath {
+  constructor(
+    private readonly inner: THREE.Path,
+    private readonly pivotX: number,
+    private readonly pivotY: number,
+  ) {}
+
+  moveTo(x: number, y: number): unknown {
+    return this.inner.moveTo(2 * this.pivotX - x, 2 * this.pivotY - y)
+  }
+
+  lineTo(x: number, y: number): unknown {
+    return this.inner.lineTo(2 * this.pivotX - x, 2 * this.pivotY - y)
+  }
+
+  absarc(
+    aX: number,
+    aY: number,
+    aRadius: number,
+    aStartAngle: number,
+    aEndAngle: number,
+    aClockwise: boolean,
+  ): unknown {
+    return this.inner.absarc(
+      2 * this.pivotX - aX,
+      2 * this.pivotY - aY,
+      aRadius,
+      aStartAngle + Math.PI,
+      aEndAngle + Math.PI,
+      aClockwise,
+    )
+  }
 }
 
 /**
@@ -228,7 +295,14 @@ export function traceNema23IndentedSilhouette(
   indentR = NEMA23_INDENT_R,
   filletR = NEMA23_INDENT_FILLET_R,
   outwardOffset = NEMA23_INDENT_OUTWARD_OFFSET,
+  rotated180 = false,
 ): void {
+  // Ha rotated180 = true, akkor a path építést egy wrapperen keresztül
+  // végezzük, amely minden pontot a (cx, cy) körül 180°-kal Z körül elforgat.
+  // (A NEMA23 indented silhouette önmagában 4-szög szimmetrikus erre, így a
+  //  vizuális kimenet azonos — a forgatás akkor releváns, ha aszimmetrikus
+  //  módosítások kerülnek a silhouette-be a jövőben.)
+  const sink: SilhouettePath = rotated180 ? new Rotated180Path(target, cx, cy) : target
   const half = size / 2
   const halfBolt = boltPattern / 2
   // offsetAxis = az indent center axis-irányú eltolása a bolt-pozíciótól
@@ -265,7 +339,7 @@ export function traceNema23IndentedSilhouette(
   // Path-kezdet: a BL sarok exit (h-) fillet-jének body-él tangenspontja az alsó élen.
   // BL indent center: (cx - halfBolt - offsetAxis, cy - halfBolt - offsetAxis)
   // BL bottom fillet center x: indCx_BL - sx*L = indCx_BL + L = cx - halfBolt - offsetAxis + L
-  target.moveTo(cx - halfBolt - offsetAxis + L, yB)
+  sink.moveTo(cx - halfBolt - offsetAxis + L, yB)
 
   const corners: ReadonlyArray<{ sx: 1 | -1; sy: 1 | -1 }> = [
     { sx: +1, sy: -1 }, // BR
@@ -314,16 +388,16 @@ export function traceNema23IndentedSilhouette(
 
     if (isHEntry) {
       // Bejövünk a horizontális élről → h-fillet (CCW) → indent (CW) → v-fillet (CCW) → kimegyünk a vert. élre.
-      target.lineTo(hEdgeX, hEdgeY)
-      target.absarc(hCx, hCy, filletR, hEdgeAngle, hIndentAngle, false)
-      target.absarc(indCx, indCy, indentR, indentHAngle, indentVAngle, true)
-      target.absarc(vCx, vCy, filletR, vIndentAngle, vEdgeAngle, false)
+      sink.lineTo(hEdgeX, hEdgeY)
+      sink.absarc(hCx, hCy, filletR, hEdgeAngle, hIndentAngle, false)
+      sink.absarc(indCx, indCy, indentR, indentHAngle, indentVAngle, true)
+      sink.absarc(vCx, vCy, filletR, vIndentAngle, vEdgeAngle, false)
     } else {
       // Bejövünk a vertikális élről → v-fillet (CCW) → indent (CW) → h-fillet (CCW) → kimegyünk a horiz. élre.
-      target.lineTo(vEdgeX, vEdgeY)
-      target.absarc(vCx, vCy, filletR, vEdgeAngle, vIndentAngle, false)
-      target.absarc(indCx, indCy, indentR, indentVAngle, indentHAngle, true)
-      target.absarc(hCx, hCy, filletR, hIndentAngle, hEdgeAngle, false)
+      sink.lineTo(vEdgeX, vEdgeY)
+      sink.absarc(vCx, vCy, filletR, vEdgeAngle, vIndentAngle, false)
+      sink.absarc(indCx, indCy, indentR, indentVAngle, indentHAngle, true)
+      sink.absarc(hCx, hCy, filletR, hIndentAngle, hEdgeAngle, false)
     }
   }
   // A BL sarok exit fillet-je pontosan a startpontnál végződik, így a path
@@ -337,9 +411,19 @@ export function traceNema23IndentedSilhouette(
  * száraknak, nem kell külön furat. Ezt a Shape-t a motor iron body main
  * szakaszához és a hátsó plast fedőhöz használjuk extrúzióhoz.
  */
-export function buildNema23IndentedShape(cx = 0, cy = 0): THREE.Shape {
+export function buildNema23IndentedShape(cx = 0, cy = 0, rotated180 = false): THREE.Shape {
   const shape = new THREE.Shape()
-  traceNema23IndentedSilhouette(shape, cx, cy)
+  traceNema23IndentedSilhouette(
+    shape,
+    cx,
+    cy,
+    NEMA23_BODY_SIZE,
+    NEMA23_BOLT_PATTERN,
+    NEMA23_INDENT_R,
+    NEMA23_INDENT_FILLET_R,
+    NEMA23_INDENT_OUTWARD_OFFSET,
+    rotated180,
+  )
   return shape
 }
 
@@ -353,9 +437,22 @@ export function buildNema23IndentedShape(cx = 0, cy = 0): THREE.Shape {
  * A bracket cutout pontosan ugyanazt a fillet-aware silhouette-et követi, mint
  * a motor body, így a két alkatrész vizuálisan és geometriailag tökéletesen
  * illeszkedik egymáshoz.
+ *
+ * @param rotated180 ha true, a silhouette-et a (cx, cy) körül 180°-kal Z
+ *   tengely körül elforgatva építi fel. (Lásd `traceNema23IndentedSilhouette`.)
  */
-export function buildNema23IndentedHolePath(cx = 0, cy = 0): THREE.Path {
+export function buildNema23IndentedHolePath(cx = 0, cy = 0, rotated180 = false): THREE.Path {
   const path = new THREE.Path()
-  traceNema23IndentedSilhouette(path, cx, cy)
+  traceNema23IndentedSilhouette(
+    path,
+    cx,
+    cy,
+    NEMA23_BODY_SIZE,
+    NEMA23_BOLT_PATTERN,
+    NEMA23_INDENT_R,
+    NEMA23_INDENT_FILLET_R,
+    NEMA23_INDENT_OUTWARD_OFFSET,
+    rotated180,
+  )
   return path
 }

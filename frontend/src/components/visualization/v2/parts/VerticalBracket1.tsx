@@ -21,18 +21,39 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 import {
   addNema23BoltHoles,
   buildNema23IndentedHolePath,
 } from './_motorSilhouette'
 
 const PLATE_W = 80
-const PLATE_H = 200
+/**
+ * Lemez magassága.
+ *
+ * Felhasználói kérésekre a tetejéből összesen 24 mm le lett vágva
+ * (200 → 188.2 → 183.2 → 176):
+ *   1. lépés: 200 → 188.2 — a teteje a #24 fedőlap (`x-drive-top-plate`)
+ *      override szerinti ALJÁHOZ (world Z = 188.2) illeszkedett.
+ *   2. lépés: 188.2 → 183.2 — további 5 mm-es lehúzás (5 mm hézag a #24 alja
+ *      és a bracket teteje között).
+ *   3. lépés: 183.2 → 176 — végleges magasság a felhasználó által megadva.
+ * Az alja továbbra is Z = 0 (a base-tetőn áll); a builder shape Y-centerelt,
+ * így az új builder Y range = -88 .. +88.
+ */
+const PLATE_H = 176
 const PLATE_T = 10
 
-/** A motor-cutout középpontja a lemez lokális koordinátáiban (50 mm-rel a tetejétől lefelé). */
-const CUTOUT_CY = 50
+/**
+ * A motor-cutout középpontja a lemez lokális koordinátáiban.
+ *
+ * A motor (#8) az X tengely körül 180°-kal megfordítva ÉS lejjebb tolva
+ * (felhasználói módosítás). Az új ABSZOLÚT cutout/flange pozíció a base-tetőtől
+ * mérve world Z = 138.4. A centered builder Y origója a lemez magasság-felezőjénél
+ * (world Z = 88) van, a cutout builder-Y eltolása = 138.4 - 88 = 50.4.
+ * Korábban: PLATE_H = 200/188.2/183.2, CUTOUT_CY = 50/55.9/58.4 (motor Z = 150).
+ */
+const CUTOUT_CY = 50.4
 
 /** Alumínium PBR anyag — világos ezüst-szürke. */
 function useAluminumMaterial() {
@@ -122,4 +143,60 @@ export const VERTICAL_BRACKET_1_DIMENSIONS = {
   height: PLATE_H,
   thickness: PLATE_T,
   cutoutCenterY: CUTOUT_CY,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame-ben.
+// A lemez X-Y síkban van, +Z irányba extrudálva (lemez vastagsága Z mentén).
+// A "front face" (cutout-felöli oldal) a builder lokális +Z, a "back face" -Z.
+// A 4 fülön található Ø5.1 menetes-szár furat a 47.14 mm pattern szerint.
+// ---------------------------------------------------------------------------
+const NEMA23_BOLT_PATTERN_HALF = 47.14 / 2
+
+export const VERTICAL_BRACKET_1_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A lemez geometriai középpontja; +Z = "szembenéző" oldal (cutout felöl).',
+  },
+  'front-face-center': {
+    position: [0, CUTOUT_CY, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description:
+      'A motor cutout középpontja a lemez ELŐLAPJÁN (+Z oldal). A motor mounting flange ide ' +
+      'illeszkedik (a flange front-face-e a bracket előlapjához).',
+  },
+  'back-face-center': {
+    position: [0, CUTOUT_CY, -PLATE_T / 2],
+    axis: [0, 0, -1],
+    description:
+      'A motor cutout középpontja a lemez HÁTLAPJÁN (-Z oldal). Innen indulnak a ' +
+      'menetes szárak a motor felé.',
+  },
+  'bolt-1': {
+    position: [-NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: '4 db M5 menetes szár furat: bal-alsó (-X, -Y a cutout center-hez képest)',
+  },
+  'bolt-2': {
+    position: [+NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: 'jobb-alsó (+X, -Y)',
+  },
+  'bolt-3': {
+    position: [+NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: 'jobb-felső (+X, +Y)',
+  },
+  'bolt-4': {
+    position: [-NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: 'bal-felső (-X, +Y)',
+  },
+  'bottom-edge-center': {
+    position: [0, -PLATE_H / 2, 0],
+    axis: [0, -1, 0],
+    description:
+      'A lemez ALSÓ élének közepe — itt fekszik az alaplemezre (base). Axis = -Y (lefelé a builder lokálisban).',
+  },
 }

@@ -24,50 +24,58 @@
  * ÉSSZERŰ BECSÜLT méretek (a hivatalos táblázatban nincsenek explicit megadva):
  *   - d1 ≈ 6.6 — átmenő furat (M6 clearance, a wing-csavarokhoz)
  *
- * Az "alap" (foot, B=95 wide szakasz) magassága a felhasználó kérésére
+ * Az "alap" (foot, B = 95 wide szakasz) magassága a HIWIN datasheet szerint
  * H_FOOT = H1 = 25 mm — a bore tengelye pontosan a foot teteje magasságában van.
  *
- * FELÉPÍTÉS — 2 db ExtrudeGeometry, eltérő irányú extrudálással:
+ * FELÉPÍTÉS — 4 db ExtrudeGeometry úgy szervezve, hogy mind a wing-furatok (Y-axis,
+ * a foot-on átmenő), mind a Ø20 bore (Z-axis, a pedestal-on átmenő) természetesen
+ * megrajzolhatók legyenek CSG nélkül:
  *
  *   1. **Lower Foot** (B × H_LOWER_FOOT × L = 95 × 15 × 42), X-Z profil Y mentén
- *      extrudálva. Y range: −29..−14 (a bore aljánál = H1 − H/2 − D/2 végződik).
- *      **2 db REAL Ø6.6 átmenő furat** (a 2 WING furat, a felhasználó kérésére
- *      megtartva): X = ±P/2 = ±37.5, Z = 0. Alulról láthatóak.
+ *      extrudálva. Y range: -29 .. -14 (a bore aljánál végződik, ezzel teret hagyva
+ *      a pedestal X-Y profiljának a bore-hoz).
+ *      **2 db Ø6.6 átmenő furat** a wing-csavarokhoz (X = ±P/2 = ±37.5, Z = 0).
  *
- *   2. **Upper Body** (Lower Foot felett, az alap felső 10 mm-e + a teljes
- *      pedestal). X-Y T-shape profil Z mentén L = 42 mm-en extrudálva.
- *      Y range: −15..+29 (1 mm overlap a Lower Foot tetejével a tangencia
- *      elkerülésére). A T-shape:
- *        - alsó "Upper Foot" szakasz: B × ~11 = 95 × 11 (Y = −15..−4)
- *        - felső "Pedestal" szakasz:   B1 × (H/2 − Y_PED_BOT) = 56 × 33 (Y = −4..+29)
- *      **1 db REAL Ø20 bore** (teljes kör, NEM fél-kör) a (0, −4) ponton —
- *      Y range: −14..+6, mind a felső, mind az alsó fele a T-shape kontúrjon
- *      belül. Z oldalról nézve a bore egy teljes Ø20 körlapként látszik, ami
- *      áthalad a pedestalon és a foot felső 10 mm-én is.
+ *   2. **Upper Foot LEFT** (a foot bal oldalsó "füle" a pedestal mellett):
+ *      X = -B/2 .. -B1/2 = -47.5 .. -28 (= 19.5 mm széles), Y range: -15 .. -4
+ *      (= 11 mm magas, 1 mm overlap a Lower Foot-tal a tangencia elkerülésére),
+ *      Z = -L/2 .. +L/2. X-Z profil Y mentén extrudálva.
+ *      **1 db Ø6.6 átmenő furat** a bal wing-csavarhoz (X = -P/2 = -37.5, Z = 0).
+ *      A felső Y határ (Y = -4) megegyezik a pedestal aljával (folytonos sziluett).
  *
- * **NINCS** cosmetic counterbore-recesz a pedestal tetején (a felhasználó kérésére
- * eltávolítva). A 2 KÖZPONTI mounting hole-t (X=±23.75) sem modellezzük.
+ *   3. **Upper Foot RIGHT** — az Upper Foot LEFT tükörképe (X = +28 .. +47.5),
+ *      a jobb wing-csavarhoz tartozó **1 db Ø6.6 átmenő furattal**.
+ *
+ *   4. **Pedestal** (X = -B1/2 .. +B1/2 = -28 .. +28, Y = -15 .. +29 = 44 mm magas),
+ *      X-Y profil Z = L = 42 mm-en extrudálva. **1 db Ø20 bore** a (X=0, Y=-4)
+ *      ponton — Y range -14 .. +6, mind a kontúrjon belül.
+ *      A pedestal alja (Y = -15) 1 mm overlap-pal érintkezik az Upper Foot strip-ek
+ *      tetejével és a Lower Foot tetejével (Y = -14), kettős biztonságot adva a
+ *      tangencia mentes triangulációhoz.
+ *
+ * A 4 darab együttes globális sziluettje (front view):
+ *   - Y = -29 .. -4: B = 95 mm széles (Lower Foot + 2 Upper Foot strip + pedestal alja)
+ *   - Y = -4  .. +29: B1 = 56 mm széles (csak pedestal)
+ *   — vagyis ugyanaz a "fordított T" sziluett, mint amit a HIWIN datasheet rajza ad.
+ *
+ * **NINCS** cosmetic counterbore-recesz a pedestal tetején. A 2 KÖZPONTI mounting
+ * hole-t (X = ±23.75) sem modellezzük (cikkjelölés szempontból egyszerűsítés).
  *
  * NEM modellezett részletek (későbbi iterációkra):
  *   - Központi M4 locknut hozzáférési furat a pedestal tetején (T = 30 mm mély)
  *   - A belső csapágypár (2 db 7204B P0 angular contact, RN20 locknut, távtartó)
  *   - Élek lekerekítése / chamferek
- *   - A 2 wing-furat csak a Lower Foot 15 mm-én megy át (alulról látszik); az
- *     Upper Body lefedi felülről (vizualizációs egyszerűsítés, mivel a Z-extrudált
- *     X-Y profilba Y-irányú lyukak nem illeszthetők CSG nélkül)
  *
  * Builder lokális orientáció:
  *   - +Z = orsó-tengely (a bore Z mentén megy át)
  *   - +Y = függőlegesen felfelé (pedestal up, alaplemez lent)
  *   - Origó: a blokk GEOMETRIAI KÖZÉPPONTJA (X=0, Y=0, Z=0):
- *       Y kiterjedés: −H/2..+H/2 = −29..+29
- *       Bore tengelye: Y = H1 − H/2 = −4 (a foot teteje szintjén)
- *       Lower Foot Y range: −29..−14 (15 mm fizikai magas)
- *       Upper Body Y range: −15..+29 (1 mm overlap a Lower Foot-tal)
+ *       Y kiterjedés: -H/2 .. +H/2 = -29 .. +29
+ *       Bore tengelye: Y = H1 - H/2 = -4 (a foot teteje szintjén)
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 
 // ---- Méretek a HIWIN EK20-C5 hivatalos táblázatból ----
 const D_BORE = 20
@@ -85,15 +93,12 @@ const M_OFFSET_X = 11 // X — locknut hozzáférési furat offset (NEM modellez
 const M_DEPTH_T = 30 // T — locknut hozzáférési furat mélység (NEM modellezett)
 // M = M4 — locknut hozzáférési csavar mérete (NEM modellezett)
 
-// ---- Felhasználó-specifikált / becsült méretek (a hivatalos táblázatban nem szerepelnek) ----
-/**
- * Az "alap" (foot, B=95 wide szakasz) fizikai magassága. A felhasználó kérésére
- * H_FOOT = H1 = 25, vagyis a foot teteje pontosan a bore-tengely magasságában van.
- */
+// ---- Becsült méretek (a hivatalos táblázatban nem szerepelnek) ----
+/** Az "alap" (foot) fizikai magassága = H1 (a bore-tengely magassága) = 25 mm. */
 const H_FOOT = H1 // = 25
 const D_THRU = 6.6 // d1 — átmenő furat (M6 clearance, a wing-csavarokhoz)
 
-// ---- Levezetett Y koordináták (centrált koord-rendszer, Y_world = 0 a blokk geometriai közepe) ----
+// ---- Levezetett Y koordináták (centrált koord-rendszer, Y=0 a blokk geometriai közepe) ----
 /** A teljes blokk Y-tartománya: Y_BLOCK_BOT..Y_BLOCK_TOP = -29..+29. */
 const Y_BLOCK_BOT = -H / 2 // = -29
 const Y_BLOCK_TOP = +H / 2 // = +29
@@ -104,15 +109,22 @@ const Y_BORE_BOT = Y_BORE_CENTER - D_BORE / 2 // = -14
 /** Lower Foot teteje (= bore alja). Fizikai magassága Y_LOWER_FOOT_TOP - Y_BLOCK_BOT = 15 mm. */
 const Y_LOWER_FOOT_TOP = Y_BORE_BOT // = -14
 const H_LOWER_FOOT = Y_LOWER_FOOT_TOP - Y_BLOCK_BOT // = 15
+
 /**
- * Az Upper Body 1 mm-rel a Lower Foot teteje ALATT kezdődik, hogy a bore alsó pontja
- * (Y=-14) ne legyen érintőleges az Upper Body kontúrjának alsó éléhez (különben az
- * ExtrudeGeometry triangulációja a tangencia ponton hibás lehet).
+ * 1 mm overlap a Lower Foot teteje és a felette álló elemek (Upper Foot strip-ek
+ * + Pedestal) alja között — a tangencia mentes triangulációhoz.
  */
 const SAFETY_OVERLAP = 1
-const Y_UPPER_BODY_BOT = Y_LOWER_FOOT_TOP - SAFETY_OVERLAP // = -15
-/** Pedestal alja (= foot teteje, a "T-shape" váll-szintje). */
-const Y_PED_BOT = -H / 2 + H_FOOT // = -4
+const Y_UPPER_FOOT_BOT = Y_LOWER_FOOT_TOP - SAFETY_OVERLAP // = -15
+const Y_UPPER_FOOT_TOP = Y_BORE_CENTER // = -4 (= a foot teteje, a pedestal-váll)
+const H_UPPER_FOOT = Y_UPPER_FOOT_TOP - Y_UPPER_FOOT_BOT // = 11
+
+/** A pedestal Y-tartománya: a Lower Foot tetejével 1 mm-es overlap-pal kezdődik. */
+const Y_PEDESTAL_BOT = Y_UPPER_FOOT_BOT // = -15
+
+/** Pedestal és Upper Foot strip-ek X-határai. */
+const X_PEDESTAL_HALF = B1 / 2 // = 28 → pedestal X range -28..+28
+const X_FOOT_HALF = B / 2 // = 47.5 → teljes foot X range -47.5..+47.5
 
 /**
  * Re-exportált méretek a komponens regiszter és a layout-számítások számára.
@@ -121,7 +133,6 @@ const Y_PED_BOT = -H / 2 + H_FOOT // = -4
  * egyértelműen látja, melyik az a méret, amit a datasheet szerint pontosan tudunk.
  */
 export const EK20_BEARING_DIMENSIONS = {
-  // a HIWIN EK20-C5 hivatalos datasheet-ből:
   shaftDiameter: D_BORE,
   blockLengthAxial: L,
   innerL1: L1,
@@ -135,14 +146,52 @@ export const EK20_BEARING_DIMENSIONS = {
   wingBoltPatternX: P_WING_PATTERN,
   locknutAccessOffsetX: M_OFFSET_X,
   locknutAccessDepthT: M_DEPTH_T,
-  // a foot fizikai vastagsága — a felhasználó kérésére = H1 = 25 mm
-  // (a bore tengelye a foot teteje szintjén van):
   footThickness: H_FOOT,
-  // A Lower Foot tényleges fizikai Y-extrude magassága (a bore aljáig megy fel).
-  // A foot felső 10 mm-e (Y=-14..-4) az Upper Body T-shape részeként van modellezve.
   lowerFootPhysicalThickness: H_LOWER_FOOT,
-  // Becsült (HIWIN EK20-C5 hivatalos rajzban explicit nincs megadva):
   estimatedThroughHoleDiam: D_THRU,
+}
+
+// ---------------------------------------------------------------------------
+// Anchorok — a builder belső Y-up frame-ben (lásd a fájl tetején a JSDoc-ot)
+// ---------------------------------------------------------------------------
+//
+// MEGJEGYZÉS: A builder JELENLEG még Y-up natív (+Y = függőleges, +Z = bore-axis).
+// A Phase 8 keretében a builder kódot teljesen átírjuk Z-up natívra; addig a
+// regiszterben a `transform.rotation`-vel forgatjuk a komponenst Z-up world-be.
+// Az anchorok a builder belső frame-ben vannak megadva — a renderer az
+// anchor-mate kiszámolásakor ezt a transform-rotation-vel együtt mappolja
+// át a parent (és a world) frame-be.
+export const EK20_BEARING_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 1, 0],
+    description: 'A blokk geometriai középpontja; builder +Y = függőleges',
+  },
+  'bore-axis-near': {
+    position: [0, Y_BORE_CENTER, +L / 2],
+    axis: [0, 0, 1],
+    description: 'Bore tengely +Z vége (a builder Z-tengelye)',
+  },
+  'bore-axis-far': {
+    position: [0, Y_BORE_CENTER, -L / 2],
+    axis: [0, 0, -1],
+    description: 'Bore tengely -Z vége',
+  },
+  'bore-center': {
+    position: [0, Y_BORE_CENTER, 0],
+    axis: [0, 0, 1],
+    description: 'Bore axiális középpontja a blokk közepén',
+  },
+  'mount-bottom-center': {
+    position: [0, Y_BLOCK_BOT, 0],
+    axis: [0, -1, 0],
+    description: 'A foot alja (mounting surface) középen',
+  },
+  'pedestal-top-center': {
+    position: [0, Y_BLOCK_TOP, 0],
+    axis: [0, 1, 0],
+    description: 'A pedestal teteje középen (M4 locknut hozzáférés helye)',
+  },
 }
 
 // ---- Material hookok ----
@@ -180,7 +229,6 @@ function buildLowerFootShape(): THREE.Shape {
   shape.lineTo(-halfB, +halfL)
   shape.closePath()
 
-  // 2 wing through-hole (X = ±P/2, Z = 0 — a középvonalon)
   for (const px of [-halfBP, +halfBP]) {
     const hole = new THREE.Path()
     hole.absellipse(px, 0, r, r, 0, 2 * Math.PI, false)
@@ -189,55 +237,82 @@ function buildLowerFootShape(): THREE.Shape {
   return shape
 }
 
-/**
- * Lower Foot ExtrudeGeometry: a 2D X-Z profilt H_LOWER_FOOT = 15 mm-en Y irányba
- * extrudálja, és pozicionálja Y = Y_BLOCK_BOT .. Y_LOWER_FOOT_TOP = -29 .. -14 közé.
- */
 function buildLowerFootGeometry(): THREE.ExtrudeGeometry {
   const geom = new THREE.ExtrudeGeometry(buildLowerFootShape(), {
     depth: H_LOWER_FOOT,
     bevelEnabled: false,
     curveSegments: 24,
   })
-  // rotateX(+π/2): a shape (X-Y_shape) síkból az extrude depth +Z irányból átkerül
-  // world -Y irányba (a Lower Foot vastagsága Y mentén).
   geom.rotateX(Math.PI / 2)
-  // Az átfordítás után a Lower Foot Y range: [-H_LOWER_FOOT, 0] = [-15, 0].
-  // Eltoljuk a blokk aljához:
   geom.translate(0, Y_BLOCK_BOT + H_LOWER_FOOT, 0)
-  // Új Y range: [Y_BLOCK_BOT, Y_BLOCK_BOT + H_LOWER_FOOT] = [-29, -14] ✓
   return geom
 }
 
 /**
- * Upper Body 2D shape: X-Y síkban (front nézet), T-shape kontúr az Upper Foot
- * (alul B = 95 wide, ~11 mm magas) és a Pedestal (felül B1 = 56 wide, 33 mm magas)
- * összevont profilja. Egyetlen lyuk: a TELJES Ø20 bore kör a (0, Y_BORE_CENTER)
- * = (0, -4) ponton — Y range -14..+6 a kontúron belül (Y_UPPER_BODY_BOT = -15
- * miatt 1 mm tartalék az alsó éltől).
+ * Upper Foot strip 2D shape: X-Z síkban (felülnézet), egy oldal-csík a foot
+ * füléből (a pedestal mellett), 1 wing through-hole-lal. A `side` paraméter
+ * választja: 'left' = X = -B/2..-B1/2, 'right' = X = +B1/2..+B/2.
  *
- * A T-shape kontúr CCW haladva: bal-alsó → alulról jobbra → fel az Upper Foot
- * jobb tetejéig → balra a pedestal jobb sarka felé (T-váll) → fel a pedestal
- * teteje → balra → le a pedestal bal sarka felé (T-váll) → balra az Upper Foot
- * bal tetejéig → bezár.
+ * A Y-extrude-utáni Y range: Y_UPPER_FOOT_BOT..Y_UPPER_FOOT_TOP = -15..-4
+ * (= 11 mm magas, 1 mm overlap a Lower Foot-tal).
+ *
+ * A wing-furat (Ø D_THRU) így a Lower Foot 15 mm + Upper Foot strip 11 mm = 25 mm
+ * teljes foot-magasságban átmenő — felülnézetből (Y irányból) is látható.
  */
-function buildUpperBodyShape(): THREE.Shape {
-  const halfB = B / 2 // 47.5 (Upper Foot szélesség)
-  const halfB1 = B1 / 2 // 28 (Pedestal szélesség)
-  const r = D_BORE / 2 // 10
+function buildUpperFootStripShape(side: 'left' | 'right'): THREE.Shape {
+  const halfL = L / 2
+  const halfBP = P_WING_PATTERN / 2 // = 37.5
+  const r = D_THRU / 2
+
+  const xInner = side === 'left' ? -X_PEDESTAL_HALF : +X_PEDESTAL_HALF
+  const xOuter = side === 'left' ? -X_FOOT_HALF : +X_FOOT_HALF
+  const xLeft = Math.min(xInner, xOuter)
+  const xRight = Math.max(xInner, xOuter)
+  const xHole = side === 'left' ? -halfBP : +halfBP
 
   const shape = new THREE.Shape()
-  shape.moveTo(-halfB, Y_UPPER_BODY_BOT) // (-47.5, -15)
-  shape.lineTo(+halfB, Y_UPPER_BODY_BOT) // (+47.5, -15)
-  shape.lineTo(+halfB, Y_PED_BOT) // (+47.5, -4)  Upper Foot jobb teteje
-  shape.lineTo(+halfB1, Y_PED_BOT) // (+28, -4)    T-váll bal felé
-  shape.lineTo(+halfB1, Y_BLOCK_TOP) // (+28, +29)  Pedestal jobb teteje
-  shape.lineTo(-halfB1, Y_BLOCK_TOP) // (-28, +29)
-  shape.lineTo(-halfB1, Y_PED_BOT) // (-28, -4)    T-váll bal felé
-  shape.lineTo(-halfB, Y_PED_BOT) // (-47.5, -4)  Upper Foot bal teteje
+  shape.moveTo(xLeft, -halfL)
+  shape.lineTo(xRight, -halfL)
+  shape.lineTo(xRight, +halfL)
+  shape.lineTo(xLeft, +halfL)
   shape.closePath()
 
-  // TELJES Ø20 bore — a (0, -4) ponton, Y range -14..+6, mind a kontúron belül.
+  const hole = new THREE.Path()
+  hole.absellipse(xHole, 0, r, r, 0, 2 * Math.PI, false)
+  shape.holes.push(hole)
+  return shape
+}
+
+function buildUpperFootStripGeometry(side: 'left' | 'right'): THREE.ExtrudeGeometry {
+  const geom = new THREE.ExtrudeGeometry(buildUpperFootStripShape(side), {
+    depth: H_UPPER_FOOT,
+    bevelEnabled: false,
+    curveSegments: 24,
+  })
+  geom.rotateX(Math.PI / 2)
+  geom.translate(0, Y_UPPER_FOOT_BOT + H_UPPER_FOOT, 0)
+  return geom
+}
+
+/**
+ * Pedestal 2D shape: X-Y síkban (front nézet), B1 × pedestal_height téglalap
+ * a TELJES Ø20 bore-furattal a (0, Y_BORE_CENTER) ponton.
+ *
+ * Y range: Y_PEDESTAL_BOT..Y_BLOCK_TOP = -15..+29 (44 mm magas; az alja 1 mm
+ * overlap-pal érintkezik a Lower Foot tetejével és az Upper Foot strip-ek aljával).
+ * A bore Y range -14..+6 → mind a kontúron belül van.
+ */
+function buildPedestalShape(): THREE.Shape {
+  const halfB1 = X_PEDESTAL_HALF
+  const r = D_BORE / 2
+
+  const shape = new THREE.Shape()
+  shape.moveTo(-halfB1, Y_PEDESTAL_BOT)
+  shape.lineTo(+halfB1, Y_PEDESTAL_BOT)
+  shape.lineTo(+halfB1, Y_BLOCK_TOP)
+  shape.lineTo(-halfB1, Y_BLOCK_TOP)
+  shape.closePath()
+
   const bore = new THREE.Path()
   bore.absellipse(0, Y_BORE_CENTER, r, r, 0, 2 * Math.PI, false)
   shape.holes.push(bore)
@@ -245,8 +320,8 @@ function buildUpperBodyShape(): THREE.Shape {
   return shape
 }
 
-function buildUpperBodyGeometry(): THREE.ExtrudeGeometry {
-  const geom = new THREE.ExtrudeGeometry(buildUpperBodyShape(), {
+function buildPedestalGeometry(): THREE.ExtrudeGeometry {
+  const geom = new THREE.ExtrudeGeometry(buildPedestalShape(), {
     depth: L,
     bevelEnabled: false,
     curveSegments: 36,
@@ -258,34 +333,31 @@ function buildUpperBodyGeometry(): THREE.ExtrudeGeometry {
 // ---- LOD belépési pontok ----
 
 /**
- * Realisztikus: Lower Foot (2 wing through-hole) + Upper Body T-shape (TELJES Ø20
- * bore-furat). NINCS cosmetic counterbore-recess (a felhasználó kérésére eltávolítva).
+ * Realisztikus: Lower Foot + 2 Upper Foot strip + Pedestal. A 2 wing-furat a foot
+ * teljes 25 mm magasságán átmegy (felülnézetből és alulnézetből egyaránt látható),
+ * a Ø20 bore a pedestal teljes 42 mm Z-mélységén áthalad.
  */
 export function EK20BearingRealistic({ componentId }: PartBuilderProps) {
   const aluMat = useAluminiumMaterial()
   const lowerFootGeom = useMemo(() => buildLowerFootGeometry(), [])
-  const upperBodyGeom = useMemo(() => buildUpperBodyGeometry(), [])
+  const upperFootLeftGeom = useMemo(() => buildUpperFootStripGeometry('left'), [])
+  const upperFootRightGeom = useMemo(() => buildUpperFootStripGeometry('right'), [])
+  const pedestalGeom = useMemo(() => buildPedestalGeometry(), [])
   useEffect(() => {
     return () => {
       lowerFootGeom.dispose()
-      upperBodyGeom.dispose()
+      upperFootLeftGeom.dispose()
+      upperFootRightGeom.dispose()
+      pedestalGeom.dispose()
     }
-  }, [lowerFootGeom, upperBodyGeom])
+  }, [lowerFootGeom, upperFootLeftGeom, upperFootRightGeom, pedestalGeom])
 
   return (
     <group userData={{ componentId }}>
-      {/* Lower Foot — 2 wing through-hole alulról láthatóak */}
-      <mesh
-        material={aluMat}
-        geometry={lowerFootGeom}
-        userData={{ componentId }}
-      />
-      {/* Upper Body T-shape — TELJES Ø20 bore Z mentén áthalad */}
-      <mesh
-        material={aluMat}
-        geometry={upperBodyGeom}
-        userData={{ componentId }}
-      />
+      <mesh material={aluMat} geometry={lowerFootGeom} userData={{ componentId }} />
+      <mesh material={aluMat} geometry={upperFootLeftGeom} userData={{ componentId }} />
+      <mesh material={aluMat} geometry={upperFootRightGeom} userData={{ componentId }} />
+      <mesh material={aluMat} geometry={pedestalGeom} userData={{ componentId }} />
     </group>
   )
 }
@@ -294,30 +366,8 @@ export function EK20BearingRealistic({ componentId }: PartBuilderProps) {
  * Medium: ugyanaz mint Realistic — surface recess-ek nélkül, geometriai részletek
  * azonosak.
  */
-export function EK20BearingMedium({ componentId }: PartBuilderProps) {
-  const aluMat = useAluminiumMaterial()
-  const lowerFootGeom = useMemo(() => buildLowerFootGeometry(), [])
-  const upperBodyGeom = useMemo(() => buildUpperBodyGeometry(), [])
-  useEffect(() => {
-    return () => {
-      lowerFootGeom.dispose()
-      upperBodyGeom.dispose()
-    }
-  }, [lowerFootGeom, upperBodyGeom])
-  return (
-    <group userData={{ componentId }}>
-      <mesh
-        material={aluMat}
-        geometry={lowerFootGeom}
-        userData={{ componentId }}
-      />
-      <mesh
-        material={aluMat}
-        geometry={upperBodyGeom}
-        userData={{ componentId }}
-      />
-    </group>
-  )
+export function EK20BearingMedium(props: PartBuilderProps) {
+  return <EK20BearingRealistic {...props} />
 }
 
 /**

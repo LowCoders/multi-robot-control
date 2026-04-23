@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 
 const MODULE_M = 1.5
 const TOOTH_COUNT = 20
@@ -195,4 +195,37 @@ export const BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS = {
   zHubBottom: HUB_Z_BOTTOM,
   /** Az össz axiális (Z) magasság: hub alja → fogazat kis vége. */
   totalAxialExtent: Z_TOOTH_TOP - HUB_Z_BOTTOM,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame (+Z = tengely / pitch cone axis;
+// origó = fogazat kis (top) vége; hub a -Z oldalon, fogazat back face Z = -6.36).
+// ---------------------------------------------------------------------------
+export const BEVEL_GEAR_15M_20T_45DEG_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A fogazat KIS (top) vége; +Z = tengely (apex felé).',
+  },
+  'tooth-tip': {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'Fogazat TOP face (apex felé eső kicsi vég)',
+  },
+  'tooth-back': {
+    position: [0, 0, Z_LARGE_END],
+    axis: [0, 0, -1],
+    description: 'Fogazat NAGY (back) vége — itt érintkezik a hub-bal',
+  },
+  'hub-bottom': {
+    position: [0, 0, HUB_Z_BOTTOM],
+    axis: [0, 0, -1],
+    description: 'Hub cilinder alsó síkja (a tengely-rögzítés végpontja)',
+  },
+  'pitch-cone-apex': {
+    position: [0, 0, PITCH_R_BACK / Math.tan(PITCH_ANGLE)],
+    axis: [0, 0, 1],
+    description:
+      'Pitch kúp APEX-e (a 45°-os pitch cone csúcsa). Itt találkozik a meshelő pinion pitch cone apex-e is.',
+  },
 }

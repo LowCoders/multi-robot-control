@@ -1,18 +1,19 @@
 /**
- * Gear konzol — U-alakú alumínium tartó a NEMA 23 (X-tengely) motor flange előlapja
- * előtt rögzítve, hogy a motor tengelyén ülő pinion fogaskerék (és majd a hozzá
- * kapcsolódó követő fogaskerék) számára merev befogadó-keretet adjon.
+ * Gear konzol — a NEMA 23 (X-tengely) motor flange előlapján rögzített **U alap**
+ * (base wall). A két korábbi alumínium szár-lap **el lett távolítva** — csak a
+ * base wall (motor flange-csatlakozó alap) marad meg geometriailag.
  *
- * GEOMETRIA (felhasználó-specifikált méretek):
- *   - Anyag: alumínium, 10 mm vastagság (mind a base wall, mind a 2 arm vastagsága)
- *   - Szélesség (X): a NEMA 23 motor body szélességével azonos = 56.4 mm
- *   - Belső gap a 2 arm KÖZÖTT (Y): a motor magasságával azonos = 56.4 mm
- *     (vagyis a motor pont elférne a U belsejében, ha középre helyeznénk)
- *   - Külső magasság (Y): motor magasság + 2 × anyagvastagság = 56.4 + 20 = 76.4 mm
- *     (két oldalt 10-10 mm-rel "növelve" a motor magasságához képest)
- *   - U szárak hossza (Z): 80 mm — a base wall-tól előrefelé (+Z) nyúlnak ki
- *   - Base wall vastagság (Z): 10 mm — a U "alja", ami a motorhoz csatlakozik
- *   - Teljes Z kiterjedés (base + arm): 10 + 80 = 90 mm
+ * GEOMETRIA:
+ *   - **Base wall**: alumínium 10 mm (Z), szélesség (X) = NEMA 23 body = 56.4 mm,
+ *     magasság (Y) = külső U-magasság = 76.4 mm — ez az egyetlen vizuálisan
+ *     megrajzolt rész. Furatok: 4 db Ø5.1 mm (M5 menetes szárakhoz, 47.14 mm
+ *     négyzet pattern) + 1 db központi Ø40 mm (hub clearance).
+ *   - **Szár-lapok**: már NEM rajzolódnak ki. A korábbi `ARM_*` / `PLATE_*`
+ *     konstansok (`armYOffset`, `armPlateWidthX`, `armAxialLength`, `shaftHoleZ`,
+ *     `shaftHoleZ2`, `totalLengthZ`) referenciaként megmaradnak a
+ *     `GEAR_BRACKET_DIMENSIONS`-ban, mert a fogaskerekek (#6, #11, #14) és a
+ *     Ø8 tengelyek (#19, #20) a registry-ben ezekre az értékekre hivatkoznak,
+ *     hogy a régi (a U-belsejéhez igazított) pozíciójukon maradjanak.
  *
  * ROGZÍTŐ FURATOK (a base wall-on):
  *   4 db Ø5.1 mm átmenő furat a NEMA 23 47.14 mm pattern szerint (a motor flange
@@ -33,13 +34,10 @@
  *   - +Z = az U szárai EBBE az irányba nyúlnak (= motor shaft iránya, ami a
  *     bracket-1 forgatása után = world +X) — vagyis az U a csőelőtolás irányába
  *     nyitva áll, és az motor pinion fogaskerék a U BELSEJÉBE kerül.
- *   - Origó: a bounding box GEOMETRIAI KÖZÉPPONTJA (X=Y=Z=0).
- *     - X range: -W/2 .. +W/2          = -28.2 .. +28.2
- *     - Y range: -OUTER_H/2 .. +OUTER_H/2 = -38.2 .. +38.2
- *     - Z range: -TOTAL_L/2 .. +TOTAL_L/2 = -45 .. +45
- *     - Base wall Z range: -45 .. -35   (a U "alja", -Z oldalon)
- *     - Felső arm: Y = +28.2 .. +38.2,  Z = -35 .. +45 (80 mm hosszú)
- *     - Alsó arm:  Y = -38.2 .. -28.2,  Z = -35 .. +45
+ *   - Origó: a builder-lokális frame közepe a régi U bbox közepe maradt
+ *     (`TOTAL_Z = 90`). A megrajzolt base wall Z range: -45 .. -35 (a régi U
+ *     "alja", -Z oldalon). A `+Z` oldal mostantól ÜRES (csak referencia-
+ *     koordináták a fogaskerekek pozícionálásához).
  *
  * SZERELVÉNY (a regiszterben):
  *   A bracket parentje a `nema23-motor-1` (motor #3). A motor builder lokális
@@ -53,16 +51,20 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 import { NEMA23_BODY_SIZE, NEMA23_BOLT_PATTERN } from './_motorSilhouette'
+import { VERTICAL_BRACKET_1_DIMENSIONS } from './VerticalBracket1'
 
 // ---- Méretek ----
 const MATERIAL_T = 10
-const WIDTH_X = NEMA23_BODY_SIZE // = 56.4 — bracket szélessége = motor body szélessége
-const INNER_HEIGHT_Y = NEMA23_BODY_SIZE // = 56.4 — belső gap a 2 arm között = motor magassága
+const WIDTH_X = NEMA23_BODY_SIZE // = 56.4 — base wall szélessége = motor body szélessége
+const INNER_HEIGHT_Y = NEMA23_BODY_SIZE // = 56.4 — belső gap a 2 szár között = motor magassága
 const OUTER_HEIGHT_Y = INNER_HEIGHT_Y + 2 * MATERIAL_T // = 76.4
-const ARM_LENGTH = 80
-const TOTAL_Z = MATERIAL_T + ARM_LENGTH // = 90
+/** Szár-lap szélessége (X) = `vertical-bracket-1` (#2 elem) lemez szélessége. */
+const PLATE_ARM_WIDTH_X = VERTICAL_BRACKET_1_DIMENSIONS.width // = 80
+/** Eredeti U axiális „nyúlvány” a bbox-hoz (base 10 + 80); a szár-lap kitölti ezt a 80 mm-t. */
+const LEGACY_U_ARM_SPAN = 80
+const TOTAL_Z = MATERIAL_T + LEGACY_U_ARM_SPAN // = 90
 
 // ---- Furat-pattern (a motor flange-szel egyező 47.14 négyzet) ----
 const BOLT_HOLE_DIAM = 5.1
@@ -74,23 +76,18 @@ const HALF_BP = NEMA23_BOLT_PATTERN / 2 // = 23.57
  *  átfér. A furat középpontja a base wall (és a motor) tengelyén van. */
 const CENTER_HOLE_DIAM = 40
 
-/** Ø8 átmenő furat-pár MINDKÉT arm-on (felső + alsó):
- *  - 1. furat (Z = SHAFT_HOLE_Z = -12.76): a `pinion-gear-1` (#6) ↔
- *    `bevel-gear-driven-1` (#8) közös függőleges acéltengelye (#18) halad át.
- *  - 2. furat (Z = SHAFT_HOLE_Z_2 = +27.24, vagyis 40 mm-rel +X irányba az
- *    eredetitől world-ben, ami bracket-lokálisan +Z irány): a `pinion-gear-2`
- *    (#19) másolata és annak `shaft-pinion-bevel-2` (#20) tengelye halad át.
- *  Mindkét furat (X=0) a bracket szélességében centrált. */
+/** Regiszter / fogaskerék-pozícióhoz: tengely tengelyvonal Z-jei (a szár-lapokon
+ *  NINCS furat — csak referenciaértékek a `GEAR_BRACKET_DIMENSIONS`-ban exportálva). */
 const SHAFT_HOLE_DIAM = 8
-/** Az 1. tengely-furat Z-pozíciója bracket-lokálisan = a #8 (driven bevel) axisa
- *  = pitch cone apex Z. Lásd a `bevel-gear-driven-1` MESHING SZÁMÍTÁSA blokkot
- *  a componentRegistry-ben. */
 const SHAFT_HOLE_Z = -12.76
-/** A 2. tengely-furat Z-pozíciója bracket-lokálisan = SHAFT_HOLE_Z + 40
- *  (a felhasználó által megadott +40 mm world-X = +40 mm bracket-lokális +Z).
- *  A `pinion-gear-2` (#19) és `shaft-pinion-bevel-2` (#20) másolt elemek
- *  ezen a furaton illeszkednek. */
 const SHAFT_HOLE_Z_2 = SHAFT_HOLE_Z + 40 // = +27.24
+
+/** Base wall elülső síkja bracket-lokális Z-ben (innen indulnak a szár-lapok +Z felé). */
+const ARM_Z_START = -TOTAL_Z / 2 + MATERIAL_T // = -35
+/** Szár-lap axiális hossz: base wall elejétől a befoglaló +Z végéig (teljes U-nyúlvány). */
+const ARM_AXIAL_LENGTH = TOTAL_Z / 2 - ARM_Z_START // = 45 - (-35) = 80
+/** Szár-lap Z-középpontja. */
+const ARM_CENTER_Z = ARM_Z_START + ARM_AXIAL_LENGTH / 2 // = 5
 
 /**
  * A 2 arm (felső + alsó) Y-irányú LEFELÉ tolása a bracket szimmetrikus
@@ -174,156 +171,40 @@ function buildBaseWallGeometry(): THREE.ExtrudeGeometry {
   return geom
 }
 
-/**
- * Arm 2D shape (X-Z síkban, "felülnézet"): WIDTH × ARM_LENGTH téglalap egyetlen
- * Ø8 átmenő furattal a (0, SHAFT_HOLE_Z) pontban. A profil az Y irányba lesz
- * extrudálva, így a furat Y mentén megy át — pontosan a függőleges közös
- * tengelyen, amelyen a `pinion-gear-1` ↔ `bevel-gear-driven-1` acéltengelye
- * halad át.
- *
- * Profil X-Z koordinátái:
- *   X: -WIDTH/2 .. +WIDTH/2 (= -28.2 .. +28.2)
- *   Z: a felső/alsó arm Z-középponthoz képest -ARM_LENGTH/2 .. +ARM_LENGTH/2
- *      (= -40 .. +40), de az arm world-Z közepe = +5, így a furat Z-koordinátája
- *      a profilban: SHAFT_HOLE_Z - armCenterZ = -12.76 - 5 = -17.76.
- */
-function buildArmShape(armCenterZ: number): THREE.Shape {
-  const halfW = WIDTH_X / 2
-  const halfL = ARM_LENGTH / 2
-  const r = SHAFT_HOLE_DIAM / 2
-
-  const shape = new THREE.Shape()
-  shape.moveTo(-halfW, -halfL)
-  shape.lineTo(+halfW, -halfL)
-  shape.lineTo(+halfW, +halfL)
-  shape.lineTo(-halfW, +halfL)
-  shape.closePath()
-
-  // 1. Ø8 átmenő furat a tengelyen: bracket-lokális Z = SHAFT_HOLE_Z, az arm-profil
-  // saját Z-tengelye az armCenterZ-hez van eltolva.
-  const hole1 = new THREE.Path()
-  hole1.absellipse(0, SHAFT_HOLE_Z - armCenterZ, r, r, 0, 2 * Math.PI, false)
-  shape.holes.push(hole1)
-
-  // 2. Ø8 átmenő furat: bracket-lokális Z = SHAFT_HOLE_Z_2, vagyis +40 mm
-  // world-X irányban az 1. furatto1l. A másolt #19 (pinion) és #20 (tengely)
-  // ezen illeszkedik.
-  const hole2 = new THREE.Path()
-  hole2.absellipse(0, SHAFT_HOLE_Z_2 - armCenterZ, r, r, 0, 2 * Math.PI, false)
-  shape.holes.push(hole2)
-
-  return shape
-}
-
-/**
- * Arm ExtrudeGeometry: a XZ profilt MATERIAL_T mélyen Y mentén extrudálja.
- * Az ExtrudeGeometry default extrudálási iránya +Z, ezért rotateX(-π/2)-vel
- * forgatjuk: a profil X-Y_shape síkból X-Z síkba, az extrude irány +Z → +Y.
- * Ezután Y mentén centráljuk az armCenterY-hoz a hívó.
- */
-function buildArmGeometry(armCenterZ: number): THREE.ExtrudeGeometry {
-  const geom = new THREE.ExtrudeGeometry(buildArmShape(armCenterZ), {
-    depth: MATERIAL_T,
-    bevelEnabled: false,
-    curveSegments: 24,
-  })
-  // A shape eredetileg X-Y_shape síkban van, +Z-be extrudálva. rotateX(-π/2):
-  // Y_shape → -Z (a téglalap "hossza" Z mentén), extrude +Z → +Y. Most a profil
-  // X-Z síkban van, vastagsága Y mentén MATERIAL_T magas.
-  geom.rotateX(-Math.PI / 2)
-  // Az átfordítás után az Y range: -MATERIAL_T..0. Eltoljuk -MATERIAL_T/2-re,
-  // hogy az arm Y közepe = 0 legyen (a hívó az armCenterY-ra translálja).
-  geom.translate(0, MATERIAL_T / 2, 0)
-  // Z eltolás 0 marad — a hívó a position-ben adja meg az armCenterZ-t (+5).
-  // Mivel a furat a profil Z = SHAFT_HOLE_Z - armCenterZ pontján van, a végső
-  // bracket-lokális furat-Z = position.z + (SHAFT_HOLE_Z - armCenterZ)
-  //                        = armCenterZ + (SHAFT_HOLE_Z - armCenterZ)
-  //                        = SHAFT_HOLE_Z ✓
-  return geom
-}
-
 // ---- LOD belépési pontok ----
 
 /**
- * Realisztikus: base wall (4 furat) + 2 arm (felső + alsó). Mindhárom alkatrész
- * 10 mm vastag alumínium, ugyanazzal a material-lal. A 3 mesh együtt formálja a U-t.
+ * Realisztikus: CSAK a base wall (motor flange-csatlakozó alap). A két szár-lap
+ * (felső + alsó) eltávolítva a felhasználói kérésre.
  */
 export function GearBracketRealistic({ componentId }: PartBuilderProps) {
   const aluMat = useAluminumMaterial()
   const baseWallGeom = useMemo(() => buildBaseWallGeometry(), [])
-
-  // Az arm Z-középpont a base wall front face-éhez (Z = -TOTAL_Z/2 + MATERIAL_T = -35)
-  // és a teljes U Z-vége (+TOTAL_Z/2 = +45) között van: center = (-35 + 45)/2 = +5.
-  const armCenterZ = (-TOTAL_Z / 2 + MATERIAL_T + TOTAL_Z / 2) / 2 // = +5
-  // Felső arm Y-közép: outer Y/2 - T/2 + ARM_Y_OFFSET; alsó arm: -(outer Y/2 - T/2) + ARM_Y_OFFSET.
-  // Az ARM_Y_OFFSET aszimmetrikusan tolja le mindkét arm-ot ugyanannyival (=-10),
-  // így a 2 arm közti gap változatlan marad, csak az egész "U-zsák" lejjebb kerül.
-  const armCenterY = OUTER_HEIGHT_Y / 2 - MATERIAL_T / 2 // = +33.2 (szimmetrikus referencia)
-  const upperArmY = +armCenterY + ARM_Y_OFFSET // = +23.2
-  const lowerArmY = -armCenterY + ARM_Y_OFFSET // = -43.2
-
-  // Arm geometria furattal — mindkét arm-on Ø8 a (X=0, Z=SHAFT_HOLE_Z) ponton.
-  const armGeom = useMemo(() => buildArmGeometry(armCenterZ), [armCenterZ])
-  useEffect(() => {
-    return () => {
-      baseWallGeom.dispose()
-      armGeom.dispose()
-    }
-  }, [baseWallGeom, armGeom])
+  useEffect(() => () => baseWallGeom.dispose(), [baseWallGeom])
 
   return (
     <group userData={{ componentId }}>
-      {/* Base wall — 56.4 × 76.4 × 10 mm, 4 db Ø5.1 furattal a 47.14 pattern-en. */}
+      {/* Base wall: 56.4 × 76.4 × 10 mm, 4 db Ø5.1 + központi Ø40 furat. */}
       <mesh
         material={aluMat}
         geometry={baseWallGeom}
-        userData={{ componentId }}
-      />
-
-      {/* Felső arm — 56.4 (X) × 10 (Y) × 80 (Z) mm + Ø8 átmenő furat a tengelyen. */}
-      <mesh
-        position={[0, upperArmY, armCenterZ]}
-        material={aluMat}
-        geometry={armGeom}
-        userData={{ componentId }}
-      />
-
-      {/* Alsó arm — szimmetrikus a felső-vel (Y → -Y), azonos furattal. */}
-      <mesh
-        position={[0, lowerArmY, armCenterZ]}
-        material={aluMat}
-        geometry={armGeom}
         userData={{ componentId }}
       />
     </group>
   )
 }
 
-/** Medium: ugyanaz, mint a realistic — a U már egyszerű box-ok együttese, így itt nincs lényeges különbség. */
+/** Medium: ugyanaz, mint a realistic — egyetlen base wall mesh. */
 export function GearBracketMedium(props: PartBuilderProps) {
   return <GearBracketRealistic {...props} />
 }
 
-/** Sematikus: 3 box (base + 2 arm) furat nélkül, hogy a befoglaló méretek
- *  jól látszódjanak. A renderer override-olja a regiszter színre. */
+/** Sematikus: egyetlen box (base wall) furat nélkül. A renderer felülírja a színt. */
 export function GearBracketSchematic({ componentId }: PartBuilderProps) {
-  const armCenterZ = (-TOTAL_Z / 2 + MATERIAL_T + TOTAL_Z / 2) / 2
-  const armCenterY = OUTER_HEIGHT_Y / 2 - MATERIAL_T / 2
-  const upperArmY = +armCenterY + ARM_Y_OFFSET
-  const lowerArmY = -armCenterY + ARM_Y_OFFSET
-
   return (
     <group userData={{ componentId }}>
       <mesh position={[0, 0, -TOTAL_Z / 2 + MATERIAL_T / 2]} userData={{ componentId }}>
         <boxGeometry args={[WIDTH_X, OUTER_HEIGHT_Y, MATERIAL_T]} />
-        <meshStandardMaterial color="#888" />
-      </mesh>
-      <mesh position={[0, upperArmY, armCenterZ]} userData={{ componentId }}>
-        <boxGeometry args={[WIDTH_X, MATERIAL_T, ARM_LENGTH]} />
-        <meshStandardMaterial color="#888" />
-      </mesh>
-      <mesh position={[0, lowerArmY, armCenterZ]} userData={{ componentId }}>
-        <boxGeometry args={[WIDTH_X, MATERIAL_T, ARM_LENGTH]} />
         <meshStandardMaterial color="#888" />
       </mesh>
     </group>
@@ -335,7 +216,14 @@ export const GEAR_BRACKET_DIMENSIONS = {
   widthX: WIDTH_X,
   innerHeightY: INNER_HEIGHT_Y,
   outerHeightY: OUTER_HEIGHT_Y,
-  armLength: ARM_LENGTH,
+  /** Szár-lap szélessége (X) = `vertical-bracket-1` (#2) szélessége. */
+  armPlateWidthX: PLATE_ARM_WIDTH_X,
+  /** Szár-lap axiális hossza (Z): base wall elejétől a befoglaló +Z végéig (≈#2 irányában max. előnyúlás). */
+  armAxialLength: ARM_AXIAL_LENGTH,
+  /** Szár-lap Z-középpontja bracket-lokálisan. */
+  armCenterZ: ARM_CENTER_Z,
+  /** Base wall elülső sík Z-je (szár-lapok innen indulnak +Z felé). */
+  armZStart: ARM_Z_START,
   totalLengthZ: TOTAL_Z,
   boltPattern: NEMA23_BOLT_PATTERN,
   boltHoleDiam: BOLT_HOLE_DIAM,
@@ -345,16 +233,59 @@ export const GEAR_BRACKET_DIMENSIONS = {
   baseWallBackZ: -TOTAL_Z / 2,
   /** A base wall front face builder-lokális Z koordinátája. */
   baseWallFrontZ: -TOTAL_Z / 2 + MATERIAL_T,
-  /** Mindkét arm-on átmenő Ø8 furat a `pinion-gear-1` ↔ `bevel-gear-driven-1`
-   *  közös acéltengelyéhez. */
+  /** Ø8 tengely **referencia** Z (regiszter — a szár-lapokon nincs furat). */
   shaftHoleDiam: SHAFT_HOLE_DIAM,
-  /** Az 1. tengely-furat bracket-lokális Z-pozíciója (#18 tengely). */
+  /** 1. tengely referencia Z (#6 / #8 / #18). */
   shaftHoleZ: SHAFT_HOLE_Z,
-  /** A 2. tengely-furat bracket-lokális Z-pozíciója (#20 másolt tengely),
-   *  +40 mm world-X-ben az 1.-től. */
+  /** 2. tengely referencia Z (#19 / #20), +40 mm az 1.-hez képest bracket-lokális +Z-ben. */
   shaftHoleZ2: SHAFT_HOLE_Z_2,
   /** A 2 arm Y-irányú LEFELÉ tolása a szimmetrikus pozícióhoz képest (negatív
    *  szám = lefelé). A registry-ben a #6 fogaskerék és #18 tengely position.Y-t
    *  ugyanennyivel kell csúsztatni, hogy együtt mozogjanak az arm-okkal. */
   armYOffset: ARM_Y_OFFSET,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame: origó = bbox geometriai közép, +Z =
+// motor shaft iránya (U szárai +Z felé nyúlnak).
+// ---------------------------------------------------------------------------
+const _ARM_CENTER_Y = OUTER_HEIGHT_Y / 2 - MATERIAL_T / 2
+
+export const GEAR_BRACKET_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A bbox geometriai közepe; +Z = motor shaft iránya',
+  },
+  'base-wall-back': {
+    position: [0, 0, -TOTAL_Z / 2],
+    axis: [0, 0, -1],
+    description:
+      'A base wall HÁTSÓ síkja (motor felöli oldal). Itt érintkezik a NEMA 23 motor flange front face-ével.',
+  },
+  'base-wall-front': {
+    position: [0, 0, ARM_Z_START],
+    axis: [0, 0, 1],
+    description: 'A base wall ELÜLSŐ síkja (a U-cavity oldal).',
+  },
+  'upper-arm-inside': {
+    position: [0, _ARM_CENTER_Y + ARM_Y_OFFSET - MATERIAL_T / 2, ARM_CENTER_Z],
+    axis: [0, -1, 0],
+    description: 'A felső szár-lap BELSŐ (U-cavity felöli) oldalának közepe',
+  },
+  'lower-arm-inside': {
+    position: [0, -_ARM_CENTER_Y + ARM_Y_OFFSET + MATERIAL_T / 2, ARM_CENTER_Z],
+    axis: [0, 1, 0],
+    description: 'Az alsó szár-lap BELSŐ oldalának közepe',
+  },
+  'shaft-1-upper': {
+    position: [0, _ARM_CENTER_Y + ARM_Y_OFFSET, -TOTAL_Z / 2 + MATERIAL_T + 0],
+    axis: [0, 1, 0],
+    description: '1. tengely-pozíció a felső arm-on (referencia)',
+  },
+  'shaft-1-lower': {
+    position: [0, -_ARM_CENTER_Y + ARM_Y_OFFSET, -TOTAL_Z / 2 + MATERIAL_T + 0],
+    axis: [0, -1, 0],
+    description: '1. tengely-pozíció az alsó arm-on (referencia)',
+  },
 }

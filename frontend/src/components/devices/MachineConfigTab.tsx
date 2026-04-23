@@ -34,7 +34,6 @@ import CoolantEditor from './capabilities/CoolantEditor'
 import RobotArmGeometryEditor from './capabilities/RobotArmGeometryEditor'
 import DeviceYamlConfigPanel from './DeviceYamlConfigPanel'
 import MachineConfigAxisEditor from './machineConfig/MachineConfigAxisEditor'
-import type { CameraState } from '../visualization'
 import type {
   MachineConfig,
   AxisConfig,
@@ -118,7 +117,6 @@ export default function MachineConfigTab({
   const [jsonText, setJsonText] = useState('')
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0, z: 0 })
-  const [liveCamera, setLiveCamera] = useState<CameraState | null>(null)
 
   const axisRateSettingByName: Partial<Record<AxisName, string>> = useMemo(
     () => ({
@@ -220,24 +218,14 @@ export default function MachineConfigTab({
     }))
   }, [])
 
-  const handleCameraChange = useCallback((state: CameraState) => {
-    setLiveCamera(state)
-  }, [])
-
-  const handleCaptureCameraView = useCallback(() => {
-    if (liveCamera) {
-      setConfig({
-        ...config,
-        visuals: {
-          ...config.visuals,
-          cameraPosition: liveCamera.position,
-          cameraTarget: liveCamera.target,
-        },
-      })
-      setSuccessMessage(t('machine_config.success_view_captured'))
-      setTimeout(() => setSuccessMessage(null), 2000)
-    }
-  }, [config, liveCamera])
+  // A korábbi "élő kamera" capture-mechanizmus (handleCameraChange +
+  // handleCaptureCameraView + liveCamera state) megszűnt. Az alapértelmezett
+  // kamera-nézet mentését mostantól a `VisualizationPanel` fejlécén lévő
+  // "Bookmark" ikon végzi (ugyanezt a `/api/devices/{id}/machine-config`
+  // PUT-ot hívja, csak a felhasználó nem itt a config tabon, hanem a
+  // megszokott vezérlőpanelen állítja be). A `MachineVisualization` family
+  // tovább megy az `onCameraChange` proppal — itt egyszerűen nem adunk át
+  // callback-et.
 
   useEffect(() => {
     async function loadConfig() {
@@ -1221,19 +1209,16 @@ export default function MachineConfigTab({
               <RobotArmVisualization
                 config={config}
                 position={previewPosition}
-                onCameraChange={handleCameraChange}
               />
             ) : config.type === 'tube_bender' ? (
               <TubeBenderVisualization
                 config={config}
                 position={previewPosition}
-                onCameraChange={handleCameraChange}
               />
             ) : (
-              <MachineVisualization 
-                config={config} 
+              <MachineVisualization
+                config={config}
                 position={previewPosition}
-                onCameraChange={handleCameraChange}
               />
             )}
           </div>
@@ -1273,128 +1258,17 @@ export default function MachineConfigTab({
               >
                 {t('machine_config.reset_position')}
               </button>
-              <button
-                onClick={handleCaptureCameraView}
-                className="btn btn-secondary btn-sm text-xs flex-1"
-              >
-                {t('machine_config.capture_view')}
-              </button>
             </div>
           </div>
 
-          {/* Camera position controls */}
-          <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-2">
-            <div className="text-xs text-steel-400 font-medium">{t('machine_config.camera_position')}</div>
-            {(() => {
-              const camPos = config.visuals?.cameraPosition
-                ?? liveCamera?.position
-                ?? { x: 500, y: -500, z: 350 }
-              const camTarget = config.visuals?.cameraTarget
-                ?? liveCamera?.target
-                ?? { x: 0, y: 0, z: 0 }
-              const setCamPos = (axis: 'x' | 'y' | 'z', value: number) => {
-                setConfig({
-                  ...config,
-                  visuals: {
-                    ...config.visuals,
-                    cameraPosition: { ...camPos, [axis]: value },
-                    cameraTarget: config.visuals?.cameraTarget ?? camTarget,
-                  },
-                })
-              }
-              const setCamTarget = (axis: 'x' | 'y' | 'z', value: number) => {
-                setConfig({
-                  ...config,
-                  visuals: {
-                    ...config.visuals,
-                    cameraPosition: config.visuals?.cameraPosition ?? camPos,
-                    cameraTarget: { ...camTarget, [axis]: value },
-                  },
-                })
-              }
-              return (
-                <>
-                  <div className="text-[10px] text-steel-500 uppercase tracking-wider">
-                    {t('machine_config.label_position')}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['x', 'y', 'z'] as const).map((axis) => (
-                      <div key={`pos-${axis}`}>
-                        <label className="block text-xs text-steel-500 mb-1">{axis.toUpperCase()}</label>
-                        <input
-                          type="number"
-                          step={10}
-                          value={Math.round(camPos[axis])}
-                          onChange={(e) => setCamPos(axis, parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 bg-steel-800 border border-steel-700 rounded text-steel-100 text-xs focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="text-[10px] text-steel-500 uppercase tracking-wider mt-1">
-                    {t('machine_config.label_target')}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['x', 'y', 'z'] as const).map((axis) => (
-                      <div key={`tgt-${axis}`}>
-                        <label className="block text-xs text-steel-500 mb-1">{axis.toUpperCase()}</label>
-                        <input
-                          type="number"
-                          step={10}
-                          value={Math.round(camTarget[axis])}
-                          onChange={(e) => setCamTarget(axis, parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 bg-steel-800 border border-steel-700 rounded text-steel-100 text-xs focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )
-            })()}
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => {
-                  if (liveCamera) {
-                    setConfig({
-                      ...config,
-                      visuals: {
-                        ...config.visuals,
-                        cameraPosition: {
-                          x: Math.round(liveCamera.position.x),
-                          y: Math.round(liveCamera.position.y),
-                          z: Math.round(liveCamera.position.z),
-                        },
-                        cameraTarget: {
-                          x: Math.round(liveCamera.target.x),
-                          y: Math.round(liveCamera.target.y),
-                          z: Math.round(liveCamera.target.z),
-                        },
-                      },
-                    })
-                  }
-                }}
-                disabled={!liveCamera}
-                className="btn btn-secondary btn-sm text-xs flex-1 disabled:opacity-50"
-                title={t('machine_config.read_current_view_title')}
-              >
-                {t('machine_config.read_current_view')}
-              </button>
-              <button
-                onClick={() => {
-                  const next = { ...config }
-                  if (next.visuals) {
-                    const { cameraPosition: _cp, cameraTarget: _ct, ...rest } = next.visuals
-                    next.visuals = rest
-                  }
-                  setConfig(next)
-                }}
-                className="btn btn-secondary btn-sm text-xs flex-1"
-                title={t('machine_config.reset_camera_title')}
-              >
-                {t('machine_config.reset_camera')}
-              </button>
-            </div>
-          </div>
+          {/*
+            A korábbi "Kamera-pozíció" szekció (manuális XYZ inputok + "Olvasd
+            be az aktuális nézet" + "Reset" gombok) teljesen eltávolítva. A
+            funkció átkerült a `VisualizationPanel` fejlécén lévő "Bookmark"
+            ikon-gomb alá, amely a vezérlőpanelről közvetlenül menti az
+            aktuális kamera-pózt alapértelmezett nézetként ehhez az eszközhöz
+            (`PUT /api/devices/{id}/machine-config` ugyanazon a végponton).
+          */}
 
           {/* Visual Settings */}
           <div className="bg-steel-900/50 rounded-lg border border-steel-700 p-3 space-y-3">

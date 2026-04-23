@@ -236,7 +236,19 @@ export interface MachineConfig {
     backgroundColor?: string
     frameColor?: string      // Gép váz színe
     carriageColor?: string   // Tengelyszán alapszín
-    // Default camera position
+    /**
+     * A `cameraPosition` / `cameraTarget` koordinátarendszere.
+     *   - `'z-up'` (default 2026-04-tól): a V2 vizualizáció CAD-natív Z-up
+     *     konvenciója. +X = tengely-előtolás, +Y = operátor felé, +Z = függőleges fel.
+     *   - `'y-up'` (legacy): a régi Y-up konvenció, +Y = függőleges fel. A V2
+     *     renderer beolvasáskor a megfelelő tengely-csere transzformációt alkalmazza.
+     *
+     * Új konfigurációkban mindig `'z-up'`-ot használj. A mező hiánya egyenértékű
+     * a `'z-up'`-pal a 2026-04-i Phase 10 cleanup után — a régi Y-up alapú
+     * konfigokat explicit módon `'y-up'`-tal kell jelölni a migrációhoz.
+     */
+    coordSystem?: 'z-up' | 'y-up'
+    // Default camera position (a fenti coordSystem szerinti koordinátákban)
     cameraPosition?: {
       x: number
       y: number
@@ -249,6 +261,71 @@ export interface MachineConfig {
       z: number
     }
     cameraFov?: number       // Field of view (degrees)
+    /**
+     * Felhasználó által manuálisan átállított V2 alkatrész-poz/forg override-ok.
+     * Kulcs: registry node id (komponens vagy assembly), érték: parent-lokális
+     * `position` (mm) + `rotation` (XYZ Euler, rad). Ha jelen van, a renderer
+     * és az STL exporter felülírja vele a `resolveTransform` által számolt
+     * (mount-ből vagy `transform`-ból feloldott) értéket. A scale-t nem érinti.
+     */
+    componentOverrides?: Record<string, {
+      position: [number, number, number]
+      rotation: [number, number, number]
+    }>
+    /**
+     * Felhasználó által manuálisan átállított V2 alkatrész VIZUÁLIS
+     * tulajdonság-override-jai (a `componentOverrides` transzformációs
+     * párja). Kulcs: registry node id.
+     *
+     * # Shape (v2)
+     *
+     * A material-jellegű mezők (`color`, `opacity`, `metalness`,
+     * `roughness`) color-scheme-enként (PBR vs. Registry) tárolódnak a
+     * `schemes.<mode>` map-ben — így a felhasználó pl. PBR módban más
+     * színt / fényességet rendelhet egy alkatrészhez, mint Registry
+     * módban, és a két "paletta" függetlenül perzisztálódik.
+     *
+     * A mode-független mezők (`scale`, `hidden`, `displayName`, `num`)
+     * a top-szinten maradnak.
+     *
+     * # Backward-compat (v1)
+     *
+     * A régi lapos shape (`{color, opacity, metalness, roughness, ...}`
+     * a top szinten) is olvasható — a frontend `loadFromConfig` migrál:
+     * a top-level material-mezőket BEEMELI mindkét scheme-be (`pbr` és
+     * `registry`), mivel a v1-ben az override colorMode-független volt.
+     * Az új mentés mindig az új shape-et írja.
+     */
+    componentVisualOverrides?: Record<string, {
+      schemes?: {
+        pbr?: {
+          color?: string
+          opacity?: number
+          metalness?: number
+          roughness?: number
+        }
+        registry?: {
+          color?: string
+          opacity?: number
+          metalness?: number
+          roughness?: number
+        }
+      }
+      scale?: [number, number, number]
+      hidden?: boolean
+      displayName?: string
+      num?: string
+      // Legacy v1 mezők — már nem írjuk, csak olvasáskor (loadFromConfig)
+      // migráljuk schemes alá. Ne használd új kódban.
+      /** @deprecated v1 → migrálva schemes.{pbr,registry}.color alá */
+      color?: string
+      /** @deprecated v1 → migrálva schemes.{pbr,registry}.opacity alá */
+      opacity?: number
+      /** @deprecated v1 → migrálva schemes.{pbr,registry}.metalness alá */
+      metalness?: number
+      /** @deprecated v1 → migrálva schemes.{pbr,registry}.roughness alá */
+      roughness?: number
+    }>
   }
   // Driver-level configuration (used by backend)
   driverConfig?: DriverConfig
@@ -457,6 +534,7 @@ export const DEFAULT_ROBOT_ARM: MachineConfig = {
   visuals: {
     showGrid: true,
     showAxesHelper: true,
+    coordSystem: 'z-up',
     cameraPosition: { x: 400, y: -400, z: 350 },
     cameraTarget: { x: 0, y: 0, z: 150 },
   },
@@ -510,6 +588,7 @@ export const DEFAULT_TUBE_BENDER: MachineConfig = {
   visuals: {
     showGrid: true,
     showAxesHelper: true,
+    coordSystem: 'z-up',
     cameraPosition: { x: 500, y: -500, z: 350 },
     cameraTarget: { x: 0, y: 0, z: 100 },
   },

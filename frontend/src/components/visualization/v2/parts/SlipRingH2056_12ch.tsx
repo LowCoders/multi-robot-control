@@ -30,7 +30,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 
 const BORE_DIAM = 20
 const BORE_R = BORE_DIAM / 2
@@ -118,4 +118,26 @@ export const SLIP_RING_H2056_12CH_DIMENSIONS = {
   ratedCurrentA: 10,
   /** Teljes axiális kiterjedés (csak a body, flange/vezetékek nélkül), Z mentén. */
   totalAxialLength: BODY_LENGTH,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame (+Z = forgástengely / through-bore;
+// origó = body geometriai közép).
+// ---------------------------------------------------------------------------
+export const SLIP_RING_H2056_12CH_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A body geometriai közepe; +Z = bore-tengely',
+  },
+  'bore-axis-near': {
+    position: [0, 0, -BODY_LENGTH / 2],
+    axis: [0, 0, -1],
+    description: 'Through-bore közeli (stator) vége',
+  },
+  'bore-axis-far': {
+    position: [0, 0, +BODY_LENGTH / 2],
+    axis: [0, 0, 1],
+    description: 'Through-bore távoli (rotor) vége',
+  },
 }

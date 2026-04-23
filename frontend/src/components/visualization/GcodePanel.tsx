@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import {
   FileCode,
   Loader2,
-  ChevronUp,
-  ChevronDown,
+  ChevronRight,
   X,
   FolderOpen,
   Save,
@@ -170,6 +169,47 @@ export default function GcodePanel({
     return result
   }
 
+  // Collapsed (narrow vertical strip) — `ComponentTable` mintáját követi:
+  // a teljes header és body rejtve, csak egy kibontás-gomb + függőleges
+  // panel-cím látszik. A `ChevronRight` ikon `rotate-180`-nal balra mutat
+  // ("kattints a panel kibontásához"). Akkor jelenik meg, ha a host adott
+  // `onToggle`-t — anélkül a panel mindig teljes nézetben marad (külső
+  // használat: ld. JobManager teljes-méretű view).
+  //
+  // **Bal oldali keret:** a host gyakran `border-0`-t ad át a `className`-ben
+  // (pl. `ControlPanelContent`), ezért a strip-en explicit `border-l` szerepel
+  // — ez független a class-collision-tól, így a vizuális elválasztás megmarad
+  // a 3D canvas és a strip között (a `ComponentTable` mintájához hasonlóan).
+  //
+  // **Függőleges cím:** `writing-mode: vertical-rl` natív CSS megoldás —
+  // semmilyen ranszformációval nem zavarja a layout-flow-t, és a böngészők
+  // jól optimalizálva renderelik. A felhasználó láthatja, milyen panelről van
+  // szó anélkül, hogy ki kellene bontania.
+  if (collapsed && onToggle) {
+    return (
+      <div
+        className={`flex flex-col bg-steel-900 border-l border-steel-700 overflow-hidden ${className}`}
+      >
+        <button
+          type="button"
+          onClick={onToggle}
+          title={t('gcode_panel.expand')}
+          className="w-full p-1.5 hover:bg-steel-800 text-steel-300 hover:text-white flex items-center justify-center flex-shrink-0"
+        >
+          <ChevronRight className="w-4 h-4 rotate-180 transition-transform duration-200" />
+        </button>
+        <div className="flex-1 min-h-0 flex items-start justify-center pt-2">
+          <span
+            className="text-xs font-medium text-steel-300 select-none tracking-wider uppercase"
+            style={{ writingMode: 'vertical-rl' }}
+          >
+            {t('gcode_panel.label_short')}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   // Empty/no-file state
   if (!hasFileToShow) {
     return (
@@ -188,6 +228,15 @@ export default function GcodePanel({
               >
                 <FolderOpen className="w-4 h-4" />
               </button>
+              {onToggle && (
+                <button
+                  onClick={onToggle}
+                  className="text-steel-400 hover:text-white p-1 rounded hover:bg-steel-800"
+                  title={t('gcode_panel.collapse')}
+                >
+                  <ChevronRight className="w-4 h-4 transition-transform duration-200" />
+                </button>
+              )}
               {onClose && (
                 <button
                   onClick={onClose}
@@ -315,13 +364,16 @@ export default function GcodePanel({
                   e.stopPropagation()
                   onToggle()
                 }}
-                title={collapsed ? t('gcode_panel.expand') : t('gcode_panel.collapse')}
+                title={t('gcode_panel.collapse')}
               >
-                {collapsed ? (
-                  <ChevronDown className="w-4 h-4" />
-                ) : (
-                  <ChevronUp className="w-4 h-4" />
-                )}
+                {/* Nyitott állapotban a nyíl jobbra mutat ("kattints a
+                    panel összecsukásához → a panel a jobb szélre csúszik").
+                    A collapsed-strip render-ben ugyanez a `ChevronRight` ikon
+                    `rotate-180`-nal balra mutat. CSS `transition-transform`
+                    smooth flip-et biztosít, ha a két render közös DOM-ot
+                    osztana — most külön render-utak, így inkább vizuális
+                    jelölés. */}
+                <ChevronRight className="w-4 h-4 transition-transform duration-200" />
               </button>
             )}
 
@@ -421,32 +473,9 @@ export default function GcodePanel({
         </div>
       )}
 
-      {collapsed && visibleLines.length > 0 && (
-        <div className="px-3 py-2 font-mono text-xs flex gap-3">
-          {pointerOverflow ? (
-            <div className="flex gap-2 flex-1 items-center">
-              <span className="text-yellow-500 font-medium">▶</span>
-              <span className="text-yellow-500">{t('gcode_panel.eof_plain')}</span>
-            </div>
-          ) : (
-            <>
-              {visibleLines
-                .filter((l) => l.isNext)
-                .slice(0, 1)
-                .map(({ lineNumber, content }) => (
-                  <div key={lineNumber} className="flex gap-2 flex-1 items-center">
-                    <span className="text-yellow-500 font-medium">▶</span>
-                    <span className="text-steel-500 tabular-nums">{lineNumber}:</span>
-                    <span className={`truncate ${getLineColor(content)}`}>{content}</span>
-                  </div>
-                ))}
-              {visibleLines.filter((l) => l.isNext).length === 0 && (
-                <span className="text-steel-500">{t('gcode_panel.waiting')}</span>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {/* A korábbi `collapsed && visibleLines.length > 0` "summary-line" nézet
+          megszűnt: a collapsed állapot most narrow-strip render az early-return-ben
+          a komponens elején, nem a header alatti egysoros összefoglaló. */}
 
       <OpenGcodeModal
         isOpen={openModalOpen}

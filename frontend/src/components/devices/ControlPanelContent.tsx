@@ -10,7 +10,6 @@ import {
   Box,
   Maximize2,
   Minimize2,
-  Code,
   GripVertical,
   MousePointer2,
   Repeat,
@@ -44,10 +43,83 @@ export default function ControlPanelContent({
 }: ControlPanelContentProps) {
   const { t } = useTranslation('devices')
   const { t: tPages } = useTranslation('pages')
-  const [vizExpanded, setVizExpanded] = useState(false)
-  const [showGcode, setShowGcode] = useState(true)
-  const [gcodeCollapsed, setGcodeCollapsed] = useState(false)
-  const [gcodeWidthPercent, setGcodeWidthPercent] = useState(40)
+
+  // A vizualizációs / GCode panel layout-állapota per device-ID-re perzisztált
+  // localStorage-ba (mrc-cp-layout-${device.id}). Lapfrissítés után ugyanaz a
+  // panel-elrendezés (fullscreen, gcode-collapsed, szélesség) jön vissza.
+  //
+  // **Migráció**: a régi séma `showGcode: boolean`-t tartalmazott (külön gomb
+  // a header-en a teljes elrejtéshez). Az új séma helyette `gcodeCollapsed`-et
+  // használ (a panel mindig látszik, csak narrow-strippé zsugorodik). A betöltés
+  // során a régi `showGcode === false` érték `gcodeCollapsed = true`-ra mappel.
+  const layoutStorageKey = `mrc-cp-layout-${device.id}`
+  const initialLayout = useMemo(() => {
+    const defaults = {
+      vizExpanded: false,
+      gcodeCollapsed: false,
+      gcodeWidthPercent: 40,
+    }
+    if (typeof window === 'undefined') return defaults
+    try {
+      const raw = window.localStorage.getItem(layoutStorageKey)
+      if (!raw) return defaults
+      const parsed = JSON.parse(raw)
+      const widthRaw =
+        typeof parsed.gcodeWidthPercent === 'number'
+          ? parsed.gcodeWidthPercent
+          : defaults.gcodeWidthPercent
+      // Migráció: legacy `showGcode === false` → `gcodeCollapsed = true`.
+      const legacyShowGcode =
+        typeof parsed.showGcode === 'boolean' ? parsed.showGcode : true
+      const collapsedFromLegacy = !legacyShowGcode
+      return {
+        vizExpanded:
+          typeof parsed.vizExpanded === 'boolean'
+            ? parsed.vizExpanded
+            : defaults.vizExpanded,
+        gcodeCollapsed:
+          typeof parsed.gcodeCollapsed === 'boolean'
+            ? parsed.gcodeCollapsed
+            : collapsedFromLegacy,
+        // A drag-handle 25..60 közé clamp-eli a futási szélességet, ezért betöltéskor is.
+        gcodeWidthPercent: Math.min(60, Math.max(25, widthRaw)),
+      }
+    } catch {
+      return defaults
+    }
+    // A layoutStorageKey a device.id-tól függ, de a useMemo deps üres — szándékosan,
+    // mert csak első mountkor olvassuk a perzisztált értékeket; a device-váltás
+    // a komponens újraregisztrálását eredményezi (új mount → új init).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [vizExpanded, setVizExpanded] = useState<boolean>(initialLayout.vizExpanded)
+  const [gcodeCollapsed, setGcodeCollapsed] = useState<boolean>(
+    initialLayout.gcodeCollapsed,
+  )
+  const [gcodeWidthPercent, setGcodeWidthPercent] = useState<number>(
+    initialLayout.gcodeWidthPercent,
+  )
+
+  // Atomi mentés: bármelyik állapot változására egy közös JSON-objektumot írunk.
+  // A legacy `showGcode` mezőt nem írjuk vissza — a load-side migráció után
+  // kompletten lecserélődik a séma `gcodeCollapsed`-re.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(
+        layoutStorageKey,
+        JSON.stringify({
+          vizExpanded,
+          gcodeCollapsed,
+          gcodeWidthPercent,
+        }),
+      )
+    } catch {
+      // ignore (privát mód, kvóta, stb.)
+    }
+  }, [layoutStorageKey, vizExpanded, gcodeCollapsed, gcodeWidthPercent])
+
   const [jogMode, setJogMode] = useState<JogMode>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(`jog-mode-${device.id}`)
@@ -603,18 +675,9 @@ export default function ControlPanelContent({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* G-code toggle */}
-            <button
-              onClick={() => setShowGcode(!showGcode)}
-              className={`btn-icon hover:bg-steel-700 ${showGcode ? 'text-machine-400' : 'text-steel-500'}`}
-              title={
-                showGcode ? t('control_panel.toggle_gcode_hide') : t('control_panel.toggle_gcode_show')
-              }
-            >
-              <Code className="w-4 h-4" />
-            </button>
-
-            {/* Expand toggle */}
+            {/* Expand toggle (fullscreen). A G-code panel külön gomb a header-en
+                már nincs — a `GcodePanel` maga kezeli a saját collapse-jét egy
+                narrow-strip + header-gomb pár formájában. */}
             <button
               onClick={() => setVizExpanded(!vizExpanded)}
               className="btn-icon hover:bg-steel-700"
@@ -636,6 +699,7 @@ export default function ControlPanelContent({
               ) : machineConfig ? (
                 <VisualizationPanel
                   config={machineConfig}
+                  deviceId={device.id}
                   position={device.status?.work_position}
                   status={device.status}
                   className="h-full"
@@ -648,8 +712,8 @@ export default function ControlPanelContent({
               )}
             </div>
 
-            {/* Resize handle */}
-            {showGcode && (
+            {/* Resize handle — csak akkor látszik, ha a G-code panel ki van bontva. */}
+            {!gcodeCollapsed && (
               <div
                 onMouseDown={handleMouseDown}
                 className="w-1.5 flex-shrink-0 bg-steel-700 hover:bg-machine-500 cursor-col-resize flex items-center justify-center group transition-colors"
@@ -658,22 +722,26 @@ export default function ControlPanelContent({
               </div>
             )}
 
-            {/* G-code Panel - right side */}
-            {showGcode && (
-              <div
-                className="flex-shrink-0 h-full overflow-hidden"
-                style={{ width: `${gcodeWidthPercent}%` }}
-              >
-                <GcodePanel
-                  deviceId={device.id}
-                  status={device.status}
-                  collapsed={gcodeCollapsed}
-                  onToggle={() => setGcodeCollapsed(!gcodeCollapsed)}
-                  onClose={() => setShowGcode(false)}
-                  className="h-full rounded-none border-0"
-                />
-              </div>
-            )}
+            {/* G-code Panel - right side. Mindig renderelődik; collapsed
+                állapotban a panel maga zsugorodik narrow-strippé (~32 px).
+                A wrapper szélessége collapsed esetén fix px (a panel-méretet
+                követi), egyébként a felhasználó által beállított százalék. */}
+            <div
+              className="flex-shrink-0 h-full overflow-hidden transition-[width] duration-200"
+              style={
+                gcodeCollapsed
+                  ? { width: 32 }
+                  : { width: `${gcodeWidthPercent}%` }
+              }
+            >
+              <GcodePanel
+                deviceId={device.id}
+                status={device.status}
+                collapsed={gcodeCollapsed}
+                onToggle={() => setGcodeCollapsed(!gcodeCollapsed)}
+                className="h-full rounded-none border-0"
+              />
+            </div>
           </div>
         </div>
       </div>

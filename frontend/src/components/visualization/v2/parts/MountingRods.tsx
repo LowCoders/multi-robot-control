@@ -51,7 +51,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 import { NEMA23_BOLT_PATTERN } from './_motorSilhouette'
 import { GEAR_BRACKET_DIMENSIONS } from './GearBracket'
 import { NEMA23_MOTOR_DIMENSIONS } from './Nema23Motor'
@@ -257,4 +257,31 @@ export const MOUNTING_RODS_DIMENSIONS = {
   motorOffsetZ: MOTOR_OFFSET_Z,
   /** A komponens transform.position-jéhez ezt használjuk a regiszterben. */
   componentLocalCenter: { y: VERTICAL_BRACKET_1_DIMENSIONS.cutoutCenterY, z: MOTOR_OFFSET_Z },
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame (+Z = motor tengelye, origó = motor közép).
+// ---------------------------------------------------------------------------
+export const MOUNTING_RODS_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description:
+      'A 4 szár közös X-Y középpontja, Z = motor közép. +Z = a motor tengelyiránya.',
+  },
+  'motor-center': {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A motor body középpontja (a 4 szár épp a motor 4 csavar-furatában).',
+  },
+  'rod-end-back': {
+    position: [0, 0, ROD_MIN_Z],
+    axis: [0, 0, -1],
+    description: 'A 4 szár közös HÁTSÓ vége (bracket-2 mögött, az end-anyák után).',
+  },
+  'rod-end-front': {
+    position: [0, 0, ROD_MAX_Z],
+    axis: [0, 0, 1],
+    description: 'A 4 szár közös ELÜLSŐ vége (gear-bracket belsejében az ottani anya után).',
+  },
 }

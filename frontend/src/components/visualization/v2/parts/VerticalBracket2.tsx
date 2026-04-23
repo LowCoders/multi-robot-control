@@ -43,19 +43,40 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 import {
   addNema23BoltHoles,
   buildNema23IndentedHolePath,
 } from './_motorSilhouette'
 
 const PLATE_W = 80
-const PLATE_H = 200
+/**
+ * Lemez magassága.
+ *
+ * Felhasználói kérésekre a tetejéből összesen 24 mm le lett vágva
+ * (200 → 188.2 → 183.2 → 176):
+ *   1. lépés: 200 → 188.2 — a teteje a #24 fedőlap (`x-drive-top-plate`)
+ *      override szerinti ALJÁHOZ (world Z = 188.2) illeszkedett.
+ *   2. lépés: 188.2 → 183.2 — további 5 mm-es lehúzás.
+ *   3. lépés: 183.2 → 176 — végleges magasság a felhasználó által megadva.
+ * Az alja továbbra is Z = 0 (a base-tetőn áll); a builder shape Y-centerelt,
+ * így az új builder Y range = -88 .. +88. Ugyanaz mint a
+ * `függőleges konzol 1`.
+ */
+const PLATE_H = 176
 const PLATE_T = 10
 
-/** A zseb középpontja a lemez lokális koordinátáiban (50 mm-rel a tetejétől lefelé,
- *  ugyanaz mint a `függőleges konzol 1` cutout-jánál). */
-const POCKET_CY = 50
+/**
+ * A zseb középpontja a lemez lokális koordinátáiban (ugyanaz mint a
+ * `függőleges konzol 1` cutout-jánál).
+ *
+ * A motor (#8) az X tengely körül 180°-kal megfordítva ÉS lejjebb tolva
+ * (felhasználói módosítás). Az új ABSZOLÚT zseb/flange pozíció a base-tetőtől
+ * mérve world Z = 138.4. A centered builder Y origója a lemez magasság-felezőjénél
+ * (world Z = 88) van, a zseb builder-Y eltolása = 138.4 - 88 = 50.4.
+ * Korábban: PLATE_H = 200/188.2/183.2, POCKET_CY = 50/55.9/58.4 (motor Z = 150).
+ */
+const POCKET_CY = 50.4
 
 /** Zseb mélysége (area clean toolpath, mm). */
 const POCKET_DEPTH = 4
@@ -78,6 +99,15 @@ function useAluminumMaterial() {
   return mat
 }
 
+/**
+ * A motor (#8) X tengely körüli 180°-os fordítása miatt a NEMA23 silhouette-et
+ * és a 4 csavarfurat-pattern-t a (0, POCKET_CY) körül 180°-kal Z körül elforgatva
+ * építjük fel. (A 4-szög szimmetria miatt vizuálisan a kimenet azonos lehet az
+ * unrotated változattal, viszont a kódban explicit, így későbbi aszimmetrikus
+ * silhouette-bővítések is automatikusan jól viselkednek.)
+ */
+const POCKET_ROTATED_180 = true
+
 /** Hátsó (tömör) szakasz Shape-je: teljes téglalap + 4 db Ø5.1 átmenő furat. */
 function buildBackShape(): THREE.Shape {
   const shape = new THREE.Shape()
@@ -86,7 +116,7 @@ function buildBackShape(): THREE.Shape {
   shape.lineTo(+PLATE_W / 2, +PLATE_H / 2)
   shape.lineTo(-PLATE_W / 2, +PLATE_H / 2)
   shape.closePath()
-  addNema23BoltHoles(shape, 0, POCKET_CY)
+  addNema23BoltHoles(shape, 0, POCKET_CY, undefined, undefined, POCKET_ROTATED_180)
   return shape
 }
 
@@ -98,7 +128,7 @@ function buildFrontShape(): THREE.Shape {
   shape.lineTo(+PLATE_W / 2, +PLATE_H / 2)
   shape.lineTo(-PLATE_W / 2, +PLATE_H / 2)
   shape.closePath()
-  shape.holes.push(buildNema23IndentedHolePath(0, POCKET_CY))
+  shape.holes.push(buildNema23IndentedHolePath(0, POCKET_CY, POCKET_ROTATED_180))
   return shape
 }
 
@@ -165,4 +195,65 @@ export const VERTICAL_BRACKET_2_DIMENSIONS = {
   pocketCenterY: POCKET_CY,
   pocketDepth: POCKET_DEPTH,
   backThickness: BACK_THICKNESS,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame-ben.
+// A lemez X-Y síkban, +Z mentén PLATE_T vastagon. A "front" oldal (+Z) a
+// zseb feneke (motor háttámla illesztő). A 4 átmenő furat a hátsó (tömör)
+// szakaszon megy át.
+// ---------------------------------------------------------------------------
+const NEMA23_BOLT_PATTERN_HALF_2 = 47.14 / 2
+
+export const VERTICAL_BRACKET_2_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A lemez geometriai középpontja',
+  },
+  'pocket-bottom-center': {
+    position: [0, POCKET_CY, -PLATE_T / 2 + BACK_THICKNESS],
+    axis: [0, 0, -1],
+    description:
+      'A 4 mm-es zseb FENEKÉNEK középpontja (builder Z = +1). A motor back-face-e ide ' +
+      'fekszik fel; axis = -Z (a motor felé, a zseb nyitott oldala mentén kifelé).',
+  },
+  'front-face-center': {
+    position: [0, POCKET_CY, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description:
+      'A lemez ELSŐ oldalának (zseb-nyitott oldal) közepe a pocket center-en. A motor ' +
+      'felöli oldal.',
+  },
+  'back-face-center': {
+    position: [0, POCKET_CY, -PLATE_T / 2],
+    axis: [0, 0, -1],
+    description: 'A lemez HÁTSÓ oldala (a motorral ellenkező oldal).',
+  },
+  'bolt-1': {
+    position: [-NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY - NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: 'Ø5.1 átmenő furat: bal-alsó (-X, -Y a pocket center-hez képest)',
+  },
+  'bolt-2': {
+    position: [+NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY - NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: 'jobb-alsó (+X, -Y)',
+  },
+  'bolt-3': {
+    position: [+NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY + NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: 'jobb-felső (+X, +Y)',
+  },
+  'bolt-4': {
+    position: [-NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY + NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description: 'bal-felső (-X, +Y)',
+  },
+  'bottom-edge-center': {
+    position: [0, -PLATE_H / 2, 0],
+    axis: [0, -1, 0],
+    description:
+      'A lemez ALSÓ élének közepe — itt fekszik az alaplemezre (base). Axis = -Y.',
+  },
 }

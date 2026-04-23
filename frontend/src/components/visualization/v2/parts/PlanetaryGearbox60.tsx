@@ -45,7 +45,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 
 // ---- alapvető méretek ----
 const FLANGE_W = 60
@@ -390,4 +390,36 @@ export const PLANETARY_GEARBOX_60_DIMENSIONS = {
   outputShaftLength: OUTPUT_SHAFT_LENGTH,
   /** Teljes Z-tengely menti kiterjedés a builder lokálisban: input flange hátlapjától output shaft tetejéig. */
   totalLengthWithShaft: TOTAL_BODY_LENGTH + CENTER_BOSS_H + OUTPUT_SHAFT_LENGTH,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — builder-lokális frame-ben (+Z = hajtómű főtengelye)
+// ---------------------------------------------------------------------------
+export const PLANETARY_GEARBOX_60_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A test geometriai középpontja; +Z = hajtómű főtengelye (input → output)',
+  },
+  'output-shaft-tip': {
+    position: [0, 0, OUTPUT_FACE_Z + CENTER_BOSS_H + OUTPUT_SHAFT_LENGTH],
+    axis: [0, 0, 1],
+    description: 'Output (Ø14) tengely vége +Z mentén',
+  },
+  'output-flange-front': {
+    position: [0, 0, OUTPUT_FACE_Z],
+    axis: [0, 0, 1],
+    description: 'Output flange előlapja (terhelés-oldali rögzítő felület)',
+  },
+  'input-flange-back': {
+    position: [0, 0, INPUT_FACE_Z],
+    axis: [0, 0, 1],
+    description:
+      'Input flange hátlapja (motor felöli felület). Axis = +Z (a teljes szerelvény főtengelyének iránya, input → output) — itt fekszik a NEMA 23 motor `mount-flange-front` anchor-ja, axisok parallel-aligned.',
+  },
+  'input-bore-center': {
+    position: [0, 0, INPUT_FACE_Z + INPUT_FLANGE_T],
+    axis: [0, 0, 1],
+    description: 'Input Ø8G6 bore belső kezdete (a NEMA 23 motor tengelye ide nyúlik be)',
+  },
 }

@@ -42,7 +42,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import type { PartBuilderProps } from '../types'
+import type { Anchor, PartBuilderProps } from '../types'
 import {
   NEMA23_BODY_SIZE,
   NEMA23_BOLT_HOLE_DIAM,
@@ -359,4 +359,36 @@ export const NEMA23_MOTOR_Z_DIMENSIONS = {
   cableExitBaseH: CABLE_BASE_H,
   cableExitPyramidH: CABLE_PYR_H,
   cableExitTotalH: CABLE_TOTAL_H,
+}
+
+// ---------------------------------------------------------------------------
+// Anchor-export — ugyanolyan struktúra mint a Nema23Motor (X-motor), csak
+// a body-hossz 81 mm.
+// ---------------------------------------------------------------------------
+export const NEMA23_MOTOR_Z_ANCHORS: Record<string, Anchor> = {
+  origin: {
+    position: [0, 0, 0],
+    axis: [0, 0, 1],
+    description: 'A motor body geometriai középpontja; +Z = shaft iránya',
+  },
+  'shaft-tip': {
+    position: [0, 0, BODY_LENGTH / 2 + BOSS_HEIGHT + SHAFT_LENGTH],
+    axis: [0, 0, 1],
+    description: 'A tengely vége; +Z mentén a gearbox input bore-jába illeszkedik',
+  },
+  'shaft-base': {
+    position: [0, 0, BODY_LENGTH / 2 + BOSS_HEIGHT],
+    axis: [0, 0, 1],
+    description: 'A tengely kezdete a boss tetején',
+  },
+  'mount-flange-front': {
+    position: [0, 0, BODY_LENGTH / 2],
+    axis: [0, 0, 1],
+    description: 'A mounting flange ELŐLAPJA — a gearbox input flange hátlapjához illeszkedik',
+  },
+  'back-face-center': {
+    position: [0, 0, -BODY_LENGTH / 2],
+    axis: [0, 0, -1],
+    description: 'A motor hátlapja középen (cover hátsó vége)',
+  },
 }

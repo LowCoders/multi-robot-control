@@ -61,6 +61,22 @@ export async function hostPost(path: string, body?: unknown, init?: RequestInit)
   return payload
 }
 
+export async function hostPut(path: string, body?: unknown, init?: RequestInit): Promise<unknown> {
+  const { headers: extraHeaders, ...restInit } = init ?? {}
+  const response = await fetch(`${API_PREFIX}${path}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(extraHeaders as Record<string, string> | undefined),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...restInit,
+  })
+  const payload = await readPayload(response)
+  throwIfNotOk(response, payload)
+  return payload
+}
+
 export async function hostDelete(path: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(`${API_PREFIX}${path}`, {
     method: 'DELETE',
