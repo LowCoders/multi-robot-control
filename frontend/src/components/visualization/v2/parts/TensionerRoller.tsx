@@ -335,7 +335,7 @@ function ScrewRealistic({ componentId }: PartBuilderProps) {
  * Realisztikus: U-horony lathe + 2 seal + 2 inner-race utalás + dedikált
  * M4 × 17 csavar a csapágy közepén áthúzva.
  */
-export function UGrooveBearingSG10Realistic(props: PartBuilderProps) {
+export function TensionerRollerRealistic(props: PartBuilderProps) {
   return (
     <group userData={{ componentId: props.componentId }}>
       <BearingRealistic componentId={props.componentId} />
@@ -347,7 +347,7 @@ export function UGrooveBearingSG10Realistic(props: PartBuilderProps) {
 /**
  * Medium: csak a csapágy lathe (seal-ek nélkül) + a csavar 3 szakaszban.
  */
-export function UGrooveBearingSG10Medium({ componentId }: PartBuilderProps) {
+export function TensionerRollerMedium({ componentId }: PartBuilderProps) {
   const outerMat = useBearingOuterMaterial()
   const screwMat = useScrewBlackOxideMaterial()
   const raceGeom = useMemo(() => buildBearingLatheGeometry(), [])
@@ -395,7 +395,7 @@ export function UGrooveBearingSG10Medium({ componentId }: PartBuilderProps) {
  * Sematikus: tömör Ø13 × 6 henger + egy hosszú Ø4 × 17 henger a tengely mentén.
  * A renderer override-olja a regiszter színre.
  */
-export function UGrooveBearingSG10Schematic({ componentId }: PartBuilderProps) {
+export function TensionerRollerSchematic({ componentId }: PartBuilderProps) {
   return (
     <group userData={{ componentId }}>
       <mesh rotation={[Math.PI / 2, 0, 0]} userData={{ componentId }}>
@@ -412,7 +412,7 @@ export function UGrooveBearingSG10Schematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const U_GROOVE_BEARING_SG10_DIMENSIONS = {
+export const TENSIONER_ROLLER_DIMENSIONS = {
   boreDiam: BORE_DIAM,
   outerDiam: OD,
   thickness: BEARING_T,
@@ -433,7 +433,7 @@ export const U_GROOVE_BEARING_SG10_DIMENSIONS = {
 // Anchor-export — builder-lokális frame (+Z = csapágy + csavar tengelye;
 // origó = csapágy közép).
 // ---------------------------------------------------------------------------
-export const U_GROOVE_BEARING_SG10_ANCHORS: Record<string, Anchor> = {
+export const TENSIONER_ROLLER_ANCHORS: Record<string, Anchor> = {
   origin: {
     position: [0, 0, 0],
     axis: [0, 0, 1],

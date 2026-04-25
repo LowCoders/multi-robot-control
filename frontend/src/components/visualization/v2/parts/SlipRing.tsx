@@ -75,7 +75,7 @@ function buildBodyGeometry(): THREE.ExtrudeGeometry {
 }
 
 /** Realisztikus: egyszerű Ø56 × 38 mm henger Ø20 furattal. */
-export function SlipRingH2056_12chRealistic({ componentId }: PartBuilderProps) {
+export function SlipRingRealistic({ componentId }: PartBuilderProps) {
   const bodyMat = useBodyMaterial()
   const bodyGeom = useMemo(() => buildBodyGeometry(), [])
   useEffect(() => () => bodyGeom.dispose(), [bodyGeom])
@@ -88,7 +88,7 @@ export function SlipRingH2056_12chRealistic({ componentId }: PartBuilderProps) {
 }
 
 /** Medium: ugyanaz mint a realistic — a body önmaga is egyszerű henger. */
-export function SlipRingH2056_12chMedium({ componentId }: PartBuilderProps) {
+export function SlipRingMedium({ componentId }: PartBuilderProps) {
   const bodyMat = useBodyMaterial()
   const bodyGeom = useMemo(() => buildBodyGeometry(), [])
   useEffect(() => () => bodyGeom.dispose(), [bodyGeom])
@@ -101,7 +101,7 @@ export function SlipRingH2056_12chMedium({ componentId }: PartBuilderProps) {
 }
 
 /** Sematikus: tömör henger Ø56 × 38 (a renderer override-olja a regiszter színre). */
-export function SlipRingH2056_12chSchematic({ componentId }: PartBuilderProps) {
+export function SlipRingSchematic({ componentId }: PartBuilderProps) {
   return (
     <mesh rotation={[Math.PI / 2, 0, 0]} userData={{ componentId }}>
       <cylinderGeometry args={[OUTER_R, OUTER_R, BODY_LENGTH, 32]} />
@@ -110,7 +110,7 @@ export function SlipRingH2056_12chSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const SLIP_RING_H2056_12CH_DIMENSIONS = {
+export const SLIP_RING_DIMENSIONS = {
   boreDiam: BORE_DIAM,
   outerDiam: OD,
   bodyLength: BODY_LENGTH,
@@ -124,7 +124,7 @@ export const SLIP_RING_H2056_12CH_DIMENSIONS = {
 // Anchor-export — builder-lokális frame (+Z = forgástengely / through-bore;
 // origó = body geometriai közép).
 // ---------------------------------------------------------------------------
-export const SLIP_RING_H2056_12CH_ANCHORS: Record<string, Anchor> = {
+export const SLIP_RING_ANCHORS: Record<string, Anchor> = {
   origin: {
     position: [0, 0, 0],
     axis: [0, 0, 1],

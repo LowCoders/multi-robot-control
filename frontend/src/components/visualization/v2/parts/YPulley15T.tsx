@@ -1,7 +1,7 @@
 /**
  * HTD 5M AF típusú fogasszíj-tárcsa — 15 fogszám, Ø8 furat, 15 mm szíjszélesség.
  *
- * A `HtdPulley70T_25b` testvér-komponense: ugyanaz a HTD 5M szabvány, csak
+ * A `YPulley70T` testvér-komponense: ugyanaz a HTD 5M szabvány, csak
  * kisebb fogszámmal és furattal. A felhasználó kérésére kis méretű "pinion"
  * pulleyként a 70T-vel összepárosítható (1:70/15 ≈ 4.67 áttétel).
  *
@@ -145,7 +145,7 @@ function buildHubGeometry(): THREE.ExtrudeGeometry {
 }
 
 /** Realisztikus: 15 fogú HTD body + 2 flange + hub + 2 set screw a hub-on. */
-export function HtdPulley15T_8bRealistic({ componentId }: PartBuilderProps) {
+export function YPulley15TRealistic({ componentId }: PartBuilderProps) {
   const aluMat = useAluminiumMaterial()
   const flangeMat = useFlangeMaterial()
   const screwMat = useSetScrewMaterial()
@@ -218,7 +218,7 @@ export function HtdPulley15T_8bRealistic({ componentId }: PartBuilderProps) {
 }
 
 /** Medium: fogazat NÉLKÜLI body (OD-henger) + 2 flange + hub. */
-export function HtdPulley15T_8bMedium({ componentId }: PartBuilderProps) {
+export function YPulley15TMedium({ componentId }: PartBuilderProps) {
   const aluMat = useAluminiumMaterial()
   const flangeMat = useFlangeMaterial()
   const flangeGeom = useMemo(() => buildFlangeGeometry(), [])
@@ -261,7 +261,7 @@ export function HtdPulley15T_8bMedium({ componentId }: PartBuilderProps) {
 }
 
 /** Sematikus: tömör henger flange-OD-vel × teljes axiális hosszal. */
-export function HtdPulley15T_8bSchematic({ componentId }: PartBuilderProps) {
+export function YPulley15TSchematic({ componentId }: PartBuilderProps) {
   return (
     <mesh
       position={[0, 0, -HUB_LENGTH / 2]}
@@ -281,7 +281,7 @@ export function HtdPulley15T_8bSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const HTD_PULLEY_15T_8B_DIMENSIONS = {
+export const Y_PULLEY_15T_DIMENSIONS = {
   pitch: HTD5M_PITCH,
   toothCount: TOOTH_COUNT,
   pitchDiam: DIMS.pitchDiam,

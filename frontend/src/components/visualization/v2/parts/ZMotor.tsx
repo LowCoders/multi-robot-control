@@ -212,7 +212,7 @@ function buildCoverGeometry(): THREE.ExtrudeGeometry {
 /** Realisztikus: két-profilos body — front 5 mm mounting flange (rounded sq +
  *  4 db Ø5.1 furat) + 57 mm iron main (sarok-indent) + 19 mm hátsó plast fedő
  *  (sarok-indent) + pilot boss + tengely + kábelbevezető. Összes body hossz: 81 mm. */
-export function Nema23MotorZRealistic({ componentId }: PartBuilderProps) {
+export function ZMotorRealistic({ componentId }: PartBuilderProps) {
   const bodyMat = useBodyMaterial()
   const bossMat = useBossMaterial()
   const shaftMat = useShaftMaterial()
@@ -271,7 +271,7 @@ export function Nema23MotorZRealistic({ componentId }: PartBuilderProps) {
 }
 
 /** Medium: egyszerűsített body (box) front + hátsó box-fedő + kábelbevezető (egyszerű box). */
-export function Nema23MotorZMedium({ componentId }: PartBuilderProps) {
+export function ZMotorMedium({ componentId }: PartBuilderProps) {
   const bodyMat = useBodyMaterial()
   const shaftMat = useShaftMaterial()
   const plasticMat = usePlasticMaterial()
@@ -315,7 +315,7 @@ export function Nema23MotorZMedium({ componentId }: PartBuilderProps) {
 }
 
 /** Sematikus: tömör box body, vékony tengellyel — a renderer override-olja a színt. */
-export function Nema23MotorZSchematic({ componentId }: PartBuilderProps) {
+export function ZMotorSchematic({ componentId }: PartBuilderProps) {
   return (
     <group userData={{ componentId }}>
       <mesh userData={{ componentId }}>
@@ -334,7 +334,7 @@ export function Nema23MotorZSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const NEMA23_MOTOR_Z_DIMENSIONS = {
+export const Z_MOTOR_DIMENSIONS = {
   bodySize: NEMA23_BODY_SIZE,
   /** TELJES motor hossz — **81 mm** (Z-tengely variáns, a 122 mm-es X-motor helyett). */
   bodyLength: BODY_LENGTH,
@@ -365,7 +365,7 @@ export const NEMA23_MOTOR_Z_DIMENSIONS = {
 // Anchor-export — ugyanolyan struktúra mint a Nema23Motor (X-motor), csak
 // a body-hossz 81 mm.
 // ---------------------------------------------------------------------------
-export const NEMA23_MOTOR_Z_ANCHORS: Record<string, Anchor> = {
+export const Z_MOTOR_ANCHORS: Record<string, Anchor> = {
   origin: {
     position: [0, 0, 0],
     axis: [0, 0, 1],

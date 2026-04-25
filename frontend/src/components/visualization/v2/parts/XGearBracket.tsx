@@ -11,7 +11,7 @@
  *   - **Szár-lapok**: már NEM rajzolódnak ki. A korábbi `ARM_*` / `PLATE_*`
  *     konstansok (`armYOffset`, `armPlateWidthX`, `armAxialLength`, `shaftHoleZ`,
  *     `shaftHoleZ2`, `totalLengthZ`) referenciaként megmaradnak a
- *     `GEAR_BRACKET_DIMENSIONS`-ban, mert a fogaskerekek (#6, #11, #14) és a
+ *     `X_GEAR_BRACKET_DIMENSIONS`-ban, mert a fogaskerekek (#6, #11, #14) és a
  *     Ø8 tengelyek (#19, #20) a registry-ben ezekre az értékekre hivatkoznak,
  *     hogy a régi (a U-belsejéhez igazított) pozíciójukon maradjanak.
  *
@@ -77,7 +77,7 @@ const HALF_BP = NEMA23_BOLT_PATTERN / 2 // = 23.57
 const CENTER_HOLE_DIAM = 40
 
 /** Regiszter / fogaskerék-pozícióhoz: tengely tengelyvonal Z-jei (a szár-lapokon
- *  NINCS furat — csak referenciaértékek a `GEAR_BRACKET_DIMENSIONS`-ban exportálva). */
+ *  NINCS furat — csak referenciaértékek a `X_GEAR_BRACKET_DIMENSIONS`-ban exportálva). */
 const SHAFT_HOLE_DIAM = 8
 const SHAFT_HOLE_Z = -12.76
 const SHAFT_HOLE_Z_2 = SHAFT_HOLE_Z + 40 // = +27.24
@@ -177,7 +177,7 @@ function buildBaseWallGeometry(): THREE.ExtrudeGeometry {
  * Realisztikus: CSAK a base wall (motor flange-csatlakozó alap). A két szár-lap
  * (felső + alsó) eltávolítva a felhasználói kérésre.
  */
-export function GearBracketRealistic({ componentId }: PartBuilderProps) {
+export function XGearBracketRealistic({ componentId }: PartBuilderProps) {
   const aluMat = useAluminumMaterial()
   const baseWallGeom = useMemo(() => buildBaseWallGeometry(), [])
   useEffect(() => () => baseWallGeom.dispose(), [baseWallGeom])
@@ -195,12 +195,12 @@ export function GearBracketRealistic({ componentId }: PartBuilderProps) {
 }
 
 /** Medium: ugyanaz, mint a realistic — egyetlen base wall mesh. */
-export function GearBracketMedium(props: PartBuilderProps) {
-  return <GearBracketRealistic {...props} />
+export function XGearBracketMedium(props: PartBuilderProps) {
+  return <XGearBracketRealistic {...props} />
 }
 
 /** Sematikus: egyetlen box (base wall) furat nélkül. A renderer felülírja a színt. */
-export function GearBracketSchematic({ componentId }: PartBuilderProps) {
+export function XGearBracketSchematic({ componentId }: PartBuilderProps) {
   return (
     <group userData={{ componentId }}>
       <mesh position={[0, 0, -TOTAL_Z / 2 + MATERIAL_T / 2]} userData={{ componentId }}>
@@ -211,7 +211,7 @@ export function GearBracketSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const GEAR_BRACKET_DIMENSIONS = {
+export const X_GEAR_BRACKET_DIMENSIONS = {
   materialThickness: MATERIAL_T,
   widthX: WIDTH_X,
   innerHeightY: INNER_HEIGHT_Y,
@@ -251,7 +251,7 @@ export const GEAR_BRACKET_DIMENSIONS = {
 // ---------------------------------------------------------------------------
 const _ARM_CENTER_Y = OUTER_HEIGHT_Y / 2 - MATERIAL_T / 2
 
-export const GEAR_BRACKET_ANCHORS: Record<string, Anchor> = {
+export const X_GEAR_BRACKET_ANCHORS: Record<string, Anchor> = {
   origin: {
     position: [0, 0, 0],
     axis: [0, 0, 1],

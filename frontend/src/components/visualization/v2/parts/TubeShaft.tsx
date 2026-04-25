@@ -1,5 +1,5 @@
 /**
- * Csőtengely (üreges acéltengely) — a Spindle (`tengely-assembly`) belső
+ * Csőtengely (üreges acéltengely) — a Spindle (`spindle-assembly`) belső
  * csöve, amely a hajlító forgótengelyhez tartozik.
  *
  * GEOMETRIA:

@@ -27,7 +27,7 @@ import {
   buildNema23IndentedHolePath,
 } from './_motorSilhouette'
 
-const PLATE_W = 80
+const PLATE_W = 100
 /**
  * Lemez magassága.
  *
@@ -41,7 +41,8 @@ const PLATE_W = 80
  * Az alja továbbra is Z = 0 (a base-tetőn áll); a builder shape Y-centerelt,
  * így az új builder Y range = -88 .. +88.
  */
-const PLATE_H = 176
+const PLATE_H = 190
+
 const PLATE_T = 10
 
 /**
@@ -53,7 +54,9 @@ const PLATE_T = 10
  * (world Z = 88) van, a cutout builder-Y eltolása = 138.4 - 88 = 50.4.
  * Korábban: PLATE_H = 200/188.2/183.2, CUTOUT_CY = 50/55.9/58.4 (motor Z = 150).
  */
-const CUTOUT_CY = 50.4
+
+const CUTOUT_CX = -20
+const CUTOUT_CY = 55
 
 /** Alumínium PBR anyag — világos ezüst-szürke. */
 function useAluminumMaterial() {
@@ -87,8 +90,8 @@ function buildPlateShape(withCutout: boolean): THREE.Shape {
   shape.closePath()
 
   if (withCutout) {
-    shape.holes.push(buildNema23IndentedHolePath(0, CUTOUT_CY))
-    addNema23BoltHoles(shape, 0, CUTOUT_CY)
+    shape.holes.push(buildNema23IndentedHolePath(CUTOUT_CX, CUTOUT_CY))
+    addNema23BoltHoles(shape, CUTOUT_CX, CUTOUT_CY)
   }
 
   return shape
@@ -142,6 +145,7 @@ export const VERTICAL_BRACKET_1_DIMENSIONS = {
   width: PLATE_W,
   height: PLATE_H,
   thickness: PLATE_T,
+  cutoutCenterX: CUTOUT_CX,
   cutoutCenterY: CUTOUT_CY,
 }
 
@@ -160,36 +164,52 @@ export const VERTICAL_BRACKET_1_ANCHORS: Record<string, Anchor> = {
     description: 'A lemez geometriai középpontja; +Z = "szembenéző" oldal (cutout felöl).',
   },
   'front-face-center': {
-    position: [0, CUTOUT_CY, +PLATE_T / 2],
+    position: [CUTOUT_CX, CUTOUT_CY, +PLATE_T / 2],
     axis: [0, 0, 1],
     description:
       'A motor cutout középpontja a lemez ELŐLAPJÁN (+Z oldal). A motor mounting flange ide ' +
       'illeszkedik (a flange front-face-e a bracket előlapjához).',
   },
   'back-face-center': {
-    position: [0, CUTOUT_CY, -PLATE_T / 2],
+    position: [CUTOUT_CX, CUTOUT_CY, -PLATE_T / 2],
     axis: [0, 0, -1],
     description:
       'A motor cutout középpontja a lemez HÁTLAPJÁN (-Z oldal). Innen indulnak a ' +
       'menetes szárak a motor felé.',
   },
   'bolt-1': {
-    position: [-NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX - NEMA23_BOLT_PATTERN_HALF,
+      CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
     description: '4 db M5 menetes szár furat: bal-alsó (-X, -Y a cutout center-hez képest)',
   },
   'bolt-2': {
-    position: [+NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX + NEMA23_BOLT_PATTERN_HALF,
+      CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
     description: 'jobb-alsó (+X, -Y)',
   },
   'bolt-3': {
-    position: [+NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX + NEMA23_BOLT_PATTERN_HALF,
+      CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
     description: 'jobb-felső (+X, +Y)',
   },
   'bolt-4': {
-    position: [-NEMA23_BOLT_PATTERN_HALF, CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX - NEMA23_BOLT_PATTERN_HALF,
+      CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
     description: 'bal-felső (-X, +Y)',
   },

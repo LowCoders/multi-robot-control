@@ -264,13 +264,13 @@ export interface MachineConfig {
     /**
      * Felhasználó által manuálisan átállított V2 alkatrész-poz/forg override-ok.
      * Kulcs: registry node id (komponens vagy assembly), érték: parent-lokális
-     * `position` (mm) + `rotation` (XYZ Euler, rad). Ha jelen van, a renderer
-     * és az STL exporter felülírja vele a `resolveTransform` által számolt
-     * (mount-ből vagy `transform`-ból feloldott) értéket. A scale-t nem érinti.
+     * opcionális `position` (mm) és/vagy `rotation` (XYZ Euler, rad). Ha jelen
+     * van, a renderer és az STL exporter csak a megadott mezőket írja felül; a
+     * hiányzó mezők a registry defaultból jönnek. A scale-t nem érinti.
      */
     componentOverrides?: Record<string, {
-      position: [number, number, number]
-      rotation: [number, number, number]
+      position?: [number, number, number]
+      rotation?: [number, number, number]
     }>
     /**
      * Felhasználó által manuálisan átállított V2 alkatrész VIZUÁLIS

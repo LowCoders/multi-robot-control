@@ -15,7 +15,7 @@ const DEPTH_Y = 200
 const HEIGHT_Z = 8
 
 /** Realisztikus: alaplemez + 4 láb. Lábak Z-tengely körül állnak (függőlegesen). */
-export function BaseRealistic({ componentId }: PartBuilderProps) {
+export function BasePlateRealistic({ componentId }: PartBuilderProps) {
   const footR = 12
   const footH = 18
   const offX = LENGTH_X / 2 - 30
@@ -54,7 +54,7 @@ export function BaseRealistic({ componentId }: PartBuilderProps) {
 }
 
 /** Medium: alaplemez + 4 egyszerű láb. */
-export function BaseMedium({ componentId }: PartBuilderProps) {
+export function BasePlateMedium({ componentId }: PartBuilderProps) {
   const footR = 10
   const footH = 14
   const offX = LENGTH_X / 2 - 30
@@ -91,7 +91,7 @@ export function BaseMedium({ componentId }: PartBuilderProps) {
 }
 
 /** Sematikus: csak egy színes doboz (a renderer override-olja a regiszter színére). */
-export function BaseSchematic({ componentId }: PartBuilderProps) {
+export function BasePlateSchematic({ componentId }: PartBuilderProps) {
   return (
     <mesh userData={{ componentId }}>
       <boxGeometry args={[LENGTH_X, DEPTH_Y, HEIGHT_Z]} />
@@ -100,7 +100,7 @@ export function BaseSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const BASE_DIMENSIONS = {
+export const BASE_PLATE_DIMENSIONS = {
   /** X tengely menti hossz (mm). */
   length: LENGTH_X,
   /** Y tengely menti mélység (mm). */
@@ -109,7 +109,7 @@ export const BASE_DIMENSIONS = {
   height: HEIGHT_Z,
 }
 
-export const BASE_ANCHORS: Record<string, Anchor> = {
+export const BASE_PLATE_ANCHORS: Record<string, Anchor> = {
   origin: { position: [0, 0, 0], axis: [0, 0, 1], description: 'Geometriai közép' },
   'top-center': {
     position: [0, 0, +HEIGHT_Z / 2],

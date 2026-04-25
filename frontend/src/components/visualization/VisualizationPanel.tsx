@@ -219,12 +219,12 @@ export default function VisualizationPanel({
       const b = baseline[id]
       if (
         !b ||
-        b.position[0] !== d.position[0] ||
-        b.position[1] !== d.position[1] ||
-        b.position[2] !== d.position[2] ||
-        b.rotation[0] !== d.rotation[0] ||
-        b.rotation[1] !== d.rotation[1] ||
-        b.rotation[2] !== d.rotation[2]
+        b.position?.[0] !== d.position?.[0] ||
+        b.position?.[1] !== d.position?.[1] ||
+        b.position?.[2] !== d.position?.[2] ||
+        b.rotation?.[0] !== d.rotation?.[0] ||
+        b.rotation?.[1] !== d.rotation?.[1] ||
+        b.rotation?.[2] !== d.rotation?.[2]
       ) {
         return true
       }

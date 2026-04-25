@@ -183,7 +183,7 @@ function useSetScrewMaterial() {
  * A fogazatot egyetlen ExtrudeGeometry-vel készítjük (gear face Z = -W..0).
  * A hub szintén ExtrudeGeometry, Z = 0..+H. Mindkettő középső furata Ø8.
  */
-export function PinionGear15M17TRealistic({ componentId }: PartBuilderProps) {
+export function PinionGearRealistic({ componentId }: PartBuilderProps) {
   const steelMat = useSteelMaterial()
   const screwMat = useSetScrewMaterial()
 
@@ -254,7 +254,7 @@ export function PinionGear15M17TRealistic({ componentId }: PartBuilderProps) {
  * A fogazat látszólag eltűnik, csak a befoglaló hengerként jelenik meg —
  * a renderben kissé "tárcsának" tűnik, de tri-count szempontjából olcsó.
  */
-export function PinionGear15M17TMedium({ componentId }: PartBuilderProps) {
+export function PinionGearMedium({ componentId }: PartBuilderProps) {
   const steelMat = useSteelMaterial()
   return (
     <group userData={{ componentId }}>
@@ -292,7 +292,7 @@ export function PinionGear15M17TMedium({ componentId }: PartBuilderProps) {
  * Sematikus: egyetlen henger a tip-átmérővel és teljes magassággal —
  * a renderer a regiszter színére override-olja.
  */
-export function PinionGear15M17TSchematic({ componentId }: PartBuilderProps) {
+export function PinionGearSchematic({ componentId }: PartBuilderProps) {
   return (
     <mesh
       position={[0, 0, (HUB_HEIGHT - GEAR_FACE_W) / 2]}
@@ -305,7 +305,7 @@ export function PinionGear15M17TSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const PINION_GEAR_15M_17T_DIMENSIONS = {
+export const PINION_GEAR_DIMENSIONS = {
   module: MODULE_M,
   toothCount: TOOTH_COUNT,
   pressureAngleDeg: 20,
@@ -323,7 +323,7 @@ export const PINION_GEAR_15M_17T_DIMENSIONS = {
 // Anchor-export — builder-lokális frame (+Z = furat iránya / tengely; origó
 // a koszorú és hub találkozási síkján).
 // ---------------------------------------------------------------------------
-export const PINION_GEAR_15M_17T_ANCHORS: Record<string, Anchor> = {
+export const PINION_GEAR_ANCHORS: Record<string, Anchor> = {
   origin: {
     position: [0, 0, 0],
     axis: [0, 0, 1],

@@ -8,6 +8,7 @@
  * # Tab-ok
  *
  *   - Position  (Move3D):     pos X/Y/Z + rot X/Y/Z (mm + °)
+ *   - Sizes     (Ruler):      bbox X/Y/Z méretek mm-ben (scale override-on keresztül)
  *   - Color     (Palette):    color picker (per-color-scheme!)
  *   - Material  (Sparkles):   opacity, metalness, roughness (per-color-scheme!)
  *   - Scale     (Maximize2):  scale X/Y/Z + uniform-step preset
@@ -48,6 +49,7 @@ import {
   Move3D,
   Palette,
   RotateCw,
+  Ruler,
   Sparkles,
   Undo2,
   X,
@@ -68,9 +70,10 @@ const DEG2RAD = Math.PI / 180
 
 const POS_STEPS = [0.1, 1, 5, 10] as const
 const ROT_STEPS = [0.1, 1, 5, 15, 45, 90] as const
+const SIZE_STEPS = [0.1, 1, 5, 10] as const
 const SCALE_STEPS = [0.1, 0.5, 1, 2] as const
 
-type TabId = 'position' | 'color' | 'material' | 'scale' | 'other'
+type TabId = 'position' | 'sizes' | 'color' | 'material' | 'scale' | 'other'
 
 interface Props {
   className?: string
@@ -123,7 +126,14 @@ export default function CombinedEditPanel({ className = '' }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     if (typeof window === 'undefined') return 'position'
     const v = window.localStorage.getItem('mrc-v2-edit-panel-tab')
-    if (v === 'position' || v === 'color' || v === 'material' || v === 'scale' || v === 'other') {
+    if (
+      v === 'position' ||
+      v === 'sizes' ||
+      v === 'color' ||
+      v === 'material' ||
+      v === 'scale' ||
+      v === 'other'
+    ) {
       return v
     }
     return 'position'
@@ -139,6 +149,7 @@ export default function CombinedEditPanel({ className = '' }: Props) {
 
   const [posStep, setPosStep] = usePersistentNumber('mrc-v2-edit-pos-step', 1)
   const [rotStep, setRotStep] = usePersistentNumber('mrc-v2-edit-rot-step', 5)
+  const [sizeStep, setSizeStep] = usePersistentNumber('mrc-v2-edit-size-step', 1)
 
   // === Számolt értékek ===
   const node = useMemo(
@@ -173,6 +184,15 @@ export default function CombinedEditPanel({ className = '' }: Props) {
   const isComp = isComponent(node)
   const displayName =
     visualOverride?.displayName || node.nameEn || node.nameHu || node.id
+  const bboxSize = isComp ? node.bbox?.size : undefined
+  const currentScale: [number, number, number] = visualOverride?.scale ?? [1, 1, 1]
+  const effectiveSize = bboxSize
+    ? ([
+        bboxSize[0] * currentScale[0],
+        bboxSize[1] * currentScale[1],
+        bboxSize[2] * currentScale[2],
+      ] as [number, number, number])
+    : undefined
 
   // === Action wrapperek ===
 
@@ -245,13 +265,15 @@ export default function CombinedEditPanel({ className = '' }: Props) {
       <div className="flex items-center gap-2 px-2 py-1.5 border-b border-steel-700 bg-steel-800/70">
         <Move3D className="w-3.5 h-3.5 text-blue-400 shrink-0" />
         <div className="flex-1 min-w-0">
-          <div
-            className="font-medium text-steel-100 truncate"
-            title={`${displayName} (${node.id})`}
-          >
+          <div className="font-medium text-steel-100 truncate" title={`${displayName} (${node.id})`}>
             {displayName}
           </div>
-          <div className="text-[10px] text-steel-500 truncate">{node.id}</div>
+          <div className="text-[10px] text-steel-500 truncate">
+            <span className="font-mono">{node.id}</span>
+            {isComp && typeof node.num === 'number' && (
+              <span className="font-mono text-steel-600"> #{node.num}</span>
+            )}
+          </div>
         </div>
         {selectedIdsCount > 1 && (
           <span
@@ -295,6 +317,16 @@ export default function CombinedEditPanel({ className = '' }: Props) {
           label={t('combined_edit.tab_position', { defaultValue: 'Position' })}
           active={activeTab === 'position'}
           onClick={() => setActiveTab('position')}
+        />
+        <TabButton
+          icon={<Ruler className="w-3.5 h-3.5" />}
+          label={t('combined_edit.tab_sizes', { defaultValue: 'Sizes' })}
+          active={activeTab === 'sizes'}
+          disabled={!effectiveSize || !bboxSize}
+          disabledTitle={t('combined_edit.sizes_no_bbox_hint', {
+            defaultValue: 'Sizes require a component bounding box',
+          })}
+          onClick={() => setActiveTab('sizes')}
         />
         <TabButton
           icon={<Palette className="w-3.5 h-3.5" />}
@@ -341,6 +373,17 @@ export default function CombinedEditPanel({ className = '' }: Props) {
             setRotStep={setRotStep}
             onWriteAbsolute={writeAbsoluteTransform}
             onStep={stepTransformBy}
+          />
+        )}
+
+        {activeTab === 'sizes' && effectiveSize && bboxSize && (
+          <SizesTab
+            baseSize={bboxSize}
+            effectiveSize={effectiveSize}
+            scale={visualOverride?.scale}
+            sizeStep={sizeStep}
+            setSizeStep={setSizeStep}
+            onApply={applyVisualPatch}
           />
         )}
 
@@ -501,6 +544,99 @@ function PositionTab({
         })}
       </Section>
     </>
+  )
+}
+
+// =============================================================================
+// Tab: Sizes
+// =============================================================================
+
+interface SizesTabProps {
+  baseSize: [number, number, number]
+  effectiveSize: [number, number, number]
+  scale: [number, number, number] | undefined
+  sizeStep: number
+  setSizeStep: (s: number) => void
+  onApply: (patch: VisualPropsPatch) => void
+}
+function SizesTab({
+  baseSize,
+  effectiveSize,
+  scale,
+  sizeStep,
+  setSizeStep,
+  onApply,
+}: SizesTabProps) {
+  const { t } = useTranslation('visualization')
+  const curScale: [number, number, number] = scale ?? [1, 1, 1]
+  const commitSize = (idx: 0 | 1 | 2, sizeMm: number) => {
+    const base = baseSize[idx]
+    if (base <= 0) return
+    const next: [number, number, number] = [...curScale]
+    next[idx] = sizeMm / base
+    onApply({ scale: next })
+  }
+  return (
+    <div className="px-2 py-2 space-y-1.5">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-steel-400">
+          {t('combined_edit.sizes_title', { defaultValue: 'Sizes' })}
+        </span>
+        <div className="flex items-center gap-0.5">
+          {SIZE_STEPS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSizeStep(s)}
+              className={`px-1 py-0.5 rounded text-[10px] leading-none border ${
+                sizeStep === s
+                  ? 'bg-blue-500/20 border-blue-400/50 text-blue-200'
+                  : 'border-transparent text-steel-500 hover:text-steel-200 hover:bg-steel-800'
+              }`}
+              title={t('combined_edit.size_step_tooltip', {
+                step: s,
+                defaultValue: `Set size step to ${s} mm`,
+              })}
+            >
+              {s}
+            </button>
+          ))}
+          <span className="pl-1 text-[10px] text-steel-500">
+            {t('transform_edit.unit_mm')}
+          </span>
+        </div>
+      </div>
+      {(['X', 'Y', 'Z'] as const).map((label, i) => {
+        const idx = i as 0 | 1 | 2
+        return (
+          <SizeAxisRow
+            key={`size-${label}`}
+            label={label}
+            displayValue={fmt(effectiveSize[idx])}
+            step={sizeStep}
+            onStep={(sign) => commitSize(idx, Math.max(0.001, effectiveSize[idx] + sign * sizeStep))}
+            onCommit={(sizeMm) => commitSize(idx, sizeMm)}
+          />
+        )
+      })}
+      <p className="text-[10px] text-steel-500 leading-snug">
+        {t('combined_edit.sizes_scale_hint', {
+          defaultValue:
+            'Sizes are stored as scale overrides relative to the registry bounding box.',
+        })}
+      </p>
+      {scale !== undefined && (
+        <button
+          type="button"
+          onClick={() => onApply({ scale: undefined })}
+          className="text-[10px] text-amber-400 hover:text-amber-300 underline w-full text-center mt-1"
+        >
+          {t('visual_props.field_reset_tooltip', {
+            defaultValue: 'Reset to default',
+          })}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -1032,6 +1168,82 @@ function ScaleAxisRow({ label, displayValue, onCommit }: ScaleAxisRowProps) {
         }}
         className="flex-1 min-w-0 bg-steel-950 border border-steel-700 rounded px-1.5 py-0.5 font-mono text-right text-steel-100 focus:border-blue-500 focus:outline-none"
       />
+    </div>
+  )
+}
+
+interface SizeAxisRowProps {
+  label: string
+  displayValue: string
+  step: number
+  onStep: (sign: 1 | -1) => void
+  onCommit: (v: number) => void
+}
+function SizeAxisRow({ label, displayValue, step, onStep, onCommit }: SizeAxisRowProps) {
+  const { t } = useTranslation('visualization')
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className={`w-3 text-center font-mono font-semibold text-[11px] ${
+          label === 'X'
+            ? 'text-red-400'
+            : label === 'Y'
+              ? 'text-green-400'
+              : 'text-blue-400'
+        }`}
+      >
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={() => onStep(-1)}
+        title={t('transform_edit.delta_tooltip', {
+          axis: label,
+          step,
+          unit: t('transform_edit.unit_mm'),
+        })}
+        className="w-5 h-5 rounded bg-steel-800 hover:bg-steel-700 text-steel-300 hover:text-white border border-steel-700"
+      >
+        −
+      </button>
+      <input
+        key={`size-${displayValue}`}
+        type="number"
+        defaultValue={displayValue}
+        step={step}
+        min={0.001}
+        onBlur={(e) => {
+          const v = Number.parseFloat(e.currentTarget.value)
+          if (Number.isFinite(v) && v > 0) onCommit(v)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            const v = Number.parseFloat(e.currentTarget.value)
+            if (Number.isFinite(v) && v > 0) onCommit(v)
+            e.currentTarget.blur()
+          }
+          if (e.key === 'Escape') {
+            e.currentTarget.value = displayValue
+            e.currentTarget.blur()
+          }
+        }}
+        className="flex-1 min-w-0 bg-steel-950 border border-steel-700 rounded px-1.5 py-0.5 font-mono text-right text-steel-100 focus:border-blue-500 focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => onStep(1)}
+        title={t('transform_edit.delta_tooltip', {
+          axis: label,
+          step,
+          unit: t('transform_edit.unit_mm'),
+        })}
+        className="w-5 h-5 rounded bg-steel-800 hover:bg-steel-700 text-steel-300 hover:text-white border border-steel-700"
+      >
+        +
+      </button>
+      <span className="w-7 text-[10px] text-steel-500">
+        {t('transform_edit.unit_mm')}
+      </span>
     </div>
   )
 }

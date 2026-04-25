@@ -48,7 +48,7 @@ interface SceneProps {
   cameraPosition?: { x: number; y: number; z: number }
   cameraTarget?: { x: number; y: number; z: number }
   cameraFov?: number
-  onCameraChange?: (state: CameraState) => void
+  onCameraChange?: ((state: CameraState) => void) | undefined
   /** Megjelenjen-e a ViewCube overlay (drei `GizmoHelper` + `GizmoViewcube`). */
   showViewCube?: boolean
 }
@@ -314,7 +314,7 @@ interface Props {
   position?: Position
   status?: DeviceStatus
   className?: string
-  onCameraChange?: (state: CameraState) => void
+  onCameraChange?: ((state: CameraState) => void) | undefined
   /**
    * A kamera-overlay-ek (drei `GizmoViewcube` jobb-felül + `CameraPanPad`
    * jobb-alul) megjelenítése. A felhasználói preferencia a `VisualizationPanel`

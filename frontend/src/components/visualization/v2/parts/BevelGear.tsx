@@ -160,19 +160,19 @@ function ToothRing({ componentId }: PartBuilderProps) {
   )
 }
 
-export function BevelGear15M20T45degRealistic({ componentId }: PartBuilderProps) {
+export function BevelGearRealistic({ componentId }: PartBuilderProps) {
   return <ToothRing componentId={componentId} />
 }
 
-export function BevelGear15M20T45degMedium({ componentId }: PartBuilderProps) {
+export function BevelGearMedium({ componentId }: PartBuilderProps) {
   return <ToothRing componentId={componentId} />
 }
 
-export function BevelGear15M20T45degSchematic({ componentId }: PartBuilderProps) {
+export function BevelGearSchematic({ componentId }: PartBuilderProps) {
   return <ToothRing componentId={componentId} />
 }
 
-export const BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS = {
+export const BEVEL_GEAR_DIMENSIONS = {
   module: MODULE_M,
   toothCount: TOOTH_COUNT,
   pitchAngleDeg: 45,
@@ -201,7 +201,7 @@ export const BEVEL_GEAR_15M_20T_45DEG_DIMENSIONS = {
 // Anchor-export — builder-lokális frame (+Z = tengely / pitch cone axis;
 // origó = fogazat kis (top) vége; hub a -Z oldalon, fogazat back face Z = -6.36).
 // ---------------------------------------------------------------------------
-export const BEVEL_GEAR_15M_20T_45DEG_ANCHORS: Record<string, Anchor> = {
+export const BEVEL_GEAR_ANCHORS: Record<string, Anchor> = {
   origin: {
     position: [0, 0, 0],
     axis: [0, 0, 1],

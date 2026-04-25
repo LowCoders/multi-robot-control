@@ -1,22 +1,22 @@
 /**
  * X-hajtás felső fedőlap — vízszintes alumínium lap a `x-gear-bracket` (#12)
- * felett, a függőleges konzol-bracket-2 (#3) jobb széléhez (max X) illesztve.
+ * felett, a függőleges vertical-bracket-2 (#3) jobb széléhez (max X) illesztve.
  *
  * GEOMETRIA:
- *   - Hossz (parent +X mentén): 236 mm
- *   - Mélység (parent +Y mentén): 80 mm
+ *   - Hossz (parent +X mentén): 200 mm
+ *   - Mélység (parent +Y mentén): 100 mm
  *   - Vastagság (parent +Z mentén): 10 mm — a felhasználó által megadott érték.
  *
  * BUILDER LOKÁLIS ORIENTÁCIÓ:
- *   - +X = a lap hossza (az x-hajtás-assembly +X = world +X mentén, a motor
+ *   - +X = a lap hossza (az x-drive-assembly +X = world +X mentén, a motor
  *     shaft irányába).
- *   - +Y = a lap mélysége (az x-hajtás-assembly +Y = world +Y mentén, oldalra).
- *   - +Z = a lap vastagsága (az x-hajtás-assembly +Z = world +Z mentén, fel).
+ *   - +Y = a lap mélysége (az x-drive-assembly +Y = world +Y mentén, oldalra).
+ *   - +Z = a lap vastagsága (az x-drive-assembly +Z = world +Z mentén, fel).
  *   - Origó: a lap GEOMETRIAI KÖZÉPPONTJA. A bbox így natívan szimmetrikus.
  *
  * ANYAG: alumínium (a `gear-bracket`-tel megegyező matt/anodizált finiselő tónus).
  *
- * Megjegyzés: a registry pozíciója a `BRACKET_2_DX` és `GEAR_BRACKET_DIMENSIONS`
+ * Megjegyzés: a registry pozíciója a `BRACKET_2_DX` és `X_GEAR_BRACKET_DIMENSIONS`
  * konstansokra hivatkozva van számolva, hogy ha a 3-as vagy 12-es elem mérete
  * vagy elhelyezkedése változik, ez a lap automatikusan vele mozog (a min-X és
  * az alja továbbra is illeszkedjen).
@@ -25,8 +25,8 @@ import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { PartBuilderProps } from '../types'
 
-const PLATE_LENGTH_X = 236
-const PLATE_DEPTH_Y = 80
+const PLATE_LENGTH_X = 200
+const PLATE_DEPTH_Y = 100
 const PLATE_THICKNESS = 10
 
 function useAluminumMaterial() {

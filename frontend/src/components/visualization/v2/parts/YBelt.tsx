@@ -1,14 +1,14 @@
 /**
  * HTD 5M szinkron (timing) bordásszíj — két HTD pulley-t összekötő, zárt hurok.
  *
- * CIKK: "HTD5M Timing Belt 600-5M Width 15  HTD 5M Synchronous Belt CNC/3D Parts"
+ * CIKK: "HTD5M Timing Belt 530-5M Width 15  HTD 5M Synchronous Belt CNC/3D Parts"
  *   - Pitch: 5 mm  (HTD 5M szabvány)
- *   - Hossz (centerline / pitch line): 600 mm (120 fog × 5 mm)
+ *   - Hossz (centerline / pitch line): 530 mm (106 fog × 5 mm)
  *   - Szélesség: 15 mm  (a 70T/15T pulley body-szélességéhez igazítva)
  *   - Vastagság (tooth-tip-től body-back-ig): ≈ 3.8 mm  (HTD 5M szabvány)
  *
  * GEOMETRIA STRATÉGIA:
- *   A belt-et a 600 mm pitch-line hossz vezérli: a két pulley pitch-radius-a
+ *   A belt-et az 530 mm pitch-line hossz vezérli: a két pulley pitch-radius-a
  *   (R₁=70T, R₂=15T) és a `BELT_LENGTH_NOMINAL` ismeretében kiszámítjuk a
  *   szükséges PULLEY centerek közötti távolságot (C) az open-belt képletből:
  *
@@ -55,14 +55,14 @@
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { PartBuilderProps } from '../types'
-import { HTD_PULLEY_70T_25B_DIMENSIONS } from './HtdPulley70T_25b'
-import { HTD_PULLEY_15T_8B_DIMENSIONS } from './HtdPulley15T_8b'
+import { Y_PULLEY_70T_DIMENSIONS } from './YPulley70T'
+import { Y_PULLEY_15T_DIMENSIONS } from './YPulley15T'
 
 // ---- Belt méretek ----
 const BELT_WIDTH = 15
 const BELT_THICKNESS = 3.8
 const BELT_THICKNESS_HALF = BELT_THICKNESS / 2
-const BELT_LENGTH_NOMINAL = 600
+const BELT_LENGTH_NOMINAL = 530
 const BELT_PITCH = 5
 const BELT_TOOTH_COUNT = BELT_LENGTH_NOMINAL / BELT_PITCH
 
@@ -71,8 +71,8 @@ const BELT_TOOTH_COUNT = BELT_LENGTH_NOMINAL / BELT_PITCH
 // a `BELT_LENGTH_NOMINAL` és a két pulley pitch-radius-a alapján számítjuk: a belt-loop
 // nyitott szíj konfigurációban hurkolja körül a két pulleyt, és a centerline-hossza
 // pontosan a `BELT_LENGTH_NOMINAL` lesz (open-belt képlet, lásd file-header).
-const PULLEY_70T_PITCH_R = HTD_PULLEY_70T_25B_DIMENSIONS.pitchDiam / 2
-const PULLEY_15T_PITCH_R = HTD_PULLEY_15T_8B_DIMENSIONS.pitchDiam / 2
+const PULLEY_70T_PITCH_R = Y_PULLEY_70T_DIMENSIONS.pitchDiam / 2
+const PULLEY_15T_PITCH_R = Y_PULLEY_15T_DIMENSIONS.pitchDiam / 2
 
 function solvePulleyCenterDistance(beltLength: number, r1: number, r2: number): number {
   const sumR = r1 + r2
@@ -81,7 +81,7 @@ function solvePulleyCenterDistance(beltLength: number, r1: number, r2: number): 
   const disc = k * k - 8 * diffSq
   if (disc < 0) {
     throw new Error(
-      `HtdBelt600_5M_W15: belt too short (L=${beltLength}, π·(R₁+R₂)=${Math.PI * sumR})`,
+      `YBelt: belt too short (L=${beltLength}, π·(R₁+R₂)=${Math.PI * sumR})`,
     )
   }
   return (k + Math.sqrt(disc)) / 4
@@ -136,7 +136,7 @@ function buildBeltShape(pulleyA: PulleyRef, pulleyB: PulleyRef): THREE.Shape {
   const d = Math.hypot(dx, dy)
   if (d <= small.r + large.r) {
     throw new Error(
-      `HtdBelt600_5M_W15: pulley centers too close (d=${d}, R_sum=${small.r + large.r})`,
+      `YBelt: pulley centers too close (d=${d}, R_sum=${small.r + large.r})`,
     )
   }
 
@@ -235,7 +235,7 @@ function buildBeltGeometry(arcSegments: number): THREE.ExtrudeGeometry {
 
 // ---- Re-exportált méretek ----
 
-export const HTD_BELT_600_5M_W15_DIMENSIONS = {
+export const Y_BELT_DIMENSIONS = {
   pitch: BELT_PITCH,
   toothCount: BELT_TOOTH_COUNT,
   beltLengthNominal: BELT_LENGTH_NOMINAL,
@@ -251,7 +251,7 @@ export const HTD_BELT_600_5M_W15_DIMENSIONS = {
 /**
  * Realisztikus: nagy felbontású ExtrudeGeometry (96 ív-szegmens).
  */
-export function HtdBelt600_5M_W15Realistic({ componentId }: PartBuilderProps) {
+export function YBeltRealistic({ componentId }: PartBuilderProps) {
   const mat = useBeltMaterial()
   const geom = useMemo(() => buildBeltGeometry(ARC_SEGMENTS_REALISTIC), [])
   useEffect(() => () => geom.dispose(), [geom])
@@ -261,7 +261,7 @@ export function HtdBelt600_5M_W15Realistic({ componentId }: PartBuilderProps) {
 /**
  * Medium: közepes felbontás (48 ív-szegmens).
  */
-export function HtdBelt600_5M_W15Medium({ componentId }: PartBuilderProps) {
+export function YBeltMedium({ componentId }: PartBuilderProps) {
   const mat = useBeltMaterial()
   const geom = useMemo(() => buildBeltGeometry(ARC_SEGMENTS_MEDIUM), [])
   useEffect(() => () => geom.dispose(), [geom])
@@ -271,7 +271,7 @@ export function HtdBelt600_5M_W15Medium({ componentId }: PartBuilderProps) {
 /**
  * Sematikus: alacsony felbontás (24 ív-szegmens), a renderer felülírja a színt.
  */
-export function HtdBelt600_5M_W15Schematic({ componentId }: PartBuilderProps) {
+export function YBeltSchematic({ componentId }: PartBuilderProps) {
   const geom = useMemo(() => buildBeltGeometry(ARC_SEGMENTS_SCHEMATIC), [])
   useEffect(() => () => geom.dispose(), [geom])
   return (

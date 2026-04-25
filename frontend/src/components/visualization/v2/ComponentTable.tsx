@@ -225,12 +225,12 @@ export default function ComponentTable({ className = '' }: Props) {
       const b = overrideBaseline[id]
       if (
         !b ||
-        b.position[0] !== d.position[0] ||
-        b.position[1] !== d.position[1] ||
-        b.position[2] !== d.position[2] ||
-        b.rotation[0] !== d.rotation[0] ||
-        b.rotation[1] !== d.rotation[1] ||
-        b.rotation[2] !== d.rotation[2]
+        b.position?.[0] !== d.position?.[0] ||
+        b.position?.[1] !== d.position?.[1] ||
+        b.position?.[2] !== d.position?.[2] ||
+        b.rotation?.[0] !== d.rotation?.[0] ||
+        b.rotation?.[1] !== d.rotation?.[1] ||
+        b.rotation?.[2] !== d.rotation?.[2]
       ) {
         set.add(id)
       }
@@ -873,9 +873,12 @@ function AssemblyRow({
       onDrop={onDrop}
       onClick={onSelect}
       className={`relative flex items-stretch gap-0.5 border-t border-steel-800 bg-steel-800/30 hover:bg-steel-800/60 cursor-pointer text-xs ${
-        isSelected ? 'bg-blue-500/15 ring-1 ring-blue-400/40' : ''
+        isSelected ? 'bg-blue-500/25 ring-2 ring-blue-300/70 shadow-[0_0_0_1px_rgba(96,165,250,0.35),0_0_18px_rgba(59,130,246,0.25)] z-10' : ''
       } ${dropShadowClass(isDragOver, dragOverPos)}`}
     >
+      {isSelected && (
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-300 rounded-r shadow-[0_0_10px_rgba(147,197,253,0.8)]" />
+      )}
       {/* Drag handle — a sor abszolút legelején, behúzás NÉLKÜL. */}
       <div className="flex items-center pl-1">
         <span
@@ -1026,9 +1029,12 @@ function ComponentRow({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       className={`relative flex items-stretch gap-0.5 cursor-pointer border-t border-steel-800 hover:bg-steel-800/60 text-xs ${
-        isSelected ? 'bg-blue-500/10 ring-1 ring-blue-400/40' : ''
+        isSelected ? 'bg-blue-500/25 ring-2 ring-blue-300/70 shadow-[0_0_0_1px_rgba(96,165,250,0.35),0_0_18px_rgba(59,130,246,0.25)] z-10' : ''
       } ${isHidden ? 'opacity-50' : ''} ${dropShadowClass(isDragOver, dragOverPos)}`}
     >
+      {isSelected && (
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-300 rounded-r shadow-[0_0_10px_rgba(147,197,253,0.8)]" />
+      )}
       {/* Drag handle — a sor abszolút legelején, behúzás NÉLKÜL. */}
       <div className="flex items-center pl-1">
         <span

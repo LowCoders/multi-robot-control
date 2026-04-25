@@ -126,7 +126,8 @@ interface TransformOverrideStore {
   getMergedMap: () => OverrideMap
 }
 
-function arrEqual(a: [number, number, number], b: [number, number, number]): boolean {
+function arrEqual(a: [number, number, number] | undefined, b: [number, number, number] | undefined): boolean {
+  if (!a || !b) return a === b
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
 }
 

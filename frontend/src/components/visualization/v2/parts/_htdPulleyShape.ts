@@ -1,6 +1,6 @@
 /**
  * Közös HTD 5M (5 mm pitch, ívelt fogprofilú) bordaszíj-tárcsa fog-shape
- * builder a `HtdPulley70T_25b.tsx` és a `HtdPulley15T_8b.tsx` számára.
+ * builder a `YPulley70T.tsx` és a `YPulley15T.tsx` számára.
  *
  * HTD 5M PROFIL ALAPOK:
  *   - Pitch = 5 mm (a fogak osztótávolsága az osztóköríven)

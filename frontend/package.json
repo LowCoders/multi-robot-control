@@ -28,6 +28,7 @@
     "react-router-dom": "^6.21.3",
     "socket.io-client": "^4.7.4",
     "three": "^0.160.1",
+    "three-bvh-csg": "^0.0.15",
     "zustand": "^4.5.0"
   },
   "devDependencies": {

@@ -94,8 +94,8 @@ export function resolveMountedTransform(
  * helyett. Ha jelen van, a `mount`-feloldás kimarad ezen a node-on.
  */
 export interface TransformOverride {
-  position: [number, number, number]
-  rotation: [number, number, number]
+  position?: [number, number, number]
+  rotation?: [number, number, number]
 }
 
 /**
@@ -129,8 +129,8 @@ export function resolveTransform(
     const ov = getOverride(node.id)
     if (ov) {
       return {
-        position: ov.position,
-        rotation: ov.rotation,
+        position: ov.position ?? fallback.position,
+        rotation: ov.rotation ?? fallback.rotation,
         scale: fallback.scale,
       }
     }

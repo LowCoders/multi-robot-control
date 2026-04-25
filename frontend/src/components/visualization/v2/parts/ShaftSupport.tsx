@@ -38,6 +38,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
+import { Brush, Evaluator, SUBTRACTION } from 'three-bvh-csg'
 import type { PartBuilderProps } from '../types'
 
 // ---- Felhasználó által megadott méretek ----
@@ -51,7 +52,6 @@ const D_THRU = 8.6 // d1 — átmenő furat
 const D_M10 = 10 // M1 névleges — Ø10
 const M10_DEPTH = 25 // M1 — menet mélység
 const D_SW = 5 // SW — felső szorítócsavar M5
-const SW_THREAD_DEPTH = 12 // M5 menet mélység az egyik oldalon (becslés)
 
 // ---- Származtatott méretek ----
 /** A felső trapéz tetejének szélessége (X). A1 furattáv + 2×3 mm él-margó. */
@@ -72,7 +72,7 @@ const CLAMP_SLOT_W = 2
 const Y_SW_HOLE = Y_BORE_TOP + 4 // = +19
 
 // ---- Re-exportált méretek a regiszter számára ----
-export const SHAFT_SUPPORT_SHF20_DIMENSIONS = {
+export const SHAFT_SUPPORT_DIMENSIONS = {
   shaftDiameter: D_BORE,
   shaftHeight: H_SHAFT,
   totalWidth: A,
@@ -94,20 +94,6 @@ function useAluminiumMaterial() {
         color: '#9aa0a6',
         metalness: 0.6,
         roughness: 0.45,
-      }),
-    [],
-  )
-  useEffect(() => () => mat.dispose(), [mat])
-  return mat
-}
-
-function useDarkSteelMaterial() {
-  const mat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#1f1f22',
-        metalness: 0.7,
-        roughness: 0.55,
       }),
     [],
   )
@@ -172,108 +158,70 @@ function buildMainGeometry(): THREE.ExtrudeGeometry {
   return geom
 }
 
-/**
- * A 2 db Ø8.6 átmenő furat geometriája (cosmetic — csak vizuálisan jelzi
- * alulról nézve a furatot). A furatok Y mentén mennek át, X = ±A1/2,
- * Z = 0 a blokk Z-középvonalán.
- *
- * NOTE: Mivel a fő profilt X-Y síkban extrudáltuk Z mentén, az Y-irányú
- * furatokat CSG-vel tudnánk csak a fő geometriából kivenni — egyszerűbb és
- * OLCSÓBB egy kis sötét hengert tenni a furat helyére, ami "lyuknak látszik"
- * alulról nézve. A Realistic LOD-ban használjuk csak.
- */
-function buildMountingHoleMarker(diam: number): THREE.CylinderGeometry {
-  return new THREE.CylinderGeometry(diam / 2, diam / 2, H + 0.2, 16)
+/** Y irányú, függőleges furatkivágó henger. */
+function buildVerticalHoleCutter(diam: number, length: number): THREE.CylinderGeometry {
+  return new THREE.CylinderGeometry(diam / 2, diam / 2, length, 16)
 }
 
-/**
- * A felső M5 szorítócsavar furat marker (X mentén megy át, a blokk teljes
- * X-szélességén — a slot mindkét oldalán). Realistic LOD only.
- */
-function buildClampScrewMarker(): THREE.CylinderGeometry {
+/** X irányú furatkivágó henger a felső M5 szorítócsavarhoz. */
+function buildClampScrewCutter(): THREE.CylinderGeometry {
   // X-tengely mentén áll → Y-tengely irányú alapcylinderből rotateZ(±π/2).
   const geom = new THREE.CylinderGeometry(D_SW / 2, D_SW / 2, A + 0.2, 12)
   geom.rotateZ(Math.PI / 2)
   return geom
 }
 
+function subtractCutter(
+  base: Brush,
+  cutterGeometry: THREE.BufferGeometry,
+  position: [number, number, number],
+  evaluator: Evaluator,
+): Brush {
+  const cutter = new Brush(cutterGeometry)
+  cutter.position.set(...position)
+  cutter.updateMatrixWorld()
+  return evaluator.evaluate(base, cutter, SUBTRACTION)
+}
+
+/** Főtest ténylegesen kivágott, Y irányú rögzítőfuratokkal. */
+function buildRealisticGeometry(): THREE.BufferGeometry {
+  const evaluator = new Evaluator()
+  const halfA1 = A1 / 2
+
+  let result = new Brush(buildMainGeometry())
+  result.updateMatrixWorld()
+
+  const thruCutter = buildVerticalHoleCutter(D_THRU, H + 0.2)
+  for (const x of [-halfA1, +halfA1]) {
+    result = subtractCutter(result, thruCutter, [x, 0, 0], evaluator)
+    result.updateMatrixWorld()
+  }
+  thruCutter.dispose()
+
+  const swCutter = buildClampScrewCutter()
+  result = subtractCutter(result, swCutter, [0, Y_SW_HOLE, 0], evaluator)
+  swCutter.dispose()
+
+  const geom = result.geometry
+  geom.computeVertexNormals()
+  return geom
+}
+
 // ---- LOD belépési pontok ----
 
 /**
- * Realisztikus: trapéz blokk Ø20 bore-ral, függőleges szorító-réssel, 2 db
- * átmenő furat-marker (Ø8.6 alulról), és a felső M5 szorítócsavar furat-marker.
+ * Realisztikus: trapéz blokk Ø20 bore-ral, függőleges szorító-réssel, ténylegesen
+ * kivágott függőleges rögzítőfuratokkal és kivágott felső M5 szorítófurattal.
  */
-export function ShaftSupportSHF20Realistic({ componentId }: PartBuilderProps) {
+export function ShaftSupportRealistic({ componentId }: PartBuilderProps) {
   const aluMat = useAluminiumMaterial()
-  const darkMat = useDarkSteelMaterial()
-  const mainGeom = useMemo(() => buildMainGeometry(), [])
-  const thruHoleGeom = useMemo(() => buildMountingHoleMarker(D_THRU), [])
-  const m10HoleGeom = useMemo(() => buildMountingHoleMarker(D_M10), [])
-  const swHoleGeom = useMemo(() => buildClampScrewMarker(), [])
-  useEffect(() => {
-    return () => {
-      mainGeom.dispose()
-      thruHoleGeom.dispose()
-      m10HoleGeom.dispose()
-      swHoleGeom.dispose()
-    }
-  }, [mainGeom, thruHoleGeom, m10HoleGeom, swHoleGeom])
-
-  const halfA1 = A1 / 2
-  // Az M10 menetes furatok ugyanazon X-en, de Z = +10 (a Z-középvonaltól
-  // hátra, ahol a kép szerint a "Rögzítés menettel" jelzés mutat).
-  const Z_M10 = 10
+  const mainGeom = useMemo(() => buildRealisticGeometry(), [])
+  useEffect(() => () => mainGeom.dispose(), [mainGeom])
 
   return (
     <group userData={{ componentId }}>
-      {/* Fő blokk + bore + slot */}
+      {/* Fő blokk + bore + slot + tényleges rögzítőfurat-kivágások */}
       <mesh material={aluMat} geometry={mainGeom} userData={{ componentId }} />
-
-      {/* 2 db Ø8.6 átmenő furat (Y irányú marker) — átszelik a blokkot */}
-      {[-halfA1, +halfA1].map((x) => (
-        <mesh
-          key={`thru-${x}`}
-          position={[x, 0, 0]}
-          geometry={thruHoleGeom}
-          material={darkMat}
-          userData={{ componentId }}
-        />
-      ))}
-
-      {/* 2 db M10 menetes furat-marker (cosmetic — alulról "lyuknak látszik") */}
-      {[-halfA1, +halfA1].map((x) => (
-        <mesh
-          key={`m10-${x}`}
-          position={[x, Y_BLOCK_BOT + M10_DEPTH / 2, Z_M10]}
-          userData={{ componentId }}
-        >
-          <cylinderGeometry args={[D_M10 / 2, D_M10 / 2, M10_DEPTH, 16]} />
-          <meshStandardMaterial color="#1f1f22" metalness={0.7} roughness={0.55} />
-        </mesh>
-      ))}
-
-      {/* Felső M5 szorítócsavar — X mentén átmenő furat-marker */}
-      <mesh
-        position={[0, Y_SW_HOLE, 0]}
-        geometry={swHoleGeom}
-        material={darkMat}
-        userData={{ componentId }}
-      />
-
-      {/* Az M5 csavar feje (egyszerűsített, a +X oldalon) */}
-      <mesh
-        position={[A / 2 - 0.5, Y_SW_HOLE, 0]}
-        rotation={[0, 0, Math.PI / 2]}
-        userData={{ componentId }}
-      >
-        <cylinderGeometry args={[D_SW * 0.85, D_SW * 0.85, 3, 12]} />
-        <meshStandardMaterial color="#2a2a2a" metalness={0.85} roughness={0.4} />
-      </mesh>
-
-      {/* Suppress unused-var warning a SW_THREAD_DEPTH-re — a Realistic-ban
-          nem modellezzük külön a menet mélységét, de exportálva tartjuk a
-          jövőbeli iterációkhoz. */}
-      <mesh visible={false} userData={{ componentId, swThreadDepth: SW_THREAD_DEPTH }} />
     </group>
   )
 }
@@ -281,7 +229,7 @@ export function ShaftSupportSHF20Realistic({ componentId }: PartBuilderProps) {
 /**
  * Medium: trapéz blokk Ø20 bore-ral és szorító-réssel — furat-marker-ek nélkül.
  */
-export function ShaftSupportSHF20Medium({ componentId }: PartBuilderProps) {
+export function ShaftSupportMedium({ componentId }: PartBuilderProps) {
   const aluMat = useAluminiumMaterial()
   const mainGeom = useMemo(() => buildMainGeometry(), [])
   useEffect(() => () => mainGeom.dispose(), [mainGeom])
@@ -297,7 +245,7 @@ export function ShaftSupportSHF20Medium({ componentId }: PartBuilderProps) {
  * Sematikus: tömör doboz a teljes A × H × B bbox-szal (a renderer override-olja
  * a színt a regiszter szerint). Furatok / trapéz / slot nélkül.
  */
-export function ShaftSupportSHF20Schematic({ componentId }: PartBuilderProps) {
+export function ShaftSupportSchematic({ componentId }: PartBuilderProps) {
   return (
     <mesh userData={{ componentId }}>
       <boxGeometry args={[A, H, B]} />

@@ -63,15 +63,51 @@
     },
     "backgroundColor": "#1a1a2e",
     "frameColor": "#f6f5f4",
-    "componentOverrides": {},
+    "componentOverrides": {
+      "y-belt": {
+        "rotation": [
+          0,
+          1.5707963267948966,
+          3.141592653589793
+        ]
+      },
+      "y-motor": {
+        "rotation": [
+          -1.5707963267948966,
+          4.71238898038469,
+          0
+        ]
+      },
+      "y-pulley-15t": {
+        "rotation": [
+          1.5707963267948966,
+          1.5707963267948966,
+          0
+        ]
+      }
+    },
     "componentVisualOverrides": {
       "y-pulley-70t": {
+        "hidden": false,
         "displayName": "HTD 5M pulley 70T",
-        "color": "#62a0ea",
-        "hidden": false
+        "schemes": {
+          "pbr": {
+            "color": "#62a0ea"
+          },
+          "registry": {
+            "color": "#62a0ea"
+          }
+        }
       },
-      "y-belt-htd5m-600": {
-        "roughness": 0.4
+      "y-belt": {
+        "schemes": {
+          "pbr": {
+            "roughness": 0.4
+          },
+          "registry": {
+            "roughness": 0.4
+          }
+        }
       }
     }
   },

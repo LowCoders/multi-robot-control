@@ -1,55 +1,32 @@
 /**
- * Függőleges konzol 2 — alumínium hátsó tartólemez a NEMA 23 motor hátlapjához.
+ * Függőleges konzol 2 — alumínium hátsó tartólemez átmenő NEMA 23 kivágással.
  *
  * Geometria (mm):
  *   - Lemez: szélesség 80 (X), magasság 200 (Y), vastagság 10 (Z) — builder lokális koords.
  *     (Ugyanaz a befoglaló méret, mint a `függőleges konzol 1`.)
  *   - Anyag: alumínium (PBR look, világos ezüst-szürke).
- *   - A lemez +Z oldalán (szembe a motorral, +X world irányba a regiszter rotációja után)
- *     **4 mm mélységű ZSEB** (pocket / area-clean toolpath) van marva a NEMA 23 motor body
- *     SAROK-INDENT + FILLET silhouette-jével (R=4 indent + R=2 fillet + 1 mm outward
- *     offset, ugyanaz a profil mint a motor iron body main / cover szakaszán).
- *     A zseb a motor hátlapjának befogadására szolgál: a motor back face a zseb fenekére
- *     fekszik fel.
- *   - A 4 db Ø5.1 mm-es ÁTMENŐ furat a 47.14 mm pattern szerint elhelyezve, a `menetes-
- *     szar-szerelveny-1` 4 db M5 menetes szárai részére. A furatok a teljes 10 mm
- *     vastagságon átmennek, de FIZIKAILAG csak a hátsó 6 mm-es tömör szakaszon van
- *     anyag — a zseb területén (front 4 mm) a furatpozíciók az indent-void területén
- *     belül vannak (a 47.14 csavar-pattern + 1 mm outward-offset miatt), így ott
- *     anyag nélkül "magától" áthaladnak a szárak.
+ *   - A korábbi 4 mm-es zseb megszűnt: helyette a NEMA 23 motor body
+ *     sarok-indent + fillet kontúrja ÁTMENŐ kivágásként megy át a teljes 10 mm-es
+ *     lemezvastagságon.
+ *   - A motor jelenlegi 270°-os X tengely körüli fordítása miatt a kábelbevezető
+ *     box a lemez síkjában a motor kontúrja alá kerül, ezért a motor-kivágáshoz
+ *     kapcsolódó, lecsapott élű kábelbox-clearance is át van vágva a lemezen.
  *
- * Implementáció: két különálló ExtrudeGeometry, mert a keresztmetszet a vastagság
- * mentén változik:
- *   1. **Hátsó szakasz** (depth = 6 mm, builder Z = -5 .. +1):
- *      teljes 80×200 téglalap + 4 db Ø5.1 furat (47.14 pattern, középpont (0, +50)).
- *   2. **Elülső szakasz / pereme** (depth = 4 mm, builder Z = +1 .. +5):
- *      teljes 80×200 téglalap MÍNUSZ a motor body sarok-indent silhouette = a zseb
- *      körüli "rim" anyag. Bolt-furatok ide nem kellenek (a 4 furatpozíció a zseb
- *      voidjában esik).
- *
- * Forgatás: a regiszterben transform.rotation = [0, +π/2, 0] forgatja úgy, hogy a
- * lemez zsebes oldala (+Z builder) a világ +X irányba nézzen — vagyis a motor felé.
- *
- * Pozicionálás: a regiszterben olyan world X-en van, hogy a zseb feneke pontosan a
- * motor hátlapjához érjen. Lásd a `componentRegistry.ts`-ben a számítást.
- *
- * Megjegyzés a kábelbevezetőről: a motor tetején, a hátlaptól induló (32 mm hosszú,
- * 13 mm magas) cable-exit unit a zseb +X-irányú nyitott peremén kívül helyezkedik el
- * (mert a zseb mélysége csak 4 mm, a kábelbevezető pedig 32 mm hosszan a motor body
- * tetején fekszik a +X irányba). Az első ~4 mm-en azonban átfedés lehet a bracket-2
- * elülső peremével a body-tetőn — ez egy ismert geometriai konfliktus, melyet a
- * jövőben vagy a kábelbevezető áthelyezésével, vagy a zseb top-edge kiterjesztésével
- * lehet kezelni.
+ * Forgatás: a regiszterben transform.rotation = [π/2, +π/2, 0] forgatja úgy, hogy a
+ * lemez síkja függőleges legyen, vastagsági normálja pedig a világ +X irányba nézzen.
  */
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { Anchor, PartBuilderProps } from '../types'
 import {
-  addNema23BoltHoles,
-  buildNema23IndentedHolePath,
+  NEMA23_BODY_SIZE,
+  NEMA23_BOLT_PATTERN,
+  NEMA23_INDENT_FILLET_R,
+  NEMA23_INDENT_OUTWARD_OFFSET,
+  NEMA23_INDENT_R,
 } from './_motorSilhouette'
 
-const PLATE_W = 80
+const PLATE_W = 100
 /**
  * Lemez magassága.
  *
@@ -63,26 +40,28 @@ const PLATE_W = 80
  * így az új builder Y range = -88 .. +88. Ugyanaz mint a
  * `függőleges konzol 1`.
  */
-const PLATE_H = 176
+const PLATE_H = 200
 const PLATE_T = 10
 
 /**
- * A zseb középpontja a lemez lokális koordinátáiban (ugyanaz mint a
+ * A motor-kivágás középpontja a lemez lokális koordinátáiban (ugyanaz mint a
  * `függőleges konzol 1` cutout-jánál).
  *
- * A motor (#8) az X tengely körül 180°-kal megfordítva ÉS lejjebb tolva
- * (felhasználói módosítás). Az új ABSZOLÚT zseb/flange pozíció a base-tetőtől
- * mérve world Z = 138.4. A centered builder Y origója a lemez magasság-felezőjénél
- * (world Z = 88) van, a zseb builder-Y eltolása = 138.4 - 88 = 50.4.
- * Korábban: PLATE_H = 200/188.2/183.2, POCKET_CY = 50/55.9/58.4 (motor Z = 150).
+ * A motor (#8) az X tengely körül 270°-kal megfordítva ÉS lejjebb tolva
+ * (felhasználói módosítás). Az új ABSZOLÚT kivágás/flange pozíció a base-tetőtől
+ * mérve world Z ≈ 150. A centered builder Y origója a lemez magasság-felezőjénél
+ * (world Z = 100) van, a kivágás builder-Y eltolása ≈ 50.
  */
-const POCKET_CY = 50.4
+const CUTOUT_CX = -20
+const CUTOUT_CY = 50.4
 
-/** Zseb mélysége (area clean toolpath, mm). */
-const POCKET_DEPTH = 4
+/** Kábelbevezető befoglaló mérete a motoron (mm). */
+const CABLE_BOX_W = 37
+const CABLE_BOX_H = 13
+const CABLE_BOX_BASE_H = 7
+const CABLE_BOX_CHAMFER_H = CABLE_BOX_H - CABLE_BOX_BASE_H
+const CABLE_BOX_TOP_W = CABLE_BOX_W - 2 * CABLE_BOX_CHAMFER_H // 25 mm, 45°-os lecsapás
 
-/** Hátsó tömör szakasz vastagsága (mm). */
-const BACK_THICKNESS = PLATE_T - POCKET_DEPTH // = 6
 
 /** Alumínium PBR anyag — világos ezüst-szürke (ugyanaz, mint bracket-1). */
 function useAluminumMaterial() {
@@ -99,85 +78,126 @@ function useAluminumMaterial() {
   return mat
 }
 
-/**
- * A motor (#8) X tengely körüli 180°-os fordítása miatt a NEMA23 silhouette-et
- * és a 4 csavarfurat-pattern-t a (0, POCKET_CY) körül 180°-kal Z körül elforgatva
- * építjük fel. (A 4-szög szimmetria miatt vizuálisan a kimenet azonos lehet az
- * unrotated változattal, viszont a kódban explicit, így későbbi aszimmetrikus
- * silhouette-bővítések is automatikusan jól viselkednek.)
- */
-const POCKET_ROTATED_180 = true
+/** Közös átmenő kivágás: NEMA 23 sarok-indent kontúr + alul kapcsolódó kábelbox. */
+function buildMotorWithCableHolePath(): THREE.Path {
+  const path = new THREE.Path()
+  const cx = CUTOUT_CX
+  const cy = CUTOUT_CY
+  const half = NEMA23_BODY_SIZE / 2
+  const halfBolt = NEMA23_BOLT_PATTERN / 2
+  const offsetAxis = NEMA23_INDENT_OUTWARD_OFFSET / Math.SQRT2
+  const dx = half - halfBolt - offsetAxis
+  const filletR = NEMA23_INDENT_FILLET_R
+  const indentR = NEMA23_INDENT_R
+  const innerSq = (indentR + filletR) * (indentR + filletR) - (dx - filletR) * (dx - filletR)
+  const L = Math.sqrt(innerSq)
+  const ratio = filletR / (indentR + filletR)
+  const yB = cy - half
+  const notchBaseHalfW = CABLE_BOX_W / 2
+  const notchTopHalfW = CABLE_BOX_TOP_W / 2
+  const notchChamferStartY = yB - CABLE_BOX_BASE_H
+  const notchBottomY = yB - CABLE_BOX_H
+  const leftBottomTangentX = cx - halfBolt - offsetAxis + L
+  const rightBottomTangentX = cx + halfBolt + offsetAxis - L
 
-/** Hátsó (tömör) szakasz Shape-je: teljes téglalap + 4 db Ø5.1 átmenő furat. */
-function buildBackShape(): THREE.Shape {
+  path.moveTo(cx - notchTopHalfW, notchBottomY)
+  path.lineTo(cx + notchTopHalfW, notchBottomY)
+  path.lineTo(cx + notchBaseHalfW, notchChamferStartY)
+  path.lineTo(cx + notchBaseHalfW, yB)
+  path.lineTo(rightBottomTangentX, yB)
+
+  const traceCorner = (sx: 1 | -1, sy: 1 | -1) => {
+    const isHEntry = sx * sy === -1
+    const boltX = cx + sx * halfBolt
+    const boltY = cy + sy * halfBolt
+    const indCx = boltX + sx * offsetAxis
+    const indCy = boltY + sy * offsetAxis
+
+    const hCx = indCx - sx * L
+    const hCy = indCy + sy * (dx - filletR)
+    const vCx = indCx + sx * (dx - filletR)
+    const vCy = indCy - sy * L
+
+    const hEdgeX = hCx
+    const hEdgeY = indCy + sy * dx
+    const vEdgeX = indCx + sx * dx
+    const vEdgeY = vCy
+
+    const hIndentX = hCx + ratio * (indCx - hCx)
+    const hIndentY = hCy + ratio * (indCy - hCy)
+    const vIndentX = vCx + ratio * (indCx - vCx)
+    const vIndentY = vCy + ratio * (indCy - vCy)
+
+    const hEdgeAngle = Math.atan2(hEdgeY - hCy, hEdgeX - hCx)
+    const hIndentAngle = Math.atan2(hIndentY - hCy, hIndentX - hCx)
+    const vEdgeAngle = Math.atan2(vEdgeY - vCy, vEdgeX - vCx)
+    const vIndentAngle = Math.atan2(vIndentY - vCy, vIndentX - vCx)
+    const indentHAngle = Math.atan2(hIndentY - indCy, hIndentX - indCx)
+    const indentVAngle = Math.atan2(vIndentY - indCy, vIndentX - indCx)
+
+    if (isHEntry) {
+      path.lineTo(hEdgeX, hEdgeY)
+      path.absarc(hCx, hCy, filletR, hEdgeAngle, hIndentAngle, false)
+      path.absarc(indCx, indCy, indentR, indentHAngle, indentVAngle, true)
+      path.absarc(vCx, vCy, filletR, vIndentAngle, vEdgeAngle, false)
+    } else {
+      path.lineTo(vEdgeX, vEdgeY)
+      path.absarc(vCx, vCy, filletR, vEdgeAngle, vIndentAngle, false)
+      path.absarc(indCx, indCy, indentR, indentVAngle, indentHAngle, true)
+      path.absarc(hCx, hCy, filletR, hIndentAngle, hEdgeAngle, false)
+    }
+  }
+
+  traceCorner(+1, -1)
+  traceCorner(+1, +1)
+  traceCorner(-1, +1)
+  traceCorner(-1, -1)
+
+  path.lineTo(leftBottomTangentX, yB)
+  path.lineTo(cx - notchBaseHalfW, yB)
+  path.lineTo(cx - notchBaseHalfW, notchChamferStartY)
+  path.lineTo(cx - notchTopHalfW, notchBottomY)
+  path.closePath()
+  return path
+}
+
+/** Teljes lemez Shape-je: átmenő motor-kontúr + átmenő kábelbox kivágás. */
+function buildPlateShape(): THREE.Shape {
   const shape = new THREE.Shape()
   shape.moveTo(-PLATE_W / 2, -PLATE_H / 2)
   shape.lineTo(+PLATE_W / 2, -PLATE_H / 2)
   shape.lineTo(+PLATE_W / 2, +PLATE_H / 2)
   shape.lineTo(-PLATE_W / 2, +PLATE_H / 2)
   shape.closePath()
-  addNema23BoltHoles(shape, 0, POCKET_CY, undefined, undefined, POCKET_ROTATED_180)
+  shape.holes.push(buildMotorWithCableHolePath())
   return shape
 }
 
-/** Elülső (perem) szakasz Shape-je: teljes téglalap MÍNUSZ motor body silhouette. */
-function buildFrontShape(): THREE.Shape {
-  const shape = new THREE.Shape()
-  shape.moveTo(-PLATE_W / 2, -PLATE_H / 2)
-  shape.lineTo(+PLATE_W / 2, -PLATE_H / 2)
-  shape.lineTo(+PLATE_W / 2, +PLATE_H / 2)
-  shape.lineTo(-PLATE_W / 2, +PLATE_H / 2)
-  shape.closePath()
-  shape.holes.push(buildNema23IndentedHolePath(0, POCKET_CY, POCKET_ROTATED_180))
-  return shape
-}
-
-/** Hátsó szakasz extrúziós geometriája: depth=6, builder Z = -5 .. +1. */
-function buildBackGeometry(): THREE.ExtrudeGeometry {
-  const geom = new THREE.ExtrudeGeometry(buildBackShape(), {
-    depth: BACK_THICKNESS,
+/** Teljes vastagságú lemez átmenő kivágásokkal. */
+function buildPlateGeometry(): THREE.ExtrudeGeometry {
+  const geom = new THREE.ExtrudeGeometry(buildPlateShape(), {
+    depth: PLATE_T,
     bevelEnabled: false,
     curveSegments: 48,
   })
-  // ExtrudeGeometry alapból Z=0..+depth között tol — toljuk a Z = -PLATE_T/2 .. -PLATE_T/2+depth tartományba.
   geom.translate(0, 0, -PLATE_T / 2)
   return geom
 }
 
-/** Elülső (perem) szakasz extrúziós geometriája: depth=4, builder Z = +1 .. +5. */
-function buildFrontGeometry(): THREE.ExtrudeGeometry {
-  const geom = new THREE.ExtrudeGeometry(buildFrontShape(), {
-    depth: POCKET_DEPTH,
-    bevelEnabled: false,
-    curveSegments: 48,
-  })
-  // Z = (back-of-plate + back-thickness) .. (back-of-plate + plate-thickness) = -5+6 .. -5+10 = +1 .. +5.
-  geom.translate(0, 0, -PLATE_T / 2 + BACK_THICKNESS)
-  return geom
-}
-
-/** Realisztikus: 2-mesh implementáció (hátsó tömör + elülső perem), zsebbel és
- *  4 db Ø5.1 átmenő furattal. */
+/** Realisztikus: teljes vastagságú lemez átmenő motor- és kábelbox-kivágással. */
 export function VerticalBracket2Realistic({ componentId }: PartBuilderProps) {
   const mat = useAluminumMaterial()
-  const backGeom = useMemo(() => buildBackGeometry(), [])
-  const frontGeom = useMemo(() => buildFrontGeometry(), [])
-  useEffect(() => () => backGeom.dispose(), [backGeom])
-  useEffect(() => () => frontGeom.dispose(), [frontGeom])
-  return (
-    <group userData={{ componentId }}>
-      <mesh material={mat} geometry={backGeom} userData={{ componentId }} />
-      <mesh material={mat} geometry={frontGeom} userData={{ componentId }} />
-    </group>
-  )
+  const geom = useMemo(() => buildPlateGeometry(), [])
+  useEffect(() => () => geom.dispose(), [geom])
+  return <mesh material={mat} geometry={geom} userData={{ componentId }} />
 }
 
-/** Medium: ugyanaz mint realistic (a zseb és a furatok a meghatározó vizuális elemek). */
+/** Medium: ugyanaz mint realistic (a kivágások a meghatározó vizuális elemek). */
 export function VerticalBracket2Medium({ componentId }: PartBuilderProps) {
   return <VerticalBracket2Realistic componentId={componentId} />
 }
 
-/** Sematikus: tömör lemez (zseb és furatok nélkül); a renderer override-olja a
+/** Sematikus: tömör lemez (kivágások nélkül); a renderer override-olja a
  *  regiszter színére. */
 export function VerticalBracket2Schematic({ componentId }: PartBuilderProps) {
   return (
@@ -192,16 +212,16 @@ export const VERTICAL_BRACKET_2_DIMENSIONS = {
   width: PLATE_W,
   height: PLATE_H,
   thickness: PLATE_T,
-  pocketCenterY: POCKET_CY,
-  pocketDepth: POCKET_DEPTH,
-  backThickness: BACK_THICKNESS,
+  cutoutCenterX: CUTOUT_CX,
+  cutoutCenterY: CUTOUT_CY,
+  cableBoxWidth: CABLE_BOX_W,
+  cableBoxHeight: CABLE_BOX_H,
 }
 
 // ---------------------------------------------------------------------------
 // Anchor-export — builder-lokális frame-ben.
-// A lemez X-Y síkban, +Z mentén PLATE_T vastagon. A "front" oldal (+Z) a
-// zseb feneke (motor háttámla illesztő). A 4 átmenő furat a hátsó (tömör)
-// szakaszon megy át.
+// A lemez X-Y síkban, +Z mentén PLATE_T vastagon. A "front" oldal (+Z) a motor
+// felé néz. A motor- és kábelbox-kontúr átmenő kivágásként megy át rajta.
 // ---------------------------------------------------------------------------
 const NEMA23_BOLT_PATTERN_HALF_2 = 47.14 / 2
 
@@ -211,42 +231,57 @@ export const VERTICAL_BRACKET_2_ANCHORS: Record<string, Anchor> = {
     axis: [0, 0, 1],
     description: 'A lemez geometriai középpontja',
   },
-  'pocket-bottom-center': {
-    position: [0, POCKET_CY, -PLATE_T / 2 + BACK_THICKNESS],
-    axis: [0, 0, -1],
-    description:
-      'A 4 mm-es zseb FENEKÉNEK középpontja (builder Z = +1). A motor back-face-e ide ' +
-      'fekszik fel; axis = -Z (a motor felé, a zseb nyitott oldala mentén kifelé).',
-  },
-  'front-face-center': {
-    position: [0, POCKET_CY, +PLATE_T / 2],
+  'cutout-center': {
+    position: [CUTOUT_CX, CUTOUT_CY, 0],
     axis: [0, 0, 1],
     description:
-      'A lemez ELSŐ oldalának (zseb-nyitott oldal) közepe a pocket center-en. A motor ' +
+      'Az átmenő NEMA 23 motor-kivágás középpontja. A kábelbox-kivágás ehhez képest -Y irányban kapcsolódik.',
+  },
+  'front-face-center': {
+    position: [CUTOUT_CX, CUTOUT_CY, +PLATE_T / 2],
+    axis: [0, 0, 1],
+    description:
+      'A lemez ELSŐ oldalának közepe a motor-kivágás középvonalán. A motor ' +
       'felöli oldal.',
   },
   'back-face-center': {
-    position: [0, POCKET_CY, -PLATE_T / 2],
+    position: [CUTOUT_CX, CUTOUT_CY, -PLATE_T / 2],
     axis: [0, 0, -1],
     description: 'A lemez HÁTSÓ oldala (a motorral ellenkező oldal).',
   },
   'bolt-1': {
-    position: [-NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY - NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX - NEMA23_BOLT_PATTERN_HALF_2,
+      CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF_2,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
-    description: 'Ø5.1 átmenő furat: bal-alsó (-X, -Y a pocket center-hez képest)',
+    description: 'Ø5.1 átmenő furat: bal-alsó (-X, -Y a kivágás-középhez képest)',
   },
   'bolt-2': {
-    position: [+NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY - NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX + NEMA23_BOLT_PATTERN_HALF_2,
+      CUTOUT_CY - NEMA23_BOLT_PATTERN_HALF_2,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
     description: 'jobb-alsó (+X, -Y)',
   },
   'bolt-3': {
-    position: [+NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY + NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX + NEMA23_BOLT_PATTERN_HALF_2,
+      CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF_2,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
     description: 'jobb-felső (+X, +Y)',
   },
   'bolt-4': {
-    position: [-NEMA23_BOLT_PATTERN_HALF_2, POCKET_CY + NEMA23_BOLT_PATTERN_HALF_2, +PLATE_T / 2],
+    position: [
+      CUTOUT_CX - NEMA23_BOLT_PATTERN_HALF_2,
+      CUTOUT_CY + NEMA23_BOLT_PATTERN_HALF_2,
+      +PLATE_T / 2,
+    ],
     axis: [0, 0, 1],
     description: 'bal-felső (-X, +Y)',
   },

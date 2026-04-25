@@ -117,7 +117,7 @@ function buildFlangeGeometry(): THREE.ExtrudeGeometry {
 }
 
 /** Realisztikus: 70 fogú HTD body + 2 flange + 1 set screw a body oldalán. */
-export function HtdPulley70T_25bRealistic({ componentId }: PartBuilderProps) {
+export function YPulley70TRealistic({ componentId }: PartBuilderProps) {
   const aluMat = useAluminiumMaterial()
   const flangeMat = useFlangeMaterial()
   const screwMat = useSetScrewMaterial()
@@ -167,7 +167,7 @@ export function HtdPulley70T_25bRealistic({ componentId }: PartBuilderProps) {
 }
 
 /** Medium: fogazat NÉLKÜLI body henger (OD diameter) + 2 flange. */
-export function HtdPulley70T_25bMedium({ componentId }: PartBuilderProps) {
+export function YPulley70TMedium({ componentId }: PartBuilderProps) {
   const aluMat = useAluminiumMaterial()
   const flangeMat = useFlangeMaterial()
   const flangeGeom = useMemo(() => buildFlangeGeometry(), [])
@@ -195,7 +195,7 @@ export function HtdPulley70T_25bMedium({ componentId }: PartBuilderProps) {
 }
 
 /** Sematikus: tömör henger flange-OD-vel × teljes axiális hosszal. */
-export function HtdPulley70T_25bSchematic({ componentId }: PartBuilderProps) {
+export function YPulley70TSchematic({ componentId }: PartBuilderProps) {
   return (
     <mesh rotation={[Math.PI / 2, 0, 0]} userData={{ componentId }}>
       <cylinderGeometry
@@ -211,7 +211,7 @@ export function HtdPulley70T_25bSchematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const HTD_PULLEY_70T_25B_DIMENSIONS = {
+export const Y_PULLEY_70T_DIMENSIONS = {
   pitch: HTD5M_PITCH,
   toothCount: TOOTH_COUNT,
   pitchDiam: DIMS.pitchDiam,

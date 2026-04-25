@@ -149,12 +149,13 @@ function buildOutputFlangeShape(): THREE.Shape {
 
   const halfBP = MOUNT_PATTERN / 2
   const r = OUTPUT_BOLT_HOLE_D / 2
-  for (const [px, py] of [
+  const boltPositions: Array<[number, number]> = [
     [-halfBP, -halfBP],
     [+halfBP, -halfBP],
     [+halfBP, +halfBP],
     [-halfBP, +halfBP],
-  ]) {
+  ]
+  for (const [px, py] of boltPositions) {
     const hole = new THREE.Path()
     hole.absarc(px, py, r, 0, Math.PI * 2, true)
     shape.holes.push(hole)
@@ -305,7 +306,7 @@ function BodyCylinder({ componentId }: PartBuilderProps) {
 
 /** Realisztikus: teljes geometria, output flange 4 sarok-furattal,
  *  input flange M5 + Ø8 recesszekkel, central boss, output shaft. */
-export function PlanetaryGearbox60Realistic({ componentId }: PartBuilderProps) {
+export function ZGearboxRealistic({ componentId }: PartBuilderProps) {
   return (
     <group userData={{ componentId }}>
       <OutputFlangeAssembly componentId={componentId} />
@@ -316,7 +317,7 @@ export function PlanetaryGearbox60Realistic({ componentId }: PartBuilderProps) {
 }
 
 /** Medium: flange-ek + body + shaft + boss, sarok-furatok és cosmetic recesszek nélkül. */
-export function PlanetaryGearbox60Medium({ componentId }: PartBuilderProps) {
+export function ZGearboxMedium({ componentId }: PartBuilderProps) {
   const flangeMat = useFlangeMaterial()
   const housingMat = useHousingMaterial()
   const shaftMat = useShaftMaterial()
@@ -361,7 +362,7 @@ export function PlanetaryGearbox60Medium({ componentId }: PartBuilderProps) {
 
 /** Sematikus: tömör doboz a teljes szerelvény bbox-szal — a renderer override-olja
  *  a regiszter színére. */
-export function PlanetaryGearbox60Schematic({ componentId }: PartBuilderProps) {
+export function ZGearboxSchematic({ componentId }: PartBuilderProps) {
   const totalZ = TOTAL_BODY_LENGTH + CENTER_BOSS_H + OUTPUT_SHAFT_LENGTH
   // Origó = test középpontja, így a doboz +Z-irányban erősebben kinyúlik (boss + shaft).
   const centerZ = (-(TOTAL_BODY_LENGTH / 2) + (TOTAL_BODY_LENGTH / 2 + CENTER_BOSS_H + OUTPUT_SHAFT_LENGTH)) / 2
@@ -373,7 +374,7 @@ export function PlanetaryGearbox60Schematic({ componentId }: PartBuilderProps) {
   )
 }
 
-export const PLANETARY_GEARBOX_60_DIMENSIONS = {
+export const Z_GEARBOX_DIMENSIONS = {
   flangeWidth: FLANGE_W,
   outputFlangeThickness: OUTPUT_FLANGE_T,
   inputFlangeThickness: INPUT_FLANGE_T,
@@ -395,7 +396,7 @@ export const PLANETARY_GEARBOX_60_DIMENSIONS = {
 // ---------------------------------------------------------------------------
 // Anchor-export — builder-lokális frame-ben (+Z = hajtómű főtengelye)
 // ---------------------------------------------------------------------------
-export const PLANETARY_GEARBOX_60_ANCHORS: Record<string, Anchor> = {
+export const Z_GEARBOX_ANCHORS: Record<string, Anchor> = {
   origin: {
     position: [0, 0, 0],
     axis: [0, 0, 1],

@@ -541,12 +541,12 @@ function ComponentNode({
           if (!m.userData.__origColorHex) {
             m.userData.__origColorHex = '#' + (m as THREE.MeshStandardMaterial).color.getHexString()
           }
-          ;(m as THREE.MeshStandardMaterial).color.set(overrideColor)
+          (m as THREE.MeshStandardMaterial).color.set(overrideColor)
         } else if (colorMode === 'registry') {
           if (!m.userData.__origColorHex) {
             m.userData.__origColorHex = '#' + (m as THREE.MeshStandardMaterial).color.getHexString()
           }
-          ;(m as THREE.MeshStandardMaterial).color.set(def.color)
+          (m as THREE.MeshStandardMaterial).color.set(def.color)
         } else {
           if (m.userData.__origColorHex) {
             (m as THREE.MeshStandardMaterial).color.set(m.userData.__origColorHex as string)

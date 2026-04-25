@@ -4,12 +4,12 @@
  *
  * Külön builder a `XDriveTopPlate`-től, mert a tervezett későbbi
  * átalakítások (pl. furatminta a base lemez M5 csavarjaihoz, kivágás a
- * konzol-mounting-rods számára, anyagvastagság-finomhangolás) függetlenek
+ * mounting-rods számára, anyagvastagság-finomhangolás) függetlenek
  * lesznek a felső lap geometriájától.
  *
  * GEOMETRIA:
- *   - Hossz (parent +X mentén): 140 mm
- *   - Mélység (parent +Y mentén): 80 mm
+ *   - Hossz (parent +X mentén): 60 mm
+ *   - Mélység (parent +Y mentén): 60 mm
  *   - Vastagság (parent +Z mentén): 10 mm
  *
  * BUILDER LOKÁLIS ORIENTÁCIÓ:
@@ -25,8 +25,8 @@ import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import type { PartBuilderProps } from '../types'
 
-const PLATE_LENGTH_X = 140
-const PLATE_DEPTH_Y = 80
+const PLATE_LENGTH_X = 60
+const PLATE_DEPTH_Y = 60
 const PLATE_THICKNESS = 10
 
 function useAluminumMaterial() {

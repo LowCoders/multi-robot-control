@@ -140,8 +140,8 @@ export interface ComponentDef {
  * de gyermekei (komponensek vagy további assembly-k) anchor-mate-tel illeszkednek hozzá.
  * Önmaga is illeszkedhet egy szülő anchor-jához (`mount` mező).
  *
- * Pl. `z-motor-assembly` = `Nema23MotorZ` (mount-olva a gearbox input-flange-éhez) +
- * `PlanetaryGearbox60` (origin). Az assembly anchorjai („output-shaft-tip", „mount-bottom”)
+ * Pl. `z-motor-assembly` = `ZMotor` (mount-olva a gearbox input-flange-éhez) +
+ * `ZGearbox` (origin). Az assembly anchorjai („output-shaft-tip", „mount-bottom”)
  * a fő szerelvénybe illesztéskor használhatók.
  */
 export interface AssemblyDef {
